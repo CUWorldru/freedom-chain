@@ -29,64 +29,13 @@ pub struct SyncResponse { pub request_id: Hash, pub from_height: u64, pub blocks
 pub struct SnapshotSyncRequest { pub request_id: Hash, pub height: u64 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SnapshotSyncResponse {
-    pub request_id: Hash,
-    pub height: u64,
-    pub block_hash: Hash,
-    pub state_root: Hash,
-    pub state_json: Vec<u8>,
-}
+pub struct SnapshotSyncResponse { pub request_id: Hash, pub height: u64, pub block_hash: Hash, pub state_root: Hash, pub state_json: Vec<u8> }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SyncWireRequest { Blocks(SyncRequest), Snapshot(SnapshotSyncRequest) }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SyncWireResponse { Blocks(SyncResponse), Snapshot(SnapshotSyncResponse) }
-
-#[derive(Clone)]
-pub struct FreedomSyncCodec;
-
-#[async_trait::async_trait]
-impl request_response::Codec for FreedomSyncCodec {
-    type Protocol = String;
-    type Request = SyncWireRequest;
-    type Response = SyncWireResponse;
-
-    async fn read_request<T>(&mut self, _: &Self::Protocol, io: &mut T) -> std::io::Result<Self::Request>
-    where T: futures::io::AsyncRead + Unpin + Send {
-        let mut bytes = Vec::new();
-        futures::io::AsyncReadExt::read_to_end(io, &mut bytes).await?;
-        serde_json::from_slice(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }
-    async fn write_request<T>(&mut self, _: &Self::Protocol, io: &mut T, req: SyncWireRequest) -> std::io::Result<()>
-    where T: futures::io::AsyncWrite + Unpin + Send {
-        let bytes = serde_json::to_vec(&req).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        futures::io::AsyncWriteExt::write_all(io, &bytes).await?;
-        futures::io::AsyncWriteExt::close(io).await
-    }
-    async fn read_response<T>(&mut self, _: &Self::Protocol, io: &mut T) -> std::io::Result<Self::Response>
-    where T: futures::io::AsyncRead + Unpin + Send {
-        let mut bytes = Vec::new();
-        futures::io::AsyncReadExt::read_to_end(io, &mut bytes).await?;
-        serde_json::from_slice(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }
-    async fn write_response<T>(&mut self, _: &Self::Protocol, io: &mut T, response: SyncWireResponse) -> std::io::Result<()>
-    where T: futures::io::AsyncWrite + Unpin + Send {
-        let bytes = serde_json::to_vec(&response).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        futures::io::AsyncWriteExt::write_all(io, &bytes).await?;
-        futures::io::AsyncWriteExt::close(io).await
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum NetworkMessage {
-    Proposal(BlockProposal),
-    Vote(ValidatorVote),
-    Timeout(ValidatorTimeout),
-    SyncRequest(SyncRequest),
-    SyncResponse(SyncResponse),
-}
-
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "FreedomEvent")]
 pub struct FreedomBehaviour {
@@ -94,7 +43,7 @@ pub struct FreedomBehaviour {
     pub identify: identify::Behaviour,
     pub ping: ping::Behaviour,
     pub kademlia: libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore>,
-    pub sync: request_response::Behaviour<FreedomSyncCodec>,
+    pub sync: request_response::json::Behaviour<SyncWireRequest, SyncWireResponse>,
 }
 
 pub enum FreedomEvent {
@@ -125,6 +74,7 @@ pub fn make_proposal(block: freedom_types::Block, round: u64, consensus_key: &ed
     let mut proposal = BlockProposal {
         block_hash,
         height: block.header.height,
+        round,
         proposer,
         block,
         signature: Vec::new(),
@@ -236,9 +186,8 @@ pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Erro
                 ),
                 ping: ping::Behaviour::default(),
                 kademlia: libp2p::kad::Behaviour::new(peer_id, libp2p::kad::store::MemoryStore::new(peer_id)),
-                sync: request_response::Behaviour::with_codec(
-                    FreedomSyncCodec,
-                    std::iter::once((SYNC_PROTOCOL.to_string(), ProtocolSupport::Full)),
+                sync: request_response::json::Behaviour::new(
+                    std::iter::once((libp2p::StreamProtocol::new(SYNC_PROTOCOL), ProtocolSupport::Full)),
                     request_response::Config::default(),
                 ),
             })
