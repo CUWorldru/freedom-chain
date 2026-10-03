@@ -180,3 +180,17 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - FREEDOM_VALIDATOR_INDEX=0..2 selects the local validator role.
 - FREEDOM_PEERS can provide comma-separated libp2p multiaddrs for peer dialing.
 - M16 is the protocol loop; production still needs persistent peer discovery, timeouts/view-change, durable storage and Byzantine fault handling beyond the local quorum path.
+
+
+## M17 — Peer discovery / timeout / view-change
+
+- libp2p Kademlia is enabled alongside Identify, Ping and Gossipsub.
+- Identify listen addresses are fed into Kademlia so discovered peers can enter the routing table.
+- FREEDOM_PEERS remains a bootstrap mechanism; Kademlia then maintains discovery beyond the initial peers.
+- Block proposals and validator votes are bound to an explicit consensus round.
+- proposer selection is deterministic for `(height, round)`.
+- validators emit signed timeout messages when a round exceeds the local timeout.
+- a `2N/3 + 1` timeout certificate advances the round and changes the deterministic proposer.
+- stale proposals, votes and timeout messages from other rounds are ignored/rejected.
+- a successful block finalization resets the round and advances to the next height.
+- M17 is still a prototype consensus runtime: durable peer state, block sync, persistent chain storage, lockstep timers, equivocation evidence/slashing and full Byzantine view-change rules remain before production.
