@@ -75,6 +75,8 @@ struct PeerReputationPolicy {
     cooldown_rounds: u64,
     decay_interval: u64,
     evidence_limit: usize,
+    sync_conflict_weight: u32,
+    snapshot_conflict_weight: u32,
 }
 
 const PEER_REPUTATION_POLICY: PeerReputationPolicy = PeerReputationPolicy {
@@ -82,7 +84,16 @@ const PEER_REPUTATION_POLICY: PeerReputationPolicy = PeerReputationPolicy {
     cooldown_rounds: PEER_SCORE_COOLDOWN_ROUNDS,
     decay_interval: PEER_SCORE_DECAY_INTERVAL,
     evidence_limit: PEER_EVIDENCE_LIMIT,
+    sync_conflict_weight: 1,
+    snapshot_conflict_weight: 1,
 };
+
+fn peer_evidence_weight(kind: &PeerEvidenceKind) -> u32 {
+    match kind {
+        PeerEvidenceKind::SyncConflict => PEER_REPUTATION_POLICY.sync_conflict_weight,
+        PeerEvidenceKind::SnapshotConflict => PEER_REPUTATION_POLICY.snapshot_conflict_weight,
+    }
+}
 
 fn compact_peer_evidence(reputation: &mut PeerReputation) -> bool {
     if reputation.evidence.len() <= PEER_REPUTATION_POLICY.evidence_limit {
@@ -105,7 +116,9 @@ fn record_peer_evidence(
         last_decay_height: height,
         evidence: Vec::new(),
     });
-    entry.score = entry.score.saturating_add(1);
+    entry.score = entry.score.saturating_add(peer_evidence_weight(
+        &evidence.kind,
+    ));
     entry.last_decay_height = height;
     entry.evidence.push(evidence);
     compact_peer_evidence(entry);
