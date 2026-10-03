@@ -584,6 +584,10 @@ pub struct BitcoinUtxoProof {
 }
 impl BitcoinUtxoProof {
     pub fn event_index(&self)->u64 { self.vout as u64 }
+    pub fn validate_binding(&self,expected_tx:Hash,expected_vout:u32,expected_amount:u64,expected_script:&[u8])->bool{
+        self.tx_hash==expected_tx&&self.vout==expected_vout&&self.amount_sat==expected_amount&&self.script_pubkey==expected_script&&self.tx_hash!=[0;32]&&!self.script_pubkey.is_empty()&&self.amount_sat>0
+    }
+    pub fn utxo_commitment(&self)->Hash{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BITCOIN-UTXO-COMMITMENT-V1");o.extend_from_slice(&self.tx_hash);o.extend_from_slice(&self.vout.to_le_bytes());o.extend_from_slice(&self.amount_sat.to_le_bytes());o.extend_from_slice(&(self.script_pubkey.len() as u64).to_le_bytes());o.extend_from_slice(&self.script_pubkey);freedom_primitives::hash_bytes(&o)}
     pub fn proof_bytes(&self)->Vec<u8> {
         let mut o=Vec::new(); o.extend_from_slice(b"FREEDOM-BITCOIN-UTXO-PROOF-V1");
         o.extend_from_slice(&self.bridge_id); o.extend_from_slice(&self.chain_id.to_le_bytes());
