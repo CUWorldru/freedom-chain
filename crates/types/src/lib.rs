@@ -17,7 +17,7 @@ pub struct Transaction {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TxKind {
-    Transfer = 1, RegisterNode = 2, SubmitContribution = 3, ClaimReward = 4,
+    Transfer = 1, RegisterNode = 2, SubmitContribution = 3, ClaimReward = 4, Purchase = 10,
     Stake = 5, Unstake = 6, CreateTicket = 7, Burn = 8, Governance = 9,
 }
 impl TxKind { pub fn code(self) -> u8 { self as u8 } }
@@ -89,3 +89,31 @@ pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:V
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClaimRewardPayload { pub contribution_id: Hash }
 impl ClaimRewardPayload { pub fn encode(&self)->Vec<u8>{self.contribution_id.to_vec()} pub fn decode(b:&[u8])->Result<Self,String>{if b.len()!=32{return Err("claim reward payload must be exactly 32 bytes".into())}let mut id=[0u8;32];id.copy_from_slice(b);Ok(Self{contribution_id:id})} }
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProductId { AiBotConnect = 1 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PurchasePayload {
+    pub product_id: u8,
+    pub merchant: Address,
+    pub price: u128,
+    pub reference: Hash,
+}
+impl PurchasePayload {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out=Vec::with_capacity(81);
+        out.push(self.product_id);
+        out.extend_from_slice(&self.merchant);
+        out.extend_from_slice(&self.price.to_le_bytes());
+        out.extend_from_slice(&self.reference);
+        out
+    }
+    pub fn decode(b:&[u8])->Result<Self,String>{
+        if b.len()!=81{return Err("purchase payload must be exactly 81 bytes".into())}
+        let mut m=[0u8;32];let mut p=[0u8;16];let mut r=[0u8;32];
+        m.copy_from_slice(&b[1..33]);p.copy_from_slice(&b[33..49]);r.copy_from_slice(&b[49..81]);
+        Ok(Self{product_id:b[0],merchant:m,price:u128::from_le_bytes(p),reference:r})
+    }
+}
