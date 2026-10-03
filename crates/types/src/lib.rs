@@ -2010,6 +2010,7 @@ pub struct BitcoinChainContext {
     pub tip_height: u64,
     pub tip_hash: Hash,
     pub headers: Vec<BitcoinBlockHeader>,
+    pub expected_bits: Vec<u32>,
 }
 
 impl BitcoinChainContext {
@@ -2017,6 +2018,8 @@ impl BitcoinChainContext {
         self.tip_height > 0
             && self.tip_hash != [0u8; 32]
             && !self.headers.is_empty()
+            && self.expected_bits.len() == self.headers.len()
+            && self.expected_bits.iter().all(|bits| *bits != 0)
     }
 
     pub fn confirmations_for(&self, block_height: u64) -> Option<u64> {
@@ -2045,8 +2048,11 @@ impl BitcoinChainContext {
         }
 
         let mut previous_hash = deposit_header.block_hash();
-        for header in self.headers.iter().skip(1) {
-            if header.previous_block_hash != previous_hash || !header.validate_pow() {
+        for (index, header) in self.headers.iter().enumerate() {
+            if header.bits != self.expected_bits[index] || !header.validate_pow() {
+                return Err(BridgeAdapterError::InvalidProof);
+            }
+            if index > 0 && header.previous_block_hash != previous_hash {
                 return Err(BridgeAdapterError::InvalidProof);
             }
             previous_hash = header.block_hash();
