@@ -182,7 +182,22 @@ impl ChainState {
       return Err(StateError::InvalidBridgeWithdrawal);
   }
   Ok(())
- } pub fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
+ } pub fn validate_cross_chain_finality_envelope(&self,envelope:&freedom_types::CrossChainFinalityEnvelope)->Result<(),StateError>{
+  if !envelope.validate_structure(){return Err(StateError::InvalidBridgeWithdrawal);}
+  let policy=self.bridge_security_policies.get(&envelope.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let canonical=self.bitcoin_canonical_tips.get(&envelope.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if envelope.chain_id!=policy.chain_id{return Err(StateError::InvalidBridgeWithdrawal);}
+  if envelope.proof_kind==freedom_types::CrossChainProofKind::BitcoinUtxo {
+    if envelope.finalized_height<canonical.height || envelope.finalized_height!=canonical.height+1{return Err(StateError::InvalidBridgeWithdrawal);}
+    if envelope.previous_state_root==envelope.state_root{return Err(StateError::InvalidBridgeWithdrawal);}
+  }
+  if let Some(old)=self.bitcoin_utxo_attestations.get(&envelope.bridge_id) {
+    if envelope.sequence<=old.sequence{return Err(StateError::InvalidBridgeWithdrawal);}
+  }
+  Ok(())
+ }
+
+ pub fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
   block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if commitment.block_height!=block.height || commitment.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
