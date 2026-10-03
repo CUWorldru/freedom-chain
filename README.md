@@ -235,3 +235,13 @@ Implemented:
 - Fixed proposal construction so `BlockProposal.round` is explicitly committed to the proposal metadata.
 
 Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON codec for serde-compatible request/response types. 
+
+## M21 — Finality-Proof Snapshot Fast Sync
+
+- Snapshot sync now transports the checkpoint block, state root, and a FinalityCertificate containing the validator votes that finalized the checkpoint.
+- Validators persist the certificate with protocol-created snapshots.
+- A node accepts a remote snapshot only after validating the checkpoint hash/height/state-root commitments, the finality certificate quorum, and the serialized state commitment.
+- Accepted snapshots replace local state and persist the checkpoint, so startup/replay can continue from the trusted checkpoint and only replay the tail.
+- Snapshots without a finality certificate are not served as fast-sync checkpoints.
+- Legacy Gossipsub block sync remains a compatibility path; it is not treated as a finality certificate.
+- This is still prototype BFT: validator-set changes, lock/precommit phases, equivocation evidence/slashing, and stronger checkpoint selection remain future work.
