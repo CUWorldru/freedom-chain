@@ -11,3 +11,4 @@ freedom-types = { path = "../types" }
 freedom-network = { path = "../network" }
 libp2p.workspace = true
 tokio.workspace = true
+freedom-storage = { path = "../storage" }
