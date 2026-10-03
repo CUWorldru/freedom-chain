@@ -36,6 +36,7 @@ pub enum FreedomEvent {
     Gossipsub(gossipsub::Event),
     Identify(identify::Event),
     Ping(ping::Event),
+    Kademlia(libp2p::kad::Event),
 }
 
 impl From<gossipsub::Event> for FreedomEvent {
@@ -46,6 +47,9 @@ impl From<identify::Event> for FreedomEvent {
 }
 impl From<ping::Event> for FreedomEvent {
     fn from(event: ping::Event) -> Self { Self::Ping(event) }
+}
+impl From<libp2p::kad::Event> for FreedomEvent {
+    fn from(event: libp2p::kad::Event) -> Self { Self::Kademlia(event) }
 }
 
 pub fn make_proposal(block: freedom_types::Block, round: u64, consensus_key: &ed25519_dalek::SigningKey) -> BlockProposal {

@@ -72,10 +72,10 @@ mod quorum_tests {
         ChainState::genesis(&Genesis { chain_id: 1, initial_supply: 0, validators })
     }
 
-    fn vote(state: &ChainState, index: u8, block_hash: Hash, height: u64) -> ValidatorVote {
+    fn vote(state: &ChainState, index: u8, block_hash: Hash, height: u64, round: u64) -> ValidatorVote {
         let id = hash_bytes(&[b"validator", &[index + 1]].concat());
         let key = [index + 1; 32];
-        let mut v = ValidatorVote { block_hash, height, validator_id: id, signature: Vec::new() };
+        let mut v = ValidatorVote { block_hash, height, round, validator_id: id, signature: Vec::new() };
         v.signature = sign(&ed25519_dalek::SigningKey::from_bytes(&key), &v.signing_bytes()).to_vec();
         v
     }
@@ -84,16 +84,16 @@ mod quorum_tests {
     fn two_of_three_votes_finalize_quorum() {
         let state = state_with_validators();
         let hash = hash_bytes(b"block");
-        let votes = vec![vote(&state, 0, hash, 1), vote(&state, 1, hash, 1)];
+        let votes = vec![vote(&state, 0, hash, 1, 0), vote(&state, 1, hash, 1, 0)];
         assert_eq!(quorum_threshold(3), 3);
-        assert!(validate_quorum(&state, hash, 1, &votes).is_err());
+        assert!(validate_quorum(&state, hash, 1, 0, &votes).is_err());
     }
 
     #[test]
     fn three_of_three_votes_reach_current_threshold() {
         let state = state_with_validators();
         let hash = hash_bytes(b"block");
-        let votes = vec![vote(&state, 0, hash, 1), vote(&state, 1, hash, 1), vote(&state, 2, hash, 1)];
+        let votes = vec![vote(&state, 0, hash, 1), vote(&state, 1, hash, 1), vote(&state, 2, hash, 1, 0)];
         assert!(validate_quorum(&state, hash, 1, &votes).is_ok());
     }
 
@@ -102,7 +102,7 @@ mod quorum_tests {
         let state = state_with_validators();
         let hash = hash_bytes(b"block");
         let v = vote(&state, 0, hash, 1);
-        assert!(validate_quorum(&state, hash, 1, &[v.clone(), v]).is_err());
+        assert!(validate_quorum(&state, hash, 1, 0, &[v.clone(), v]).is_err());
     }
 }
 
