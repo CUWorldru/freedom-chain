@@ -128,6 +128,85 @@ impl ChainStore {
         self.save_snapshot_with_certificate_opt(state, block_hash, Some(certificate), finality_validator_set)
     }
 
+    fn validate_snapshot_integrity(&self, snapshot: &StateSnapshot) -> Result<(), StorageError> {
+        if snapshot.chain_id != CHAIN_ID {
+            return Err(StorageError::InvalidSnapshot("chain id mismatch".into()));
+        }
+        if snapshot.state.height != snapshot.height {
+            return Err(StorageError::InvalidSnapshot("height mismatch".into()));
+        }
+        if snapshot.state.state_root() != snapshot.state_root {
+            return Err(StorageError::InvalidSnapshot("state root mismatch".into()));
+        }
+
+        let checkpoint = if snapshot.height == 0 {
+            if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
+                return Err(StorageError::InvalidSnapshot("genesis snapshot hash linkage mismatch".into()));
+            }
+            None
+        } else {
+            if snapshot.state.last_block_hash != snapshot.block_hash {
+                return Err(StorageError::InvalidSnapshot("snapshot state last hash mismatch".into()));
+            }
+            let checkpoint = self.get_block(snapshot.height)?
+                .ok_or_else(|| StorageError::InvalidSnapshot("checkpoint block missing".into()))?;
+            if freedom_consensus::block_hash(&checkpoint) != snapshot.block_hash {
+                return Err(StorageError::InvalidSnapshot("snapshot checkpoint hash mismatch".into()));
+            }
+            if checkpoint.header.state_root != snapshot.state_root {
+                return Err(StorageError::InvalidSnapshot("checkpoint state root mismatch".into()));
+            }
+            Some(checkpoint)
+        };
+
+        if snapshot.height == 0 {
+            if snapshot.certificate.is_some()
+                || !snapshot.finality_validator_set.is_empty()
+                || snapshot.epoch_transition_certificate.is_some()
+            {
+                return Err(StorageError::InvalidSnapshot("genesis snapshot contains finality metadata".into()));
+            }
+        } else {
+            let checkpoint = checkpoint.as_ref().expect("non-genesis checkpoint validated above");
+            let cert = snapshot.certificate.as_ref()
+                .ok_or_else(|| StorageError::InvalidSnapshot("snapshot has no finality certificate".into()))?;
+
+            if cert.block_hash != snapshot.block_hash || cert.height != snapshot.height {
+                return Err(StorageError::InvalidSnapshot("finality certificate does not match snapshot checkpoint".into()));
+            }
+            freedom_consensus::validate_finality_certificate_for_set(
+                &snapshot.finality_validator_set,
+                checkpoint,
+                cert,
+            ).map_err(StorageError::InvalidSnapshot)?;
+
+            if let Some(transition) = &snapshot.epoch_transition_certificate {
+                if freedom_consensus::validator_set_hash(&snapshot.finality_validator_set) != transition.previous_set_hash {
+                    return Err(StorageError::InvalidSnapshot("finality validator set does not match transition previous set".into()));
+                }
+            } else if freedom_consensus::validator_set_hash(&snapshot.finality_validator_set)
+                != freedom_consensus::validator_set_hash(&snapshot.state.active_validator_set)
+            {
+                return Err(StorageError::InvalidSnapshot("finality validator set does not match active set".into()));
+            }
+        }
+
+        if snapshot.epoch_transition_certificate.as_ref().map(|c| c.hash())
+            != snapshot.state.validator_set_certificate.as_ref().map(|c| c.hash())
+        {
+            return Err(StorageError::InvalidSnapshot("epoch transition certificate mismatch".into()));
+        }
+        if let Some(cert) = &snapshot.epoch_transition_certificate {
+            if cert.to_epoch != snapshot.state.epoch {
+                return Err(StorageError::InvalidSnapshot("epoch transition certificate target epoch mismatch".into()));
+            }
+            if freedom_consensus::validator_set_hash(&snapshot.state.active_validator_set) != cert.new_set_hash {
+                return Err(StorageError::InvalidSnapshot("epoch transition certificate new set mismatch".into()));
+            }
+        }
+        Ok(())
+    }
+
     fn save_snapshot_with_certificate_opt(
         &self,
         state: &ChainState,
@@ -145,6 +224,7 @@ impl ChainStore {
             finality_validator_set,
             epoch_transition_certificate: state.validator_set_certificate.clone(),
         };
+        self.validate_snapshot_integrity(&snapshot)?;
         let bytes = serde_json::to_vec(&snapshot).map_err(|e| StorageError::Codec(e.to_string()))?;
         self.db.put(Self::snapshot_key(state.height), bytes).map_err(|e| StorageError::Rocks(e.to_string()))?;
         Ok(())
@@ -153,65 +233,10 @@ impl ChainStore {
     pub fn load_snapshot(&self, height: u64) -> Result<Option<StateSnapshot>, StorageError> {
         let Some(bytes) = self.db.get(Self::snapshot_key(height)).map_err(|e| StorageError::Rocks(e.to_string()))? else { return Ok(None); };
         let snapshot: StateSnapshot = serde_json::from_slice(&bytes).map_err(|e| StorageError::Codec(e.to_string()))?;
-        if snapshot.chain_id != CHAIN_ID {
-            return Err(StorageError::InvalidSnapshot("chain id mismatch".into()));
+        if snapshot.height != height {
+            return Err(StorageError::InvalidSnapshot("height mismatch".into()));
         }
-        if snapshot.height != height || snapshot.state.height != height { return Err(StorageError::InvalidSnapshot("height mismatch".into())); }
-        if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }        if snapshot.height == 0 {
-            if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
-                return Err(StorageError::InvalidSnapshot("genesis snapshot hash linkage mismatch".into()));
-            }
-        } else {
-            let stored_checkpoint = self.get_block(snapshot.height)?
-                .ok_or_else(|| StorageError::InvalidSnapshot("checkpoint block missing".into()))?;
-            if freedom_consensus::block_hash(&stored_checkpoint) != snapshot.block_hash {
-                return Err(StorageError::InvalidSnapshot("snapshot checkpoint hash mismatch".into()));
-            }
-            if stored_checkpoint.header.state_root != snapshot.state_root {
-                return Err(StorageError::InvalidSnapshot("checkpoint state root mismatch".into()));
-            }
-        }
-        if snapshot.certificate.is_none() && snapshot.height != 0 {
-            return Err(StorageError::InvalidSnapshot("snapshot has no finality certificate".into()));
-        }
-        if let Some(cert) = &snapshot.certificate {
-            let checkpoint = self.get_block(snapshot.height)?
-                .ok_or_else(|| StorageError::InvalidSnapshot("finality checkpoint block missing".into()))?;
-            if cert.block_hash != snapshot.block_hash || cert.height != snapshot.height {
-                return Err(StorageError::InvalidSnapshot("finality certificate does not match snapshot checkpoint".into()));
-            }
-            freedom_consensus::validate_finality_certificate_for_set(
-                &snapshot.finality_validator_set,
-                &checkpoint,
-                cert,
-            ).map_err(StorageError::InvalidSnapshot)?;
-        }
-        if let Some(cert) = &snapshot.certificate {
-            if let Some(transition) = &snapshot.epoch_transition_certificate {
-                if freedom_consensus::validator_set_hash(&snapshot.finality_validator_set) != transition.previous_set_hash {
-                    return Err(StorageError::InvalidSnapshot("finality validator set does not match transition previous set".into()));
-                }
-            } else if freedom_consensus::validator_set_hash(&snapshot.finality_validator_set)
-                != freedom_consensus::validator_set_hash(&snapshot.state.active_validator_set)
-            {
-                return Err(StorageError::InvalidSnapshot("finality validator set does not match active set".into()));
-            }
-        } else if snapshot.height != 0 {
-            return Err(StorageError::InvalidSnapshot("non-genesis snapshot is not finalized".into()));
-        }
-if snapshot.epoch_transition_certificate.as_ref().map(|c| c.hash())
-            != snapshot.state.validator_set_certificate.as_ref().map(|c| c.hash()) {
-            return Err(StorageError::InvalidSnapshot("epoch transition certificate mismatch".into()));
-        }
-        if let Some(cert) = &snapshot.epoch_transition_certificate {
-            if cert.to_epoch != snapshot.state.epoch {
-                return Err(StorageError::InvalidSnapshot("epoch transition certificate target epoch mismatch".into()));
-            }
-            if freedom_consensus::validator_set_hash(&snapshot.state.active_validator_set) != cert.new_set_hash {
-                return Err(StorageError::InvalidSnapshot("epoch transition certificate new set mismatch".into()));
-            }
-        }
-        
+        self.validate_snapshot_integrity(&snapshot)?;
         Ok(Some(snapshot))
     }
 
@@ -328,6 +353,63 @@ mod tests {
         store.db.put(ChainStore::snapshot_key(1), serde_json::to_vec(&snapshot).unwrap()).unwrap();
         let err = store.load_snapshot(1).unwrap_err();
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "checkpoint block missing"));
+    }
+
+
+    #[test]
+    fn rejects_snapshot_write_without_checkpoint() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: 1, initial_supply: 0, validators: vec![]
+        });
+        state.height = 1;
+        state.last_block_hash = [7; 32];
+        let err = store.save_snapshot(&state, [7; 32]).unwrap_err();
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "checkpoint block missing"));
+        assert!(store.load_snapshot(1).unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_snapshot_write_with_mismatched_checkpoint_state_root() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        store.put_block(&block).unwrap();
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: 1, initial_supply: 0, validators: vec![]
+        });
+        state.height = 1;
+        state.last_block_hash = block_hash(&block);
+        let err = store.save_snapshot(&state, block_hash(&block)).unwrap_err();
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "checkpoint state root mismatch"));
+        assert!(store.load_snapshot(1).unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_snapshot_write_with_mismatched_state_hash_linkage() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        store.put_block(&block).unwrap();
+        let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: 1, initial_supply: 0, validators: vec![]
+        });
+        let err = store.save_snapshot(&state, block_hash(&block)).unwrap_err();
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "height mismatch"));
+        assert!(store.load_snapshot(0).is_ok());
     }
 
     #[test]
