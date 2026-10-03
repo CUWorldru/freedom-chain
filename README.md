@@ -596,3 +596,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - the node requests the latest available snapshot on peer connection using a bounded discovery target;
 - the response remains bound to the outstanding snapshot request ID and passes the M53 checkpoint/certificate checks before activation;
 - after successful atomic snapshot activation, normal block sync resumes from the recovered height.
+
+
+## M56 — Transport-Level Sync Trust Binding
+
+- block-sync responses are now bound to the exact libp2p outbound request ID in addition to the protocol request hash and requested height;
+- snapshot responses are now bound to the exact outbound request ID, destination peer, protocol request hash and requested target height;
+- a response from a different peer cannot satisfy a pending request merely by reproducing the deterministic protocol `request_id`;
+- snapshot responses are explicitly rejected when their returned height exceeds the requested target;
+- this closes the remaining gap between application-level request correlation and the authenticated request-response transport.
