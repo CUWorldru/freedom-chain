@@ -190,7 +190,7 @@ mod tests {
     use freedom_crypto::sign;
     use freedom_primitives::Supply;
     use freedom_state::Account;
-    use freedom_types::{Genesis, TransferPayload, TxKind, Validator};
+    use freedom_types::{BridgeMessage, BridgeMessageApprovalSet, BridgeMintAuthorization, BridgeMintTransactionPayload, Genesis, TransferPayload, TxKind, Validator, VerifiedDeposit};
 
     fn test_state() -> ChainState {
         let validators = (0u8..3).map(|i| {
@@ -216,6 +216,37 @@ mod tests {
         state.supply = Supply { total: 1_000, circulating: 1_000, locked: 0, staked: 0, treasury: 0 };
         state.assert_invariants();
         state
+    }
+
+
+    #[test]
+    fn runtime_routes_bridge_mint_as_transaction_kind() {
+        let mut state = test_state();
+        let sender = state.accounts.keys().next().copied().unwrap();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]);
+        let payload = BridgeMintTransactionPayload {
+            message: BridgeMessage {
+                protocol_version: 1, source_chain_id: 2, destination_chain_id: CHAIN_ID,
+                bridge_id: [1;32], asset_id: [2;32], source_tx_hash: [3;32],
+                source_event_index: 0, nonce: 1, amount: 1, recipient: [4;32], message_hash: [5;32],
+            },
+            deposit: VerifiedDeposit {
+                canonical_asset_id:[2;32], representation_asset_id:[6;32], bridge_id:[1;32],
+                source_chain_id:2, tx_hash:[3;32], event_index:0, block_or_slot:0,
+                confirmations:1, amount:1, recipient:vec![4;20], replay_key:[7;32], proof_hash:[8;32],
+            },
+            authorization: BridgeMintAuthorization {
+                bridge_id:[1;32], message_hash:[5;32], replay_key:[7;32],
+                canonical_asset_id:[2;32], representation_asset_id:[6;32],
+                source_chain_id:2, source_tx_hash:[3;32], source_event_index:0,
+                destination_chain_id:CHAIN_ID, nonce:1, amount:1, recipient:[4;32],
+                approval_count:1, authorization_hash:[9;32],
+            },
+            approvals: BridgeMessageApprovalSet { bridge_id:[1;32], message_hash:[5;32], approvals:vec![] },
+        }.encode().unwrap();
+        let mut tx=Transaction{chain_id:CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload,fee:0,signature:Vec::new()};
+        tx.signature=sign(&signing_key,&tx.signing_bytes()).to_vec();
+        assert_eq!(execute_transaction(&mut state,&tx),Err("InvalidBridgeMintTransaction".into()));
     }
 
     #[test]
