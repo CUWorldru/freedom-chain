@@ -12,6 +12,9 @@ pub const NATIVE_ASSET_SYMBOL: &str = "321M";
 pub const GAS_ASSET_SYMBOL: &str = NATIVE_ASSET_SYMBOL;
 pub const NATIVE_ASSET_SCALE: u128 = 100_000;
 
+#[deprecated(note="use NATIVE_ASSET_SCALE; legacy FDM name retained for compatibility")]
+pub const FDM_SCALE: u128 = NATIVE_ASSET_SCALE;
+
 pub fn hash_bytes(data: &[u8]) -> Hash {
     *blake3::hash(data).as_bytes()
 }
