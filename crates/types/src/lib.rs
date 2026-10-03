@@ -303,6 +303,48 @@ pub enum BridgeAdapterKind { Bitcoin = 1, Evm = 2, Tron = 3, Ton = 4, Solana = 5
 #[repr(u8)]
 pub enum BridgeFinalityModel { Confirmations = 1, BlockFinality = 2, SlotFinality = 3, Other = 255 }
 
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BridgeApprovalMode { Quorum = 1, Threshold = 2, QuorumAndThreshold = 3 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeSecurityPolicy {
+    pub bridge_id: Hash,
+    pub approval_mode: BridgeApprovalMode,
+    pub validator_quorum: u16,
+    pub validator_total: u16,
+    pub threshold_signers: u16,
+    pub threshold_total: u16,
+    pub min_external_confirmations: u64,
+    pub max_deposit_amount: u128,
+    pub max_withdrawal_amount: u128,
+    pub daily_limit: u128,
+    pub emergency_paused: bool,
+    pub nonce_floor: u64,
+}
+impl BridgeSecurityPolicy {
+    pub fn validate(&self)->bool {
+        self.bridge_id != [0;32]
+            && self.validator_total > 0
+            && self.validator_quorum > 0
+            && self.validator_quorum <= self.validator_total
+            && self.threshold_total > 0
+            && self.threshold_signers > 0
+            && self.threshold_signers <= self.threshold_total
+            && self.validator_quorum * 3 > self.validator_total * 2
+            && self.min_external_confirmations > 0
+            && self.max_deposit_amount > 0
+            && self.max_withdrawal_amount > 0
+            && self.daily_limit >= self.max_withdrawal_amount
+    }
+    pub fn quorum_reached(&self, approvals:u16)->bool { approvals >= self.validator_quorum }
+    pub fn threshold_reached(&self, signatures:u16)->bool { signatures >= self.threshold_signers }
+    pub fn deposit_allowed(&self, amount:u128)->bool { !self.emergency_paused && amount > 0 && amount <= self.max_deposit_amount }
+    pub fn withdrawal_allowed(&self, amount:u128)->bool { !self.emergency_paused && amount > 0 && amount <= self.max_withdrawal_amount && amount <= self.daily_limit }
+    pub fn nonce_allowed(&self, nonce:u64)->bool { nonce >= self.nonce_floor }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeAdapterDescriptor {
     pub bridge_id: Hash,
@@ -823,6 +865,16 @@ impl SolanaAdapter {
   Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.replay_event_index(),block_or_slot:p.slot,confirmations:p.confirmations,proof:p.proof_bytes()})
  }
  pub fn build_spl_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.len()!=32{return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
+}
+
+
+#[cfg(test)]
+mod m88_bridge_security_tests {
+ use super::*;
+ fn p()->BridgeSecurityPolicy{BridgeSecurityPolicy{bridge_id:[1;32],approval_mode:BridgeApprovalMode::QuorumAndThreshold,validator_quorum:7,validator_total:10,threshold_signers:3,threshold_total:5,min_external_confirmations:12,max_deposit_amount:1_000_000,max_withdrawal_amount:500_000,daily_limit:2_000_000,emergency_paused:false,nonce_floor:10}}
+ #[test] fn policy_requires_supermajority_quorum(){assert!(p().validate());assert!(p().quorum_reached(7));assert!(!p().quorum_reached(6));}
+ #[test] fn threshold_and_pause_are_enforced(){assert!(p().threshold_reached(3));assert!(!p().threshold_reached(2));assert!(p().deposit_allowed(100));assert!(p().withdrawal_allowed(100));let mut x=p();x.emergency_paused=true;assert!(!x.deposit_allowed(100));assert!(!x.withdrawal_allowed(100));}
+ #[test] fn limits_and_nonce_are_enforced(){assert!(!p().deposit_allowed(1_000_001));assert!(!p().withdrawal_allowed(500_001));assert!(!p().nonce_allowed(9));assert!(p().nonce_allowed(10));}
 }
 
 #[cfg(test)]
