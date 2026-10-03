@@ -365,3 +365,61 @@ mod m35_tests {
  #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));}
  #[test] fn pending_new_stake_activates_next_epoch(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.pending_validator_set.contains_key(&id));s.active_validator_set.clear();s.height=9;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
 }
+
+
+#[cfg(test)]
+mod m77_asset_registry_tests {
+ use super::*;
+ use freedom_types::{AssetDefinition, AssetStatus, AssetType, Genesis};
+
+ fn bridged_asset(source_chain_id:u32, contract:&[u8], bridge_id:Hash) -> AssetDefinition {
+  let issuer=[7u8;32];
+  let asset_id=AssetDefinition::compute_asset_id(
+   source_chain_id, AssetType::Bridged, contract, issuer, bridge_id
+  );
+  AssetDefinition{
+   asset_id,
+   source_chain_id,
+   asset_type:AssetType::Bridged,
+   contract_address:contract.to_vec(),
+   symbol:"USDT".to_string(),
+   decimals:6,
+   issuer,
+   bridge_id,
+   status:AssetStatus::Active,
+  }
+ }
+
+ #[test]
+ fn genesis_registers_frc_as_native_asset() {
+  let state=ChainState::genesis(&Genesis::default());
+  let frc=state.asset_registry.values().find(|a| a.symbol=="FRC").unwrap();
+  assert_eq!(frc.source_chain_id, freedom_primitives::CHAIN_ID);
+  assert_eq!(frc.asset_type, AssetType::Native);
+  assert_eq!(frc.status, AssetStatus::Active);
+  assert!(frc.validate_identity());
+ }
+
+ #[test]
+ fn identical_symbols_on_different_chains_are_distinct_assets() {
+  let mut state=ChainState::genesis(&Genesis::default());
+  let eth=bridged_asset(1, b"0xeth-usdt", [1u8;32]);
+  let tron=bridged_asset(2, b"TTRONUSDT", [2u8;32]);
+  assert_ne!(eth.asset_id, tron.asset_id);
+  state.register_asset(eth.clone()).unwrap();
+  state.register_asset(tron.clone()).unwrap();
+  assert_eq!(state.asset_registry.get(&eth.asset_id).unwrap().symbol, "USDT");
+  assert_eq!(state.asset_registry.get(&tron.asset_id).unwrap().symbol, "USDT");
+ }
+
+ #[test]
+ fn asset_registration_rejects_forged_identity_and_duplicate() {
+  let mut state=ChainState::genesis(&Genesis::default());
+  let mut asset=bridged_asset(1, b"0xabc", [3u8;32]);
+  asset.asset_id=[9u8;32];
+  assert_eq!(state.register_asset(asset.clone()), Err(StateError::InvalidAsset));
+  let valid=bridged_asset(1, b"0xabc", [3u8;32]);
+  state.register_asset(valid.clone()).unwrap();
+  assert_eq!(state.register_asset(valid), Err(StateError::DuplicateAsset));
+ }
+}
