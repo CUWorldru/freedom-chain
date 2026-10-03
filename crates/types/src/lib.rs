@@ -2581,6 +2581,14 @@ impl EthereumTransactionProof {
     }
 }
 
+    pub fn verify_binding(&self, envelope:&CrossChainFinalityEnvelope)->bool {
+        self.validate_structure()
+            && envelope.proof_kind==CrossChainProofKind::Ethereum
+            && envelope.finalized_block_number()==self.block_number
+            && envelope.finalized_hash==self.block_hash
+            && envelope.proof_hash==self.proof_hash()
+    }
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumFinalityProof {
     pub finalized_block_number: u64,
@@ -2598,6 +2606,7 @@ impl EthereumFinalityProof {
     }
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct EvmFinalityAdapter;
 
 impl CrossChainProofAdapter for EvmFinalityAdapter {
