@@ -346,6 +346,8 @@ pub fn publish(
         NetworkMessage::Precommit(_) => (IdentTopic::new(PRECOMMIT_TOPIC), encode_message(message)?),
         NetworkMessage::Timeout(_) => (timeout_topic(), encode_message(message)?),
         NetworkMessage::Evidence(_) => (IdentTopic::new(EVIDENCE_TOPIC), encode_message(message)?),
+        NetworkMessage::ValidatorSetVote(_) => (validator_set_vote_topic(), encode_message(message)?),
+        NetworkMessage::ValidatorSetCertificate(_) => (validator_set_certificate_topic(), encode_message(message)?),
         NetworkMessage::SyncRequest(_) | NetworkMessage::SyncResponse(_) => (sync_topic(), encode_message(message)?),
     };
     Ok(swarm.behaviour_mut().gossipsub.publish(topic, bytes)?)
