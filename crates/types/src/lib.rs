@@ -2661,12 +2661,9 @@ impl EthereumTransactionProof {
     pub fn validate_structure(&self)->bool{self.block_number>0&&self.block_hash!=[0;32]&&self.transaction_hash!=[0;32]&&self.receipt_root!=[0;32]&&!self.proof_nodes.is_empty()&&!self.receipt_value.is_empty()}
     pub fn verify_receipt_mpt(&self)->bool{
         if !self.validate_structure(){return false;}
-        let key_rlp=ethereum_rlp_encode_bytes(&self.transaction_index.to_be_bytes().into_iter().skip_while(|b|*b==0).collect::<Vec<_>>());
-        let key=ethereum_rlp_decode_list(&ethereum_rlp_encode_bytes(&key_rlp)).ok();
-        let _=key;
-        let mut n=self.transaction_index as u64;let mut nibbles=Vec::new();
-        let mut bytes=Vec::new();while n>0{bytes.push((n&0xff) as u8);n>>=8;}if bytes.is_empty(){bytes.push(0);}bytes.reverse();
-        for b in bytes{nibbles.push(b>>4);nibbles.push(b&0x0f);}
+        let key_rlp=ethereum_rlp_encode_u64(self.transaction_index as u64);
+        let mut nibbles=Vec::with_capacity(key_rlp.len()*2);
+        for b in key_rlp{nibbles.push(b>>4);nibbles.push(b&0x0f);}
         ethereum_mpt_verify(self.receipt_root,&nibbles,&self.proof_nodes,&self.receipt_value).is_ok()
     }
     pub fn verify_binding(&self,envelope:&CrossChainFinalityEnvelope)->bool{self.validate_structure()&&envelope.proof_kind==CrossChainProofKind::Ethereum&&envelope.finalized_height==self.block_number&&envelope.finalized_hash==self.block_hash&&envelope.proof_hash==self.proof_hash()}
@@ -2845,6 +2842,7 @@ pub struct EthereumEndToEndProof {
     pub committee:EthereumSyncCommitteeProof,
     pub signature:EthereumSyncCommitteeSignature,
     pub receipt:EthereumTransactionProof,
+    pub execution_header:EthereumExecutionBlockHeader,
 }
 
 impl EthereumEndToEndProof {
@@ -2860,6 +2858,12 @@ impl EthereumEndToEndProof {
         if !self.receipt.verify_binding(&self.envelope){return false;}
         if self.receipt.block_hash!=self.finality.finalized_block_hash
             || self.receipt.block_number!=self.finality.finalized_block_number{return false;}
+        if !self.execution_header.verify_execution_binding(
+            self.finality.finalized_block_hash,
+            self.finality.state_root,
+            self.finality.finalized_block_number,
+            self.receipt.receipt_root,
+        ){return false;}
         true
     }
     pub fn proof_hash(&self)->Hash{
@@ -2870,6 +2874,7 @@ impl EthereumEndToEndProof {
         b.extend_from_slice(&self.committee.proof_hash());
         b.extend_from_slice(&self.signature.proof_hash());
         b.extend_from_slice(&self.receipt.proof_hash());
+        b.extend_from_slice(&self.execution_header.proof_hash());
         freedom_primitives::hash_bytes(&b)
     }
 }
