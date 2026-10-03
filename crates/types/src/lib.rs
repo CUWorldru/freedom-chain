@@ -539,3 +539,67 @@ impl ValidatorPrecommit {
 }
 
 
+
+
+#[cfg(test)]
+mod m78_bridge_message_tests {
+ use super::*;
+
+ fn message() -> BridgeMessage {
+  let mut m = BridgeMessage {
+   protocol_version: BRIDGE_MESSAGE_PROTOCOL_VERSION,
+   source_chain_id: 1,
+   destination_chain_id: freedom_primitives::CHAIN_ID,
+   bridge_id: [1u8;32],
+   asset_id: [2u8;32],
+   source_tx_hash: [3u8;32],
+   source_event_index: 4,
+   nonce: 5,
+   amount: 600_000,
+   recipient: [6u8;32],
+   message_hash: [0u8;32],
+  };
+  m.message_hash = m.compute_hash();
+  m
+ }
+
+ #[test]
+ fn bridge_message_hash_binds_all_security_domains() {
+  let m = message();
+  assert!(m.validate_hash());
+  for mutate in 0..8 {
+   let mut x = m.clone();
+   match mutate {
+    0 => x.source_chain_id ^= 1,
+    1 => x.destination_chain_id ^= 1,
+    2 => x.bridge_id[0] ^= 1,
+    3 => x.asset_id[0] ^= 1,
+    4 => x.source_tx_hash[0] ^= 1,
+    5 => x.nonce ^= 1,
+    6 => x.amount ^= 1,
+    _ => x.recipient[0] ^= 1,
+   }
+   assert!(!x.validate_hash());
+  }
+ }
+
+ #[test]
+ fn bridge_replay_key_binds_source_event_identity() {
+  let a = message();
+  let mut b = a.clone();
+  b.source_event_index += 1;
+  assert_ne!(a.replay_key(), b.replay_key());
+  b = a.clone();
+  b.nonce += 1;
+  assert_ne!(a.replay_key(), b.replay_key());
+ }
+
+ #[test]
+ fn bridge_hash_is_not_just_serialized_struct_hash() {
+  let m = message();
+  assert_ne!(
+   m.compute_hash(),
+   freedom_primitives::hash_bytes(&serde_json::to_vec(&m).unwrap())
+  );
+ }
+}
