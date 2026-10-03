@@ -1156,3 +1156,12 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - Both insertion and deletion are represented by old and new entries, including absence proofs through an empty leaf.
 - Steps are verified sequentially, so every intermediate root is authenticated.
 - This is the compact update architecture; the earlier sorted-leaf accumulator remains a legacy V1 format.
+
+
+## M128 — Bitcoin Block to Compact SMT Transition
+
+- Adds a bridge from parsed Bitcoin block transactions to the fixed-key SMT update format.
+- The generator derives the exact spent outpoints and created outputs from the block itself.
+- Witness steps are checked against that block-derived delta before a compact proof is constructed.
+- The state layer first validates the block against the canonical Bitcoin parent and then verifies the compact SMT transition.
+- Bitcoin block hash and UTXO SMT root remain separate commitments; the block hash is never incorrectly treated as the UTXO root.
