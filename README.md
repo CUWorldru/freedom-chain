@@ -1009,3 +1009,8 @@ Checkpoint advancement now has an explicit reorg boundary. A candidate header se
 ## M107 — Persistent Bitcoin Reorg Evidence
 
 Detected Bitcoin reorg conflicts are now stored as bounded, deduplicated evidence per bridge. Each record binds the trusted checkpoint to the candidate tip and candidate chainwork through a domain-separated fingerprint. The journal is capped at 32 entries and is included in the state root, so evidence survives restart/snapshot without unbounded state growth.
+
+
+## M108 — Bitcoin Reorg Severity Policy
+
+Bitcoin reorg evidence can now be classified as Normal, Elevated, or Critical by a persisted bridge policy. A competing chain with greater accumulated chainwork is Critical; a sufficiently deeper competing tip is Elevated; other conflicts are Normal. Classification is informational/policy state only and never mutates or rolls back the trusted checkpoint.
