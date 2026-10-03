@@ -519,3 +519,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - block execution errors abort recovery rather than partially activating the corrupted replay;
 - replay still verifies the resulting committed block hash after execution;
 - regression tests cover corrupted previous hash, proposer, and height continuity.
+
+## M47 — Storage Atomicity and Tip Integrity
+
+- block bytes, `meta:height`, and `meta:last_hash` are committed through one RocksDB write batch;
+- zero-height blocks cannot be persisted as normal chain blocks;
+- recovery validates that tip metadata points to an actual persisted block with the matching hash;
+- genesis metadata must remain zero-hash when the stored height is zero;
+- regression tests cover invalid zero-height writes and corrupted tip hash metadata.
