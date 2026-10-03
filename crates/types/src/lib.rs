@@ -658,6 +658,24 @@ impl CrossChainAssetRegistry {
                     b.representation.asset_id == a.representation.asset_id
                 }).count() == 1
             })
+        && self.representations.iter().all(|a| {
+            self.representations.iter().filter(|b| {
+                b.representation.source_chain_id == a.representation.source_chain_id
+                    && b.asset_kind == a.asset_kind
+                    && b.representation.contract_address == a.representation.contract_address
+                    && b.representation.bridge_id == a.representation.bridge_id
+            }).count() == 1
+        })
+    }
+
+    pub fn representations_for_kind(
+        &self,
+        asset_kind: CrossChainAssetKind,
+    ) -> Vec<&CrossChainAssetRepresentation> {
+        self.representations
+            .iter()
+            .filter(|r| r.asset_kind == asset_kind)
+            .collect()
     }
 
     pub fn find_representation(
