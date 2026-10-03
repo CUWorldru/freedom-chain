@@ -63,8 +63,8 @@ mod tests {
     #[test]
     fn native_asset_formatting_is_integer_only() {
         assert_eq!(format_321m(100_000), "1");
-        assert_eq!(format_mfdm(10_000), "0.1");
-        assert_eq!(format_mfdm(1), "0.00001");
+        assert_eq!(format_321m(10_000), "0.1");
+        assert_eq!(format_321m(1), "0.00001");
     }
 #[deprecated(note="use format_321m; legacy FDM unit name retained for compatibility")]
 pub fn format_mfdm(amount:u128)->String{format_321m(amount)}
