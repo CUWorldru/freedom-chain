@@ -86,6 +86,7 @@ pub fn build_next_block(
     proposer: freedom_primitives::Address,
     timestamp: u64,
     epoch: u64,
+    round: u64,
     max_transactions: usize,
 ) -> Result<Block, String> {
     if proposer == [0; 32] { return Err("invalid proposer".into()); }
@@ -103,7 +104,7 @@ pub fn build_next_block(
     Ok(Block {
         header: freedom_types::BlockHeader {
             height,
-            round: epoch,
+            round,
             previous_hash: state.last_block_hash,
             state_root,
             tx_root,
@@ -174,7 +175,7 @@ mod tests {
         assert_eq!(mempool.len(), 1);
 
         let proposer = freedom_consensus::proposer_for_height(&state, 1).unwrap();
-        let block = build_next_block(&state, &mempool, proposer, 1, 1, 100).unwrap();
+        let block = build_next_block(&state, &mempool, proposer, 1, 1, 0, 100).unwrap();
         assert_eq!(block.transactions, vec![tx.clone()]);
         assert_eq!(block.header.tx_root, tx_root(&block.transactions));
         assert_eq!(block.header.receipts_root, receipts_root(&{
