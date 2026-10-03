@@ -159,6 +159,7 @@ mod tests {
                 owner,
                 consensus_key: key,
                 stake: 0,
+                unbonding_stake: 0,
                 blocks_proposed: 0,
                 blocks_finalized: 0,
                 missed_votes: 0,
