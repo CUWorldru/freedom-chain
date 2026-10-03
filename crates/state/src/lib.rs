@@ -167,6 +167,11 @@ impl ChainState {
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
  }
+ pub fn validate_bitcoin_utxo_accumulator_proof(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoAccumulatorProof)->Result<(),StateError>{
+  let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if proof.accumulator.bridge_id!=bridge_id||!proof.verify_membership(canonical){return Err(StateError::InvalidBridgeWithdrawal);}
+  Ok(())
+ }
  pub fn validate_bitcoin_utxo_spend_state(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoSpendStateProof)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if proof.utxo.bridge_id!=bridge_id||proof.utxo.chain_id==0{return Err(StateError::InvalidBridgeWithdrawal);}
