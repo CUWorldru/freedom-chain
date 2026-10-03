@@ -3,6 +3,30 @@ use freedom_crypto::verify;
 use freedom_primitives::{CHAIN_ID,Hash};
 use freedom_state::{ChainState,StateError};
 use freedom_types::{Block,Genesis,Receipt,Transaction};
+pub fn collect_validator_set_certificate(
+    state: &ChainState,
+    votes: &[freedom_types::ValidatorSetVote],
+) -> Result<freedom_types::ValidatorSetCertificate, String> {
+    if votes.is_empty() { return Err("no validator set votes".into()); }
+    let mut unique = std::collections::BTreeSet::new();
+    for vote in votes {
+        freedom_network::validate_validator_set_vote(state, vote)?;
+        if !unique.insert(vote.validator_id) {
+            return Err("duplicate validator set vote".into());
+        }
+    }
+    if !freedom_consensus::stake_quorum_reached(state, unique.iter()) {
+        return Err("validator set vote quorum not reached".into());
+    }
+    Ok(freedom_types::ValidatorSetCertificate {
+        from_epoch: state.epoch,
+        to_epoch: state.epoch.saturating_add(1),
+        previous_set_hash: freedom_consensus::validator_set_hash(&state.active_validator_set),
+        new_set_hash: freedom_consensus::validator_set_hash(&state.pending_validator_set),
+        votes: votes.to_vec(),
+    })
+}
+
 pub fn commit_validator_set_certificate(
     state: &mut ChainState,
     certificate: &freedom_types::ValidatorSetCertificate,
