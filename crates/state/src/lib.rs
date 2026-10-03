@@ -178,7 +178,7 @@ impl ChainState {
     || attestation.previous_utxo_root!=commitment.previous_root
     || attestation.accumulator_root!=commitment.next_root
     || !commitment.verify()
-    || !attestation.verify(&freedom_types::BitcoinChainCheckpoint{height:commitment.block_height,block_hash:commitment.block_hash,chainwork:[0;32]},&validators,policy.validator_quorum) {
+    || !attestation.verify_signatures(&validators,policy.validator_quorum) {
       return Err(StateError::InvalidBridgeWithdrawal);
   }
   Ok(())
