@@ -2979,6 +2979,175 @@ impl CrossChainProofAdapter for EvmFinalityAdapter {
     }
 }
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TronBlockHeaderProof {
+    pub raw_data: Vec<u8>,
+    pub block_id: Hash,
+}
+
+impl TronBlockHeaderProof {
+    fn read_varint(bytes: &[u8], pos: &mut usize) -> Result<u64, String> {
+        let mut value = 0u64;
+        for shift in (0..70).step_by(7) {
+            if *pos >= bytes.len() { return Err("truncated protobuf varint".into()); }
+            let b = bytes[*pos];
+            *pos += 1;
+            if shift == 63 && b > 1 { return Err("protobuf varint overflow".into()); }
+            value |= ((b & 0x7f) as u64) << shift;
+            if b & 0x80 == 0 { return Ok(value); }
+        }
+        Err("protobuf varint too long".into())
+    }
+
+    fn read_len_delimited(bytes: &[u8], pos: &mut usize) -> Result<Vec<u8>, String> {
+        let len = Self::read_varint(bytes, pos)? as usize;
+        let end = pos.checked_add(len).ok_or("protobuf length overflow")?;
+        if end > bytes.len() { return Err("truncated protobuf bytes field".into()); }
+        let out = bytes[*pos..end].to_vec();
+        *pos = end;
+        Ok(out)
+    }
+
+    fn parse_raw_data(&self) -> Result<(u64, Hash, Hash, u64, Vec<u8>, Option<Hash>), String> {
+        let mut pos = 0usize;
+        let mut number = None;
+        let mut tx_trie_root = None;
+        let mut parent_hash = None;
+        let mut timestamp = None;
+        let mut witness_address = None;
+        let mut account_state_root = None;
+
+        while pos < self.raw_data.len() {
+            let key = Self::read_varint(&self.raw_data, &mut pos)?;
+            let field = key >> 3;
+            let wire = key & 7;
+            if field == 0 { return Err("protobuf field number cannot be zero".into()); }
+
+            match (field, wire) {
+                (1, 0) => {
+                    if timestamp.is_some() { return Err("duplicate timestamp".into()); }
+                    timestamp = Some(Self::read_varint(&self.raw_data, &mut pos)?);
+                }
+                (2, 2) => {
+                    if tx_trie_root.is_some() { return Err("duplicate txTrieRoot".into()); }
+                    let v = Self::read_len_delimited(&self.raw_data, &mut pos)?;
+                    if v.len() != 32 { return Err("txTrieRoot must be 32 bytes".into()); }
+                    let mut h = [0u8; 32]; h.copy_from_slice(&v); tx_trie_root = Some(h);
+                }
+                (3, 2) => {
+                    if parent_hash.is_some() { return Err("duplicate parentHash".into()); }
+                    let v = Self::read_len_delimited(&self.raw_data, &mut pos)?;
+                    if v.len() != 32 { return Err("parentHash must be 32 bytes".into()); }
+                    let mut h = [0u8; 32]; h.copy_from_slice(&v); parent_hash = Some(h);
+                }
+                (7, 0) => {
+                    if number.is_some() { return Err("duplicate block number".into()); }
+                    number = Some(Self::read_varint(&self.raw_data, &mut pos)?);
+                }
+                (9, 2) => {
+                    if witness_address.is_some() { return Err("duplicate witness_address".into()); }
+                    witness_address = Some(Self::read_len_delimited(&self.raw_data, &mut pos)?);
+                }
+                (11, 2) => {
+                    if account_state_root.is_some() { return Err("duplicate accountStateRoot".into()); }
+                    let v = Self::read_len_delimited(&self.raw_data, &mut pos)?;
+                    if v.len() != 32 { return Err("accountStateRoot must be 32 bytes".into()); }
+                    let mut h = [0u8; 32]; h.copy_from_slice(&v); account_state_root = Some(h);
+                }
+                (_, 0) => { let _ = Self::read_varint(&self.raw_data, &mut pos)?; }
+                (_, 2) => { let _ = Self::read_len_delimited(&self.raw_data, &mut pos)?; }
+                (_, 1) => {
+                    let end = pos.checked_add(8).ok_or("protobuf length overflow")?;
+                    if end > self.raw_data.len() { return Err("truncated protobuf fixed64 field".into()); }
+                    pos = end;
+                }
+                (_, 5) => {
+                    let end = pos.checked_add(4).ok_or("protobuf length overflow")?;
+                    if end > self.raw_data.len() { return Err("truncated protobuf fixed32 field".into()); }
+                    pos = end;
+                }
+                _ => return Err("unsupported protobuf wire type".into()),
+            }
+        }
+
+        Ok((
+            number.ok_or("missing block number")?,
+            tx_trie_root.ok_or("missing txTrieRoot")?,
+            parent_hash.ok_or("missing parentHash")?,
+            timestamp.ok_or("missing timestamp")?,
+            witness_address.ok_or("missing witness_address")?,
+            account_state_root,
+        ))
+    }
+
+    pub fn sha256_raw_data(&self) -> Hash {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(&self.raw_data).into()
+    }
+
+    pub fn block_number(&self) -> Result<u64, String> { Ok(self.parse_raw_data()?.0) }
+    pub fn tx_trie_root(&self) -> Result<Hash, String> { Ok(self.parse_raw_data()?.1) }
+    pub fn parent_hash(&self) -> Result<Hash, String> { Ok(self.parse_raw_data()?.2) }
+    pub fn timestamp_ms(&self) -> Result<u64, String> { Ok(self.parse_raw_data()?.3) }
+    pub fn witness_address(&self) -> Result<Vec<u8>, String> { Ok(self.parse_raw_data()?.4) }
+    pub fn account_state_root(&self) -> Result<Option<Hash>, String> { Ok(self.parse_raw_data()?.5) }
+
+    pub fn computed_block_id(&self) -> Result<Hash, String> {
+        let number = self.block_number()?;
+        let digest = self.sha256_raw_data();
+        let mut id = [0u8; 32];
+        id[..8].copy_from_slice(&number.to_be_bytes());
+        id[8..].copy_from_slice(&digest[8..]);
+        Ok(id)
+    }
+
+    pub fn validate(&self) -> bool {
+        !self.raw_data.is_empty()
+            && self.block_id != [0; 32]
+            && self.parse_raw_data().is_ok()
+            && self.computed_block_id().map(|id| id == self.block_id).unwrap_or(false)
+    }
+
+    pub fn verify_binding(
+        &self,
+        expected_height: u64,
+        expected_block_id: Hash,
+        expected_parent_hash: Hash,
+        expected_tx_trie_root: Hash,
+    ) -> bool {
+        self.validate()
+            && self.block_number().ok() == Some(expected_height)
+            && self.block_id == expected_block_id
+            && self.parent_hash().ok() == Some(expected_parent_hash)
+            && self.tx_trie_root().ok() == Some(expected_tx_trie_root)
+    }
+}
+
+impl TronFinalityAdapter {
+    pub fn verify_block_header(
+        &self,
+        proof: &TronBlockHeaderProof,
+        envelope: &CrossChainFinalityEnvelope,
+    ) -> Result<(), CrossChainProofError> {
+        if envelope.proof_kind != CrossChainProofKind::Tron || !envelope.validate_structure() {
+            return Err(CrossChainProofError::InvalidEnvelope);
+        }
+        if !proof.validate()
+            || proof.block_number().ok() != Some(envelope.finalized_height)
+            || proof.block_id != envelope.finalized_hash
+        {
+            return Err(CrossChainProofError::InvalidProof);
+        }
+        if let Ok(Some(root)) = proof.account_state_root() {
+            if root != envelope.state_root {
+                return Err(CrossChainProofError::InvalidProof);
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TronFinalityAdapter;
 
