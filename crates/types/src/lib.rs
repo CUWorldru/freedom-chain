@@ -170,6 +170,12 @@ pub struct BlockProposal {
     pub round: u64,
     pub proposer: Address,
     pub block: Block,
+    #[serde(default)]
+    pub valid_round: Option<u64>,
+    #[serde(default)]
+    pub valid_precommits: Vec<ValidatorPrecommit>,
+    #[serde(default)]
+    pub timeout_certificate: Option<TimeoutCertificate>,
     pub signature: Vec<u8>,
 }
 impl BlockProposal {
@@ -180,6 +186,11 @@ impl BlockProposal {
         out.extend_from_slice(&self.height.to_le_bytes());
         out.extend_from_slice(&self.round.to_le_bytes());
         out.extend_from_slice(&self.proposer);
+        out.extend_from_slice(&self.valid_round.unwrap_or(u64::MAX).to_le_bytes());
+        for p in &self.valid_precommits { out.extend_from_slice(&p.signing_bytes()); }
+        if let Some(tc) = &self.timeout_certificate {
+            for t in &tc.timeouts { out.extend_from_slice(&t.signing_bytes()); }
+        }
         out
     }
 }
@@ -220,6 +231,13 @@ impl ValidatorTimeout {
         out.extend_from_slice(&self.validator_id);
         out
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TimeoutCertificate {
+    pub height: u64,
+    pub round: u64,
+    pub timeouts: Vec<ValidatorTimeout>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
