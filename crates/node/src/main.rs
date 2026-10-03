@@ -396,18 +396,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     match response {
                                         SyncWireResponse::Blocks(response) => {
                                             if pending_sync != Some(response.request_id) || freedom_network::validate_sync_response(&response).is_err() { continue; }
-                                            let mut accepted = 0u64;
+                                            let mut working_state = state.clone();
+                                            let mut accepted_blocks = Vec::new();
                                             for block in response.blocks {
-                                                if block.header.height != state.height + 1 { break; }
-                                                let expected = match proposer_for_height_round(&state, block.header.height, block.header.round) { Some(v) => v, None => break };
+                                                if block.header.height != working_state.height + 1 { break; }
+                                                let expected = match proposer_for_height_round(&working_state, block.header.height, block.header.round) { Some(v) => v, None => break };
                                                 if expected != block.header.proposer { break; }
-                                                if let Err(e) = freedom_network::validate_block_transition(&state, &block) { eprintln!("sync block rejected at {}: {e}", block.header.height); break; }
-                                                let committed = match execute_block(&mut state, &block) { Ok(b) => b, Err(e) => { eprintln!("sync execution rejected at {}: {e}", block.header.height); break; } };
-                                                if let Err(e) = store.put_block(&committed) { eprintln!("sync persistence error: {e}"); break; }
-                                                if committed.header.height % snapshot_interval == 0 { if let Err(e) = store.save_snapshot(&state, block_hash(&committed)) { eprintln!("snapshot persistence error: {e}"); } }
-                                                accepted += 1;
+                                                if let Err(e) = freedom_network::validate_block_transition(&working_state, &block) { eprintln!("sync block rejected at {}: {e}", block.header.height); break; }
+                                                let committed = match execute_block(&mut working_state, &block) { Ok(b) => b, Err(e) => { eprintln!("sync execution rejected at {}: {e}", block.header.height); break; } };
+                                                accepted_blocks.push(committed);
                                             }
+                                            let accepted = accepted_blocks.len() as u64;
                                             if accepted > 0 {
+                                                if let Err(e) = store.put_blocks_atomic(&accepted_blocks) {
+                                                    eprintln!("sync persistence error: {e}");
+                                                    continue;
+                                                }
+                                                state = working_state;
                                                 println!("SYNCED blocks={} height={}", accepted, state.height);
                                                 pending_sync=None;
                                                 round=0;
