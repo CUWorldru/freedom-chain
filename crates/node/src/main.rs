@@ -75,6 +75,7 @@ struct PeerReputation {
     cooldown_until_height: u64,
     last_decay_height: u64,
     evidence: Vec<PeerReputationEvidence>,
+    #[serde(default)]
     dedup_index: BTreeSet<Hash>,
 }
 
@@ -126,6 +127,20 @@ fn peer_evidence_id(evidence: &PeerReputationEvidence) -> Hash {
         &evidence.kind,
     )).expect("peer reputation evidence serialization must succeed");
     hash_bytes(&bytes)
+}
+
+fn rebuild_peer_reputation_dedup_index(
+    reputations: &mut BTreeMap<libp2p::PeerId, PeerReputation>,
+) -> bool {
+    let mut changed = false;
+    for reputation in reputations.values_mut() {
+        for evidence in &reputation.evidence {
+            if reputation.dedup_index.insert(peer_evidence_id(evidence)) {
+                changed = true;
+            }
+        }
+    }
+    changed
 }
 
 fn compact_peer_evidence(reputation: &mut PeerReputation) -> bool {
@@ -900,6 +915,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut peer_reputations = store
         .load_peer_reputation::<BTreeMap<libp2p::PeerId, PeerReputation>>()
         .unwrap_or_default();
+    if rebuild_peer_reputation_dedup_index(&mut peer_reputations) {
+        store.save_peer_reputation(&peer_reputations)?;
+    }
     let mut snapshot_misbehavior = Vec::<SnapshotMisbehaviorEvidence>::new();
     let mut pending_snapshot = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
     let mut snapshot_candidates = BTreeMap::<Hash, (u64, freedom_network::SnapshotSyncResponse)>::new();
