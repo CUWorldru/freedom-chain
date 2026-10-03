@@ -68,6 +68,46 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
  Ok(())
 }
 
+pub fn verify_bridge_deposit_with_adapter(
+    proof: &freedom_types::CrossChainAssetProof,
+    registry: &freedom_types::CrossChainAssetRegistry,
+    policy: &freedom_types::BridgeSecurityPolicy,
+    descriptor: &freedom_types::BridgeAdapterDescriptor,
+) -> Result<freedom_types::VerifiedDeposit, String> {
+    if descriptor.bridge_id != policy.bridge_id
+        || descriptor.chain_id != proof.bridge_deposit.source_chain_id
+        || !descriptor.enabled
+        || descriptor.required_confirmations != policy.min_external_confirmations
+    {
+        return Err("InvalidBridgeAdapterDescriptor".into());
+    }
+
+    let expected_kind = match proof.asset_kind {
+        freedom_types::CrossChainAssetKind::BitcoinUtxo => freedom_types::BridgeAdapterKind::Bitcoin,
+        freedom_types::CrossChainAssetKind::Erc20 => freedom_types::BridgeAdapterKind::Evm,
+        freedom_types::CrossChainAssetKind::Trc20 => freedom_types::BridgeAdapterKind::Tron,
+        freedom_types::CrossChainAssetKind::TonJetton => freedom_types::BridgeAdapterKind::Ton,
+        freedom_types::CrossChainAssetKind::SolanaSpl => freedom_types::BridgeAdapterKind::Solana,
+        freedom_types::CrossChainAssetKind::Other => freedom_types::BridgeAdapterKind::Other,
+    };
+    if descriptor.kind != expected_kind {
+        return Err("BridgeAdapterAssetKindMismatch".into());
+    }
+
+    let expected_finality = match descriptor.finality_model {
+        freedom_types::BridgeFinalityModel::Confirmations
+        | freedom_types::BridgeFinalityModel::BlockFinality
+        | freedom_types::BridgeFinalityModel::SlotFinality => true,
+        freedom_types::BridgeFinalityModel::Other => false,
+    };
+    if !expected_finality {
+        return Err("UnsupportedBridgeFinalityModel".into());
+    }
+
+    freedom_types::DepositVerifier::verify(proof, registry, policy)
+        .map_err(|e| format!("BridgeDepositVerification:{e:?}"))
+}
+
 pub fn execute_transaction(s:&mut ChainState,tx:&Transaction)->Result<Receipt,String>{
  validate_transaction_admission(s,tx)?;
  let h:Hash=tx.hash();let before=s.events.len();
@@ -778,5 +818,40 @@ mod m159_bridge_mint_relay_tests {
         tx.kind=TxKind::Transfer;
         assert_eq!(relay.receive(&state,&tx),Err("not a bridge mint transaction".into()));
         assert!(relay.is_empty());
+    }
+}
+
+
+#[cfg(test)]
+mod m161_bridge_adapter_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_dispatch_maps_supported_asset_kinds() {
+        assert_eq!(
+            match freedom_types::CrossChainAssetKind::BitcoinUtxo {
+                freedom_types::CrossChainAssetKind::BitcoinUtxo => freedom_types::BridgeAdapterKind::Bitcoin,
+                freedom_types::CrossChainAssetKind::Erc20 => freedom_types::BridgeAdapterKind::Evm,
+                freedom_types::CrossChainAssetKind::Trc20 => freedom_types::BridgeAdapterKind::Tron,
+                freedom_types::CrossChainAssetKind::TonJetton => freedom_types::BridgeAdapterKind::Ton,
+                freedom_types::CrossChainAssetKind::SolanaSpl => freedom_types::BridgeAdapterKind::Solana,
+                freedom_types::CrossChainAssetKind::Other => freedom_types::BridgeAdapterKind::Other,
+            },
+            freedom_types::BridgeAdapterKind::Bitcoin
+        );
+    }
+
+    #[test]
+    fn adapter_rejects_disabled_or_mismatched_descriptor() {
+        let descriptor = freedom_types::BridgeAdapterDescriptor {
+            bridge_id: [1; 32],
+            chain_id: 1,
+            kind: freedom_types::BridgeAdapterKind::Bitcoin,
+            finality_model: freedom_types::BridgeFinalityModel::Confirmations,
+            required_confirmations: 6,
+            native_asset: true,
+            enabled: false,
+        };
+        assert!(!descriptor.enabled);
     }
 }
