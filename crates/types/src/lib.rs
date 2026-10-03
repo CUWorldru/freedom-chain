@@ -3234,3 +3234,56 @@ impl BitcoinUtxoAccumulatorTransition {
     }
 }
 
+
+
+#[cfg(test)]
+mod ethereum_m142_tests {
+    use super::*;
+
+    fn rlp_list(items:&[Vec<u8>])->Vec<u8>{
+        let payload_len:usize=items.iter().map(Vec::len).sum();
+        let mut payload=Vec::new();
+        for item in items{payload.extend_from_slice(item);}
+        if payload_len<56{
+            let mut out=vec![0xc0+payload_len as u8];
+            out.extend_from_slice(&payload);
+            out
+        }else{
+            panic!("test header too large for short-list RLP");
+        }
+    }
+
+    fn bytes32(x:u8)->Vec<u8>{vec![x;32]}
+
+    #[test]
+    fn ethereum_receipt_key_uses_rlp_transaction_index(){
+        assert_eq!(ethereum_rlp_encode_u64(0),vec![0x80]);
+        assert_eq!(ethereum_rlp_encode_u64(1),vec![0x01]);
+        assert_eq!(ethereum_rlp_encode_u64(255),vec![0x81,0xff]);
+        assert_eq!(ethereum_rlp_encode_u64(256),vec![0x82,0x01,0x00]);
+    }
+
+    #[test]
+    fn ethereum_execution_header_binds_hash_number_state_and_receipts(){
+        let mut fields=Vec::new();
+        for i in 0..15{
+            let value=match i{
+                3=>bytes32(0x33),
+                5=>bytes32(0x55),
+                8=>ethereum_rlp_encode_u64(12345),
+                _=>ethereum_rlp_encode_bytes(&[]),
+            };
+            fields.push(value);
+        }
+        let rlp=rlp_list(&fields);
+        let header=EthereumExecutionBlockHeader{rlp:rlp.clone()};
+        let hash=ethereum_keccak256(&rlp);
+        assert!(header.validate_structure());
+        assert_eq!(header.block_hash(),hash);
+        assert_eq!(header.state_root(),Ok([0x33;32]));
+        assert_eq!(header.receipts_root(),Ok([0x55;32]));
+        assert_eq!(header.block_number(),Ok(12345));
+        assert!(header.verify_execution_binding(hash,[0x33;32],12345,[0x55;32]));
+        assert!(!header.verify_execution_binding(hash,[0x33;32],12345,[0x66;32]));
+    }
+}
