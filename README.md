@@ -209,3 +209,17 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - Block headers now commit the consensus round independently from the block epoch.
 - FREEDOM_DB_PATH selects the local RocksDB directory; default is ./data/freedom.
 - M18 is a verified-chain replay/sync prototype; production still needs a dedicated request/response transport, state snapshots, block availability scoring, pruning/checkpoints and robust peer-level anti-spam controls.
+
+## M19 — State Snapshots + Fast Startup Checkpoints
+
+Implemented:
+- `ChainState` and all state components are serde-serializable for deterministic persistence.
+- `freedom-storage` stores validated state snapshots in RocksDB alongside blocks.
+- Each snapshot commits `height`, finalized `block_hash`, and deterministic `state_root`.
+- Snapshot loading rejects height/state-root mismatches.
+- Validator startup restores the latest snapshot, verifies it against the corresponding stored block, then replays only the tail blocks.
+- Genesis state is checkpointed automatically when no snapshot exists.
+- Finalized and synced blocks create snapshots at `FREEDOM_SNAPSHOT_INTERVAL` (default `1000`).
+- `FREEDOM_DB_PATH` remains configurable.
+
+Current limitation: snapshot transfer between peers is not yet implemented. Network sync is still block-based; dedicated request/response snapshot transport and fast-state activation are planned for the next networking milestone.
