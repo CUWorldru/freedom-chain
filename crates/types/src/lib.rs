@@ -1134,6 +1134,8 @@ impl ExternalProofVerifier for CommitmentProofVerifier {
         if p.bridge_id!=d.bridge_id||p.source_chain_id!=d.chain_id||p.tx_hash==[0;32]||p.proof.is_empty(){return Err(ExternalProofError::InvalidBinding);}
         if p.confirmations<d.required_confirmations{return Err(ExternalProofError::InsufficientFinality);}
         if p.commitment==[0;32]||p.proof_hash()==[0;32]{return Err(ExternalProofError::InvalidCommitment);}
+        let expected=freedom_primitives::hash_bytes(&[p.proof_hash().as_slice(),d.bridge_id.as_slice()].concat());
+        if expected==[0;32]{return Err(ExternalProofError::InvalidProof);}
         Ok(())
     }
 }
