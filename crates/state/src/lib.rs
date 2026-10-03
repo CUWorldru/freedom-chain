@@ -96,6 +96,8 @@ impl ChainState {
  fn submit_evidence(&mut self,tx:&Transaction)->Result<(),StateError>{
   let p=decode_submit_evidence(&tx.payload).ok_or(StateError::InvalidEvidence)?;
   if !self.evidence.contains_key(&p.evidence.evidence_hash){ self.record_equivocation(p.evidence.clone())?; }
+  let expected=self.deterministic_slash_amount(&p.evidence.kind,self.validators.get(&p.evidence.validator_id).ok_or(StateError::InvalidEvidence)?.stake);
+  if p.slash_amount!=expected{return Err(StateError::InvalidEvidence)}
   let amount=self.slash_evidence(p.evidence.evidence_hash,p.slash_amount)?;
   self.events.push(Event::EquivocationSlashed{evidence_hash:p.evidence.evidence_hash,validator_id:p.evidence.validator_id,amount});
   self.advance_nonce(tx.sender)
