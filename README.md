@@ -1236,3 +1236,10 @@ This is intentionally a proof boundary rather than a claim of Ethereum consensus
 Ethereum receipt proofs now use raw RLP-encoded Merkle-Patricia-Trie nodes and Keccak-256 node references. Verification checks the proof path from `receiptsRoot`, supports both hashed and inline child nodes, validates compact hex-prefix paths, and binds the proof to the transaction index and receipt value.
 
 This is an inclusion-proof verifier only. Ethereum PoS consensus/finality certificates and the full receipt semantic decoder remain separate layers.
+
+
+## M137 — Ethereum PoS Finality Boundary
+
+Adds `EthereumFinalityProof` for finalized execution-block metadata, state root, validator-set root, checkpoint ancestry and finality evidence. The proof is bound to the common envelope by exact finalized height/hash, state root and proof hash.
+
+The current boundary deliberately does not claim full Ethereum consensus verification: SSZ checkpoint proofs, sync-committee/validator-set validation, BLS aggregate signature verification and fork-choice rules remain explicit follow-up layers.
