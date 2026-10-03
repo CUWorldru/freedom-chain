@@ -42,6 +42,7 @@ struct SyncMisbehaviorEvidence {
 
 const PEER_MISBEHAVIOR_THRESHOLD: u32 = 3;
 const PEER_SCORE_COOLDOWN_ROUNDS: u64 = 3;
+const PEER_SCORE_DECAY_INTERVAL: u64 = 10;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum PeerEvidenceKind {
@@ -63,6 +64,7 @@ struct PeerReputationEvidence {
 struct PeerReputation {
     score: u32,
     cooldown_until_height: u64,
+    last_decay_height: u64,
     evidence: Vec<PeerReputationEvidence>,
 }
 
@@ -73,9 +75,11 @@ fn record_peer_evidence(
     let entry = reputations.entry(evidence.peer).or_insert(PeerReputation {
         score: 0,
         cooldown_until_height: 0,
+        last_decay_height: evidence.height,
         evidence: Vec::new(),
     });
     entry.score = entry.score.saturating_add(1);
+    entry.last_decay_height = evidence.height;
     entry.evidence.push(evidence);
     if entry.score >= PEER_MISBEHAVIOR_THRESHOLD {
         entry.cooldown_until_height = entry.cooldown_until_height.max(
@@ -84,13 +88,35 @@ fn record_peer_evidence(
     }
 }
 
+fn decay_peer_reputation(
+    reputations: &mut BTreeMap<libp2p::PeerId, PeerReputation>,
+    current_height: u64,
+) -> bool {
+    let mut changed = false;
+    for reputation in reputations.values_mut() {
+        let elapsed = current_height.saturating_sub(reputation.last_decay_height);
+        let steps = elapsed / PEER_SCORE_DECAY_INTERVAL;
+        if steps > 0 {
+            let decay = steps.min(reputation.score as u64) as u32;
+            if decay > 0 {
+                reputation.score = reputation.score.saturating_sub(decay);
+                changed = true;
+            }
+            reputation.last_decay_height = reputation.last_decay_height.saturating_add(
+                steps.saturating_mul(PEER_SCORE_DECAY_INTERVAL)
+            );
+        }
+    }
+    changed
+}
+
 fn peer_is_eligible(
     reputations: &BTreeMap<libp2p::PeerId, PeerReputation>,
     peer: libp2p::PeerId,
     current_height: u64,
 ) -> bool {
     reputations.get(&peer)
-        .map(|reputation| current_height >= reputation.cooldown_until_height)
+        .map(|reputation| current_height >= reputation.cooldown_until_height && reputation.score < PEER_MISBEHAVIOR_THRESHOLD)
         .unwrap_or(true)
 }
 
