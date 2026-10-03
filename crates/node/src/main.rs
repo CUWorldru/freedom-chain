@@ -362,6 +362,30 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_confirmation_escalates_severity() {
+        let peer = libp2p::PeerId::random();
+        let reputation = PeerReputation {
+            score: 0,
+            cooldown_until_height: 0,
+            last_decay_height: 0,
+            evidence: Vec::new(),
+        };
+        assert_eq!(
+            classify_peer_evidence(&reputation, &PeerEvidenceKind::SyncConflict, 1),
+            PeerEvidenceSeverity::Normal
+        );
+        assert_eq!(
+            classify_peer_evidence(&reputation, &PeerEvidenceKind::SyncConflict, 2),
+            PeerEvidenceSeverity::Elevated
+        );
+        assert_eq!(
+            classify_peer_evidence(&reputation, &PeerEvidenceKind::SyncConflict, 3),
+            PeerEvidenceSeverity::Critical
+        );
+        let _ = peer;
+    }
+
+    #[test]
     fn peer_reputation_severity_scales_policy_weight() {
         let peer = libp2p::PeerId::random();
         let mut reputations = BTreeMap::new();
