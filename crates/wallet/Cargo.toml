@@ -1,0 +1,9 @@
+[package]
+name = "freedom-wallet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+freedom-primitives = { path = "../primitives" }
+freedom-crypto = { path = "../crypto" }
