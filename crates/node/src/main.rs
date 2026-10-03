@@ -377,6 +377,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     }
                                 }
+                                Ok(NetworkMessage::Evidence(msg)) => {
+                                    if !protocol.remember_message(msg.message_id()) { continue; }
+                                    freedom_consensus::validate_evidence_message(&state, &msg)?;
+                                    state.record_equivocation(msg.evidence.clone())?;
+                                    println!("EVIDENCE_RECEIVED id={}", hex::encode(msg.evidence.evidence_hash));
+                                }
                                 Ok(NetworkMessage::Timeout(timeout)) => {
                                     if !protocol.remember_message(timeout.message_id()) { continue; }
                                     if timeout.height != state.height + 1 || timeout.round != round { continue; }
