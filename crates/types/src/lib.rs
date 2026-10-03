@@ -664,24 +664,19 @@ impl CanonicalAssetProfile {
         }
     }
 
-    pub fn validate_registry_identity(self, registry: &CrossChainAssetRegistry) -> bool {
+    pub fn canonical_id(self, issuer: Hash) -> Hash {
+        CrossChainAssetRegistry::compute_canonical_asset_id(
+            self.symbol(),
+            self.decimals(),
+            issuer,
+        )
+    }
+
+    pub fn matches_registry(self, registry: &CrossChainAssetRegistry, issuer: Hash) -> bool {
         registry.symbol == self.symbol()
             && registry.decimals == self.decimals()
-            && registry.canonical_asset_id
-                == CrossChainAssetRegistry::compute_canonical_asset_id(
-                    self.symbol(),
-                    self.decimals(),
-                    registry_canonical_issuer(registry),
-                )
+            && registry.canonical_asset_id == self.canonical_id(issuer)
     }
-}
-
-fn registry_canonical_issuer(registry: &CrossChainAssetRegistry) -> Hash {
-    registry
-        .representations
-        .first()
-        .map(|r| r.representation.issuer)
-        .unwrap_or([0; 32])
 }
 
 pub struct CrossChainAssetRegistry {
