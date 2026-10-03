@@ -626,7 +626,25 @@ pub fn bitcoin_hash_leq_target(hash:Hash,target:[u8;32])->bool{hash.iter().rev()
 pub fn bitcoin_pow_valid(header:&BitcoinBlockHeader)->bool{bitcoin_target_from_bits(header.bits).map(|t|bitcoin_hash_leq_target(header.block_hash(),t)).unwrap_or(false)}
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub enum BitcoinHeaderChainError{Empty,InvalidPow,InvalidLinkage,InvalidHeight}
-pub fn bitcoin_validate_header_chain(start_height:u64,headers:&[BitcoinBlockHeader])->Result<Hash,BitcoinHeaderChainError>{if headers.is_empty(){return Err(BitcoinHeaderChainError::Empty);}for (i,h) in headers.iter().enumerate(){if !bitcoin_pow_valid(h){return Err(BitcoinHeaderChainError::InvalidPow);}if i>0&&headers[i-1].block_hash()!=h.prev_block_hash{return Err(BitcoinHeaderChainError::InvalidLinkage);}}if start_height.checked_add(headers.len() as u64-1).is_none(){return Err(BitcoinHeaderChainError::InvalidHeight);}Ok(headers.last().unwrap().block_hash())}
+pub fn bitcoin_header_work(header:&BitcoinBlockHeader)->Option<[u8;32]>{
+    use num_bigint::BigUint;
+    let target=BigUint::from_bytes_be(&bitcoin_target_from_bits(header.bits)?);
+    let work=(BigUint::from(1u8)<<256usize)/(target+BigUint::from(1u8));
+    let bytes=work.to_bytes_be(); if bytes.len()>32{return None;}
+    let mut out=[0u8;32]; out[32-bytes.len()..].copy_from_slice(&bytes); Some(out)
+}
+pub fn bitcoin_chainwork(headers:&[BitcoinBlockHeader])->Result<[u8;32],BitcoinHeaderChainError>{
+    bitcoin_validate_header_chain(0,headers)?;
+    use num_bigint::BigUint;
+    let mut total=BigUint::from(0u8);
+    for h in headers {total+=BigUint::from_bytes_be(&bitcoin_header_work(h).ok_or(BitcoinHeaderChainError::InvalidPow)?);}
+    let bytes=total.to_bytes_be(); if bytes.len()>32{return Err(BitcoinHeaderChainError::InvalidHeight);}
+    let mut out=[0u8;32];out[32-bytes.len()..].copy_from_slice(&bytes);Ok(out)
+}
+pub fn bitcoin_chainwork_cmp(a:&[BitcoinBlockHeader],b:&[BitcoinBlockHeader])->Result<std::cmp::Ordering,BitcoinHeaderChainError>{
+    Ok(bitcoin_chainwork(a)?.cmp(&bitcoin_chainwork(b)?))
+}
+
 pub struct BitcoinMerkleProof {
     pub bridge_id: Hash,
     pub chain_id: u32,
@@ -1224,6 +1242,13 @@ mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn bitcoin_utxo_requires_six_confirmations(){let a=BitcoinAdapter::new(d()).unwrap();assert_eq!(a.verify_utxo_deposit(&p(5)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_utxo_deposit(&p(6)).is_ok());}
  #[test] fn bitcoin_vout_is_replay_event_identity(){assert_eq!(p(6).event_index(),2);}
  #[test] fn bitcoin_withdrawal_uses_script_bytes(){let a=BitcoinAdapter::new(d()).unwrap();let x=a.build_utxo_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();assert!(x.validate_hash());}
+}
+
+#[cfg(test)]
+mod m102_bitcoin_chainwork_tests {
+ use super::*;
+ #[test] fn work_is_positive(){let h=BitcoinBlockHeader{version:1,prev_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};assert!(bitcoin_header_work(&h).is_some());}
+ #[test] fn chainwork_accumulates(){let a=BitcoinBlockHeader{version:1,prev_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.prev_block_hash=a.block_hash();assert!(bitcoin_chainwork(&[a,b]).unwrap()>bitcoin_chainwork(&[b.clone()]).unwrap());}
 }
 
 #[cfg(test)]
