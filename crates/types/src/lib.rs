@@ -2253,6 +2253,7 @@ fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitcoinChainContext {
     pub start_height: u64,
+    pub base_start_height: u64,
     pub base_chainwork: BitcoinChainWork,
     pub base_headers: Vec<BitcoinBlockHeader>,
     pub tip_height: u64,
@@ -2265,6 +2266,8 @@ impl BitcoinChainContext {
     pub fn validate(&self) -> bool {
         self.tip_height > 0
             && self.start_height > 0
+            && self.base_start_height < self.start_height
+            && self.base_start_height + self.base_headers.len() as u64 == self.start_height
             && self.start_height <= self.tip_height
             && self.tip_hash != [0u8; 32]
             && !self.base_headers.is_empty()
@@ -2285,6 +2288,16 @@ impl BitcoinChainContext {
             }
         }
         if work != self.base_chainwork {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        if self.base_headers.windows(2).any(|pair| {
+            pair[1].previous_block_hash != pair[0].block_hash()
+        }) {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        if self.base_headers.last().map(|h| h.block_hash())
+            != self.headers.first().and_then(|h| Some(h.previous_block_hash))
+        {
             return Err(BridgeAdapterError::InvalidProof);
         }
         for header in &self.headers {
