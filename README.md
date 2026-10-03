@@ -984,3 +984,8 @@ Bitcoin header chains now expose deterministic per-header work and accumulated c
 ## M102 — Bitcoin Accumulated Chainwork
 
 Bitcoin header chains now expose deterministic per-header work `floor(2^256 / (target + 1))`, accumulated chainwork and chainwork comparison. Big-integer arithmetic avoids fixed-width overflow during accumulation. Invalid PoW or broken header linkage prevents a chain from producing usable work.
+
+
+## M103 — Bitcoin Light-Client Checkpoint
+
+Bitcoin bridge verification now supports a trusted checkpoint containing height, block hash and accumulated chainwork. New headers must directly continue the checkpoint, preserve height continuity and increase total chainwork. This creates a deterministic light-client trust anchor before checkpoint persistence and reorg policy.
