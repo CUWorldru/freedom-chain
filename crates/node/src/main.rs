@@ -1,7 +1,7 @@
 use freedom_consensus::{block_hash, proposer_for_height_round};
 use freedom_network::{
     build_swarm, decode_message, make_proposal, make_sync_request, make_timeout, publish,
-    NetworkMessage, SyncResponse,
+    NetworkMessage, SyncResponse, SyncWireRequest, SyncWireResponse,
 };
 use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_SUPPLY, Hash};
 use freedom_runtime::{build_next_block, execute_block, initialize, Mempool, ValidatorProtocol};
@@ -22,14 +22,19 @@ fn request_id(validator_id: Hash, from_height: u64) -> Hash {
 
 fn send_sync_request(
     swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
+    peer: libp2p::PeerId,
     validator_id: Hash,
     height: u64,
-) -> Result<Hash, Box<dyn std::error::Error>> {
+) -> Hash {
     let from = height.saturating_add(1);
     let id = request_id(validator_id, from);
-    publish(swarm, &make_sync_request(id, from))?;
-    println!("sync_request from={} request_id={}", from, hex::encode(id));
-    Ok(id)
+    swarm.behaviour_mut().sync.send_request(&peer, SyncWireRequest::Blocks(freedom_network::SyncRequest {
+        request_id: id,
+        from_height: from,
+        to_height: from.saturating_add(freedom_network::MAX_SYNC_BLOCKS.saturating_sub(1)),
+    }));
+    println!("sync_request peer={} from={} request_id={}", peer, from, hex::encode(id));
+    id
 }
 
 #[tokio::main]
@@ -120,6 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut timer = interval(Duration::from_secs(ROUND_TIMEOUT_SECS));
     let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
     let mut pending_sync = None::<Hash>;
+    let mut connected_peers = Vec::<libp2p::PeerId>::new();
 
     if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
         let mempool = Mempool::new();
@@ -141,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = sync_timer.tick() => {
-                pending_sync = Some(send_sync_request(&mut swarm, validator_id, state.height)?);
+                if let Some(peer) = connected_peers.first().copied() { pending_sync = Some(send_sync_request(&mut swarm, peer, validator_id, state.height)); }
             }
             event = swarm.select_next_some() => {
                 match event {
@@ -149,14 +155,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                         println!("peer_connected={peer_id}");
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
-                        pending_sync = Some(send_sync_request(&mut swarm, validator_id, state.height)?);
+                        if !connected_peers.contains(&peer_id) { connected_peers.push(peer_id); }
+                        pending_sync = Some(send_sync_request(&mut swarm, peer_id, validator_id, state.height));
                     }
-                    SwarmEvent::ConnectionClosed { peer_id, .. } => println!("peer_disconnected={peer_id}"),
+                    SwarmEvent::ConnectionClosed { peer_id, .. } => { connected_peers.retain(|p| *p != peer_id); println!("peer_disconnected={peer_id}"); },
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
                         for addr in info.listen_addrs {
                             let _ = swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
                         }
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
+                    }
+                    SwarmEvent::Behaviour(freedom_network::FreedomEvent::Sync(event)) => {
+                        if let libp2p::request_response::Event::Message { message, .. } = event {
+                            match message {
+                                libp2p::request_response::Message::Request { request, channel, .. } => {
+                                    match request {
+                                        SyncWireRequest::Blocks(req) => {
+                                            let latest = state.height;
+                                            let to = req.to_height.min(latest).min(req.from_height.saturating_add(freedom_network::MAX_SYNC_BLOCKS.saturating_sub(1)));
+                                            if req.from_height > 0 && req.from_height <= to {
+                                                if let Ok(blocks) = store.range(req.from_height, to) {
+                                                    let response = SyncWireResponse::Blocks(SyncResponse { request_id: req.request_id, from_height: req.from_height, blocks });
+                                                    let _ = swarm.behaviour_mut().sync.send_response(channel, response);
+                                                }
+                                            }
+                                        }
+                                        SyncWireRequest::Snapshot(req) => {
+                                            if let Ok(Some(snapshot)) = store.latest_snapshot() {
+                                                if let Ok(state_json) = serde_json::to_vec(&snapshot.state) {
+                                                    let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse { request_id: req.request_id, height: snapshot.height, block_hash: snapshot.block_hash, state_root: snapshot.state_root, state_json });
+                                                    let _ = swarm.behaviour_mut().sync.send_response(channel, response);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                libp2p::request_response::Message::Response { response, .. } => {
+                                    if let SyncWireResponse::Snapshot(response) = response {
+                                        println!("SNAPSHOT_RECEIVED height={} request_id={} bytes={}", response.height, hex::encode(response.request_id), response.state_json.len());
+                                    }
+                                }
+                            }
+                        }
                     }
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Gossipsub(event)) => {
                         if let libp2p::gossipsub::Event::Message { message, .. } = event {
