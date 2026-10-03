@@ -231,6 +231,7 @@ impl BridgeMessage {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AssetStatus {
     Active = 1,
