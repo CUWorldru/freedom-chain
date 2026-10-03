@@ -912,6 +912,23 @@ pub struct BridgeAdapterDescriptor {
     pub enabled: bool,
 }
 
+impl BridgeAdapterDescriptor {
+    pub fn validate(&self) -> bool {
+        self.bridge_id != [0; 32]
+            && self.chain_id != 0
+            && self.required_confirmations > 0
+            && self.finality_model != BridgeFinalityModel::Other
+            && match self.kind {
+                BridgeAdapterKind::Bitcoin
+                | BridgeAdapterKind::Evm
+                | BridgeAdapterKind::Tron
+                | BridgeAdapterKind::Ton
+                | BridgeAdapterKind::Solana
+                | BridgeAdapterKind::Other => true,
+            }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeDepositProof {
     pub bridge_id: Hash,
