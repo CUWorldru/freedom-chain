@@ -342,9 +342,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
                         if !connected_peers.contains(&peer_id) { connected_peers.push(peer_id); }
                         pending_sync = Some(send_sync_request(&mut swarm, peer_id, validator_id, state.height));
-                        if state.height == 0 {
-                            let _ = send_snapshot_request(&mut swarm, peer_id, validator_id, 0);
-                        }
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => { connected_peers.retain(|p| *p != peer_id); println!("peer_disconnected={peer_id}"); },
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
