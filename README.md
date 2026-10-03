@@ -415,3 +415,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Snapshot loading rejects a mismatch between the transported epoch proof and the certificate committed in `ChainState`.
 - The snapshot envelope is therefore no longer only a state dump: it carries the validator-set transition proof needed to audit the epoch boundary.
 - Automatic network collection/broadcast of validator-set votes and automatic snapshot activation from a remote peer remain the next integration step; this milestone makes the proof part of the authenticated block/snapshot path.
+
+
+## M38 — Network Epoch Certificate Protocol
+
+- Added dedicated gossip topics for validator-set votes and validator-set certificates.
+- Added `NetworkMessage::ValidatorSetVote` and `NetworkMessage::ValidatorSetCertificate`.
+- Added signed validator-set vote creation bound to the current active set and next pending set hash.
+- Added strict network vote validation: epoch, active-set membership, set hashes, key binding and Ed25519 signature.
+- Runtime can collect validated votes and produce a `ValidatorSetCertificate` only after stake-weighted quorum.
+- Added wire encoding helpers for publishing votes/certificates through the network layer.
+- The protocol now has the authenticated network primitives required for automatic epoch certificate collection; node event-loop wiring and automatic certificate broadcast remain the next integration step.
