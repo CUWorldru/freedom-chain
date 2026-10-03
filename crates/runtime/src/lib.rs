@@ -156,6 +156,54 @@ fn resolve_bridge_representation(
     Ok(resolved)
 }
 
+pub struct BridgeIngressContext<'a> {
+    external: &'a freedom_types::ExternalBridgeDepositProof,
+    registry: &'a freedom_types::CrossChainAssetRegistry,
+    policy: &'a freedom_types::BridgeSecurityPolicy,
+    descriptor: &'a freedom_types::BridgeAdapterDescriptor,
+    resolved: ResolvedBridgeRepresentation,
+}
+
+impl<'a> BridgeIngressContext<'a> {
+    fn build(
+        external: &'a freedom_types::ExternalBridgeDepositProof,
+        registry: &'a freedom_types::CrossChainAssetRegistry,
+        policy: &'a freedom_types::BridgeSecurityPolicy,
+        descriptor: &'a freedom_types::BridgeAdapterDescriptor,
+        canonical_asset_id: Hash,
+    ) -> Result<Self, String> {
+        if !registry.validate()
+            || !policy.validate()
+            || !descriptor.validate()
+            || descriptor.bridge_id != policy.bridge_id
+            || !descriptor.enabled
+            || descriptor.required_confirmations != policy.min_external_confirmations
+        {
+            return Err("InvalidBridgeIngressContext".into());
+        }
+
+        let context = BridgeIngressContext::build(
+        external,
+        registry,
+        policy,
+        descriptor,
+        canonical_asset_id,
+    )?;
+    let resolved = context.resolved;
+        if !registry.has_representation(resolved.representation_asset_id()) {
+            return Err("InvalidBridgeIngressContext".into());
+        }
+
+        Ok(Self {
+            external,
+            registry,
+            policy,
+            descriptor,
+            resolved,
+        })
+    }
+}
+
 pub fn verify_external_bridge_deposit(
     external: &freedom_types::ExternalBridgeDepositProof,
     registry: &freedom_types::CrossChainAssetRegistry,
@@ -203,15 +251,18 @@ pub fn verify_external_bridge_deposit(
         return Err("BridgeCanonicalRepresentationMismatch".into());
     }
 
-    verify_bridge_deposit_with_adapter(&proof, registry, policy, descriptor)
+    verify_bridge_deposit_with_adapter(&proof, &context)
 }
 
 pub fn verify_bridge_deposit_with_adapter(
     proof: &freedom_types::CrossChainAssetProof,
-    registry: &freedom_types::CrossChainAssetRegistry,
-    policy: &freedom_types::BridgeSecurityPolicy,
-    descriptor: &freedom_types::BridgeAdapterDescriptor,
+    context: &BridgeIngressContext<'_>,
 ) -> Result<freedom_types::VerifiedDeposit, String> {
+    let registry = context.registry;
+    let policy = context.policy;
+    let descriptor = context.descriptor;
+    let external = context.external;
+    let resolved = context.resolved;
     if !descriptor.validate()
         || descriptor.bridge_id != policy.bridge_id
         || descriptor.chain_id != proof.bridge_deposit.source_chain_id
