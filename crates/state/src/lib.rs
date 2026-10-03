@@ -211,6 +211,11 @@ impl ChainState {
   if envelope.sequence==0{return Err(StateError::InvalidBridgeWithdrawal);}
   Ok(())
  }
+ pub fn validate_ethereum_sync_committee_proof(&self,proof:&freedom_types::EthereumSyncCommitteeProof)->Result<(),StateError>{
+  if !proof.verify(){return Err(StateError::InvalidBridgeWithdrawal);}
+  if proof.finalized_checkpoint_root==[0;32] || proof.committee_root==[0;32]{return Err(StateError::InvalidBridgeWithdrawal);}
+  Ok(())
+ }
 
  pub fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
