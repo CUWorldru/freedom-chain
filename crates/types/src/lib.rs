@@ -3992,3 +3992,129 @@ mod m145_tron_inclusion_tests {
         assert!(!proof.verify_against_root(root));
     }
 }
+
+#[cfg(test)]
+mod m146_tron_usdt_tests {
+    use super::*;
+
+    fn varint(mut v: u64) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let mut b = (v & 0x7f) as u8;
+            v >>= 7;
+            if v != 0 { b |= 0x80; }
+            out.push(b);
+            if v == 0 { return out; }
+        }
+    }
+
+    fn field_u64(field: u64, value: u64) -> Vec<u8> {
+        let mut out = varint(field << 3);
+        out.extend_from_slice(&varint(value));
+        out
+    }
+
+    fn field_bytes(field: u64, value: &[u8]) -> Vec<u8> {
+        let mut out = varint((field << 3) | 2);
+        out.extend_from_slice(&varint(value.len() as u64));
+        out.extend_from_slice(value);
+        out
+    }
+
+    #[test]
+    fn unified_tron_usdt_deposit_proof_binds_all_layers() {
+        use sha2::{Digest, Sha256};
+
+        let usdt = [0xa6; 20];
+        let tx_raw = b"tron-usdt-transaction".to_vec();
+        let tx_hash: Hash = Sha256::digest(&tx_raw).into();
+        let other_tx = [0x77; 32];
+        let tx_root = TronTransactionInclusionProof::sha256_pair(tx_hash, other_tx);
+
+        let mut header_raw = Vec::new();
+        header_raw.extend_from_slice(&field_u64(1, 1_725_000_000_000));
+        header_raw.extend_from_slice(&field_bytes(2, &tx_root));
+        header_raw.extend_from_slice(&field_bytes(3, &[0x11; 32]));
+        header_raw.extend_from_slice(&field_u64(7, 42));
+        header_raw.extend_from_slice(&field_bytes(9, &[0x41, 1, 2, 3]));
+        let mut header = TronBlockHeaderProof { raw_data: header_raw, block_id: [0; 32] };
+        header.block_id = header.computed_block_id().unwrap();
+
+        let inclusion = TronTransactionInclusionProof {
+            tx_hash,
+            block_number: 42,
+            block_id: header.block_id,
+            transaction_index: 0,
+            transaction_count: 2,
+            siblings: vec![Some(other_tx)],
+        };
+
+        let mut from = [0u8; 32];
+        from[12..].copy_from_slice(&[0x11; 20]);
+        let mut to = [0u8; 32];
+        to[12..].copy_from_slice(&[0x22; 20]);
+        let mut amount = [0u8; 32];
+        amount[16..].copy_from_slice(&500u128.to_be_bytes());
+
+        let event = TronTransactionEventProof {
+            raw_data: tx_raw,
+            tx_hash,
+            block_number: 42,
+            block_id: header.block_id,
+            transaction_index: 0,
+            contract_address: usdt.to_vec(),
+            topics: vec![TronTransactionEventProof::TRANSFER_EVENT_SIGNATURE, from, to],
+            data: amount.to_vec(),
+            execution_success: true,
+        };
+
+        let proof = TronUsdtDepositProof {
+            bridge_id: [0x55; 32],
+            chain_id: TronUsdtDepositProof::TRON_MAINNET_CHAIN_ID,
+            confirmations: 20,
+            usdt_contract: usdt.to_vec(),
+            header,
+            inclusion,
+            event,
+        };
+
+        assert!(proof.validate(20));
+        assert_eq!(proof.sender(), Ok([0x11; 20]));
+        assert_eq!(proof.recipient(), Ok([0x22; 20]));
+        assert_eq!(proof.amount(), Ok(500));
+        assert_ne!(proof.proof_hash(), [0; 32]);
+    }
+
+    #[test]
+    fn unified_tron_usdt_deposit_rejects_contract_mismatch() {
+        let mut proof = TronUsdtDepositProof {
+            bridge_id: [1; 32],
+            chain_id: TronUsdtDepositProof::TRON_MAINNET_CHAIN_ID,
+            confirmations: 20,
+            usdt_contract: vec![1; 20],
+            header: TronBlockHeaderProof { raw_data: vec![], block_id: [0; 32] },
+            inclusion: TronTransactionInclusionProof {
+                tx_hash: [0; 32],
+                block_number: 1,
+                block_id: [0; 32],
+                transaction_index: 0,
+                transaction_count: 1,
+                siblings: vec![],
+            },
+            event: TronTransactionEventProof {
+                raw_data: vec![1],
+                tx_hash: [0; 32],
+                block_number: 1,
+                block_id: [0; 32],
+                transaction_index: 0,
+                contract_address: vec![1; 20],
+                topics: vec![],
+                data: vec![],
+                execution_success: true,
+            },
+        };
+        assert!(!proof.validate_with_contract(20, &[2; 20]));
+        proof.confirmations = 19;
+        assert!(!proof.validate_with_contract(20, &[1; 20]));
+    }
+}
