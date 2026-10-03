@@ -3493,4 +3493,71 @@ mod ethereum_m142_tests {
         assert!(header.verify_execution_binding(hash,[0x33;32],12345,[0x55;32]));
         assert!(!header.verify_execution_binding(hash,[0x33;32],12345,[0x66;32]));
     }
+
+    #[test]
+    fn tron_block_header_proof_binds_raw_data_to_composite_block_id() {
+        fn varint(mut v: u64) -> Vec<u8> {
+            let mut out = Vec::new();
+            loop {
+                let mut b = (v & 0x7f) as u8;
+                v >>= 7;
+                if v != 0 { b |= 0x80; }
+                out.push(b);
+                if v == 0 { return out; }
+            }
+        }
+        fn field_bytes(field: u64, value: &[u8]) -> Vec<u8> {
+            let mut out = varint((field << 3) | 2);
+            out.extend_from_slice(&varint(value.len() as u64));
+            out.extend_from_slice(value);
+            out
+        }
+        fn field_u64(field: u64, value: u64) -> Vec<u8> {
+            let mut out = varint(field << 3);
+            out.extend_from_slice(&varint(value));
+            out
+        }
+
+        let height = 42u64;
+        let parent = [0x11; 32];
+        let tx_root = [0x22; 32];
+        let state_root = [0x33; 32];
+        let witness = vec![0x41, 0xaa, 0xbb, 0xcc];
+
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&field_u64(1, 1_725_000_000_000));
+        raw.extend_from_slice(&field_bytes(2, &tx_root));
+        raw.extend_from_slice(&field_bytes(3, &parent));
+        raw.extend_from_slice(&field_u64(7, height));
+        raw.extend_from_slice(&field_bytes(9, &witness));
+        raw.extend_from_slice(&field_bytes(11, &state_root));
+
+        let mut proof = TronBlockHeaderProof { raw_data: raw, block_id: [0; 32] };
+        proof.block_id = proof.computed_block_id().unwrap();
+
+        assert!(proof.validate());
+        assert_eq!(proof.block_number(), Ok(height));
+        assert_eq!(proof.parent_hash(), Ok(parent));
+        assert_eq!(proof.tx_trie_root(), Ok(tx_root));
+        assert_eq!(proof.account_state_root(), Ok(Some(state_root)));
+        assert_eq!(proof.witness_address(), Ok(witness));
+
+        let expected = proof.block_id;
+        let envelope = CrossChainFinalityEnvelope {
+            bridge_id: [0x44; 32],
+            chain_id: 728126428,
+            sequence: 1,
+            proof_kind: CrossChainProofKind::Tron,
+            finalized_height: height,
+            finalized_hash: expected,
+            state_root,
+            previous_state_root: [0x55; 32],
+            proof_hash: [0x66; 32],
+        };
+        assert!(TronFinalityAdapter.verify_block_header(&proof, &envelope).is_ok());
+
+        proof.raw_data.push(0);
+        assert!(!proof.validate());
+    }
+
 }
