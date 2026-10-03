@@ -117,14 +117,37 @@ pub struct ValidatorSetEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValidatorSetVote {
+    pub from_epoch: u64,
+    pub to_epoch: u64,
+    pub previous_set_hash: Hash,
+    pub new_set_hash: Hash,
+    pub validator_id: Hash,
+    pub signature: Vec<u8>,
+}
+impl ValidatorSetVote {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"FREEDOM-VALSET-VOTE-V1");
+        out.extend_from_slice(&self.from_epoch.to_le_bytes());
+        out.extend_from_slice(&self.to_epoch.to_le_bytes());
+        out.extend_from_slice(&self.previous_set_hash);
+        out.extend_from_slice(&self.new_set_hash);
+        out.extend_from_slice(&self.validator_id);
+        out
+    }
+    pub fn message_id(&self) -> Hash {
+        freedom_primitives::hash_bytes(&self.signing_bytes())
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ValidatorSetCertificate {
     pub from_epoch: u64,
     pub to_epoch: u64,
     pub previous_set_hash: Hash,
     pub new_set_hash: Hash,
-    pub precommits: Vec<ValidatorPrecommit>,
+    pub votes: Vec<ValidatorSetVote>,
 }
-
 impl ValidatorSetCertificate {
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
@@ -133,8 +156,8 @@ impl ValidatorSetCertificate {
         out.extend_from_slice(&self.to_epoch.to_le_bytes());
         out.extend_from_slice(&self.previous_set_hash);
         out.extend_from_slice(&self.new_set_hash);
-        for p in &self.precommits {
-            out.extend_from_slice(&p.signing_bytes());
+        for v in &self.votes {
+            out.extend_from_slice(&v.signing_bytes());
         }
         out
     }
