@@ -763,6 +763,57 @@ impl ExternalAssetConfig {
     }
 }
 
+pub const ETH_USDT_CONTRACT: [u8; 20] = [
+    0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
+    0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7,
+];
+pub const ETH_USDC_CONTRACT: [u8; 20] = [
+    0xa0, 0xb8, 0x69, 0x91, 0xc6, 0x21, 0x8b, 0x36, 0xc1, 0xd1,
+    0x9d, 0x4a, 0x2e, 0x9e, 0xb0, 0xce, 0x36, 0x06, 0xeb, 0x48,
+];
+pub const TRON_USDT_CONTRACT: [u8; 20] = [
+    0xa6, 0x14, 0xf8, 0x03, 0xb6, 0xfd, 0x78, 0x09, 0x86, 0xa4,
+    0x2c, 0x78, 0xec, 0x9c, 0x7f, 0x77, 0xe6, 0xde, 0xd1, 0x3c,
+];
+
+fn production_identity(domain: &[u8]) -> Hash {
+    freedom_primitives::hash_bytes(domain)
+}
+
+pub fn production_bridge_id() -> Hash {
+    production_identity(b"321MORE-PRODUCTION-BRIDGE-V1")
+}
+pub fn production_issuer() -> Hash {
+    production_identity(b"321MORE-ASSET-ISSUER-V1")
+}
+fn production_config(
+    profile: CanonicalAssetProfile,
+    source_chain_id: u32,
+    asset_kind: CrossChainAssetKind,
+    asset_type: AssetType,
+    contract_address: Vec<u8>,
+) -> ExternalAssetConfig {
+    ExternalAssetConfig {
+        profile,
+        source_chain_id,
+        asset_kind,
+        asset_type,
+        contract_address,
+        issuer: production_issuer(),
+        bridge_id: production_bridge_id(),
+        status: AssetStatus::Active,
+    }
+}
+pub fn production_profiles() -> Vec<ExternalAssetConfig> {
+    vec![
+        production_config(CanonicalAssetProfile::Btc, BITCOIN_MAINNET_CHAIN_ID, CrossChainAssetKind::BitcoinUtxo, AssetType::Native, b"BTC".to_vec()),
+        production_config(CanonicalAssetProfile::Eth, ETHEREUM_MAINNET_CHAIN_ID, CrossChainAssetKind::EthereumNative, AssetType::Native, b"ETH".to_vec()),
+        production_config(CanonicalAssetProfile::Usdt, ETHEREUM_MAINNET_CHAIN_ID, CrossChainAssetKind::Erc20, AssetType::Bridged, ETH_USDT_CONTRACT.to_vec()),
+        production_config(CanonicalAssetProfile::Usdt, TRON_MAINNET_CHAIN_ID, CrossChainAssetKind::Trc20, AssetType::Bridged, TRON_USDT_CONTRACT.to_vec()),
+        production_config(CanonicalAssetProfile::Usdc, ETHEREUM_MAINNET_CHAIN_ID, CrossChainAssetKind::Erc20, AssetType::Bridged, ETH_USDC_CONTRACT.to_vec()),
+    ]
+}
+
 pub struct CrossChainAssetRegistry {
     pub canonical_asset_id: Hash,
     pub symbol: String,
