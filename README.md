@@ -1082,3 +1082,14 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - The claimed tip must exactly match the persisted canonical Bitcoin checkpoint.
 - State exposes validate_bitcoin_utxo_spend_state so bridge validation can require the unspent-state proof.
 - This is a correctness-first full-block scan and can be large; it is not yet a compact UTXO-accumulator proof and does not replace full Bitcoin script/consensus validation.
+
+
+## M121 — Compact Bitcoin UTXO Accumulator Boundary
+
+- Adds a domain-separated Freedom Chain UTXO accumulator commitment.
+- Adds compact Merkle-style membership proofs for an exact (txid, vout, amount, scriptPubKey) leaf.
+- The accumulator is bound to the canonical Bitcoin tip height, block hash and chainwork.
+- State can validate an accumulator membership proof against its persisted Bitcoin canonical tip.
+- M121 does not claim that this accumulator root is committed by Bitcoin consensus or by the Bitcoin block header.
+- A production bridge must authenticate the accumulator root through a separately specified commitment source before treating the compact proof as authoritative.
+- M120 remains the fallback correctness proof when no authenticated external UTXO commitment is available.
