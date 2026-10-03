@@ -220,6 +220,11 @@ impl ChainState {
   if signature.signing_root!=expected_signing_root || !signature.verify(){return Err(StateError::InvalidBridgeWithdrawal);}
   Ok(())
  }
+ pub fn validate_ethereum_end_to_end_proof(&self,proof:&freedom_types::EthereumEndToEndProof)->Result<(),StateError>{
+  if !proof.verify(){return Err(StateError::InvalidBridgeWithdrawal);}
+  self.validate_cross_chain_finality_envelope(&proof.envelope)?;
+  Ok(())
+ }
 
  pub fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
