@@ -20,9 +20,7 @@ pub fn wallet_id(address: &Address) -> Hash {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WalletSnapshot {
     pub address: Address,
-    #[serde(rename="balance_321m_units", alias="balance_mfdm")]
     pub balance_321m_units: u128,
-    #[serde(rename="balance_321m", alias="balance_fdm")]
     pub balance_321m: String,
 }
 
@@ -37,7 +35,7 @@ pub fn history(state: &freedom_state::ChainState, address: &Address) -> Vec<free
 
 pub fn format_321m(amount: u128) -> String {
     let whole = amount / freedom_primitives::NATIVE_ASSET_SCALE;
-    let frac = amount % freedom_primitives::FDM_SCALE;
+    let frac = amount % freedom_primitives::NATIVE_ASSET_SCALE;
     if frac == 0 { return whole.to_string(); }
     format!("{whole}.{:05}", frac).trim_end_matches('0').to_string()
 }
