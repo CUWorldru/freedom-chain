@@ -699,11 +699,15 @@ impl BitcoinReorgPolicy {
  }
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BitcoinReorgRecovery { pub bridge_id:Hash, pub evidence_fingerprint:Hash, pub nonce:u64, pub validator_ids:Vec<Hash>, pub recovery_hash:Hash }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinReorgRecoverySignature { pub validator_id:Hash, pub signature:Vec<u8> }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinReorgRecovery { pub bridge_id:Hash, pub evidence_fingerprint:Hash, pub nonce:u64, pub validator_ids:Vec<Hash>, pub signatures:Vec<BitcoinReorgRecoverySignature>, pub recovery_hash:Hash }
 impl BitcoinReorgRecovery {
  pub fn signing_bytes(&self)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BITCOIN-REORG-RECOVERY-V1");o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.evidence_fingerprint);o.extend_from_slice(&self.nonce.to_le_bytes());for v in &self.validator_ids{o.extend_from_slice(v);}o}
  pub fn compute_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
- pub fn validate(&self)->bool{self.bridge_id!=[0;32]&&self.evidence_fingerprint!=[0;32]&&self.nonce>0&&!self.validator_ids.is_empty()&&self.recovery_hash==self.compute_hash()}
+ pub fn validate(&self)->bool{self.bridge_id!=[0;32]&&self.evidence_fingerprint!=[0;32]&&self.nonce>0&&!self.validator_ids.is_empty()&&self.validator_ids.len()==self.signatures.len()&&self.recovery_hash==self.compute_hash()}
+ pub fn authenticated_count(&self,validators:&std::collections::BTreeMap<Hash,[u8;32]>)->u16{let mut seen=std::collections::BTreeSet::new();for s in &self.signatures{if s.signature.len()!=64||!seen.insert(s.validator_id){continue;}if let Some(key)=validators.get(&s.validator_id){if freedom_crypto::verify(key,&self.signing_bytes(),s.signature.as_slice().try_into().unwrap()){continue;}}}seen.len() as u16}
 }
 pub struct BitcoinReorgReport { pub checkpoint_height:u64, pub checkpoint_hash:Hash, pub candidate_tip_height:u64, pub candidate_tip_hash:Hash, pub candidate_chainwork:[u8;32] }
 pub fn bitcoin_evaluate_reorg(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinReorgReport,BitcoinCheckpointError>{
