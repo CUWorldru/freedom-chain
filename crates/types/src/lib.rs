@@ -597,14 +597,14 @@ impl BitcoinUtxoProof {
 }
 
 
+pub fn bitcoin_sha256d(data:&[u8])->Hash{use sha2::{Digest,Sha256};let first=Sha256::digest(data);let second=Sha256::digest(first);let mut out=[0u8;32];out.copy_from_slice(&second);out}
 pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
     let mut current=tx_hash;
     for (depth,sibling) in branch.iter().enumerate(){
         let bit=(index>>depth)&1;
         let mut bytes=Vec::with_capacity(64);
         if bit==0{bytes.extend_from_slice(&current);bytes.extend_from_slice(sibling)}else{bytes.extend_from_slice(sibling);bytes.extend_from_slice(&current)}
-        let first=freedom_primitives::hash_bytes(&bytes);
-        current=freedom_primitives::hash_bytes(&first);
+        current=bitcoin_sha256d(&bytes);
     }
     current
 }
