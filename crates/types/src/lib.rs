@@ -2640,18 +2640,24 @@ impl BitcoinUtxoCommitmentAttestation {
         seen.len() as u16
     }
 
+    pub fn verify_signatures(
+        &self,
+        validators: &std::collections::BTreeMap<Hash,[u8;32]>,
+        quorum: u16,
+    ) -> bool {
+        self.validate_structure() && quorum > 0 && self.authenticated_count(validators) >= quorum
+    }
+
     pub fn verify(
         &self,
         canonical_tip: &BitcoinChainCheckpoint,
         validators: &std::collections::BTreeMap<Hash,[u8;32]>,
         quorum: u16,
     ) -> bool {
-        self.validate_structure()
-            && quorum > 0
+        self.verify_signatures(validators,quorum)
             && self.bitcoin_tip_height == canonical_tip.height
             && self.bitcoin_tip_hash == canonical_tip.block_hash
             && self.bitcoin_tip_chainwork == canonical_tip.chainwork
-            && self.authenticated_count(validators) >= quorum
     }
 }
 impl BitcoinUtxoAccumulatorTransition {
