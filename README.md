@@ -437,3 +437,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Epoch-bound block construction now passes the correct next epoch instead of a hard-coded epoch value.
 - Runtime block execution commits the certificate carried by an epoch-transition block before calculating the resulting state root.
 - The node therefore has the full local event-loop path from epoch boundary detection to certificate gossip and certificate-bearing block production.
+
+
+## M40 — Snapshot Fast-Sync Activation
+
+- Snapshot sync responses now carry the epoch-transition certificate committed by the snapshot state.
+- Snapshot storage rejects inconsistent epoch-transition proofs instead of performing a tautological hash check.
+- A fresh node requests the latest snapshot from a connected peer.
+- Snapshot activation verifies the checkpoint hash/state root, finality certificate against the snapshot validator set, state commitment, and epoch-transition certificate binding.
+- The checkpoint block must carry the same epoch-transition certificate as the snapshot state.
+- Only after these checks does the node replace its local state and persist the verified snapshot.
