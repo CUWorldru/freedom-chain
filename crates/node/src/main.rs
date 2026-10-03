@@ -511,7 +511,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_round_peers = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_conflicts = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_misbehavior = Vec::<SyncMisbehaviorEvidence>::new();
-    let mut peer_reputations = BTreeMap::<libp2p::PeerId, PeerReputation>::new();
+    let mut peer_reputations = store
+        .load_peer_reputation::<BTreeMap<libp2p::PeerId, PeerReputation>>()
+        .unwrap_or_default();
     let mut snapshot_misbehavior = Vec::<SnapshotMisbehaviorEvidence>::new();
     let mut pending_snapshot = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
     let mut snapshot_candidates = BTreeMap::<Hash, (u64, freedom_network::SnapshotSyncResponse)>::new();
@@ -700,6 +702,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     reason: evidence.reason.clone(),
                                                 });
                                                 record_peer_evidence(&mut peer_reputations, evidence);
+                                                store.save_peer_reputation(&peer_reputations)?;
                                                 eprintln!(
                                                     "SYNC_CONFLICT peer={} from={} fingerprint={} score={:?} existing_candidates={}",
                                                     peer,
@@ -869,6 +872,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     reason: evidence.reason.clone(),
                                                 });
                                                 record_peer_evidence(&mut peer_reputations, evidence);
+                                                store.save_peer_reputation(&peer_reputations)?;
                                                 eprintln!(
                                                     "SNAPSHOT_CONFLICT peer={} height={} fingerprint={} score={:?} candidates={}",
                                                     peer,
