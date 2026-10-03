@@ -247,11 +247,57 @@ mod tests {
         assert_eq!(store.latest_hash().unwrap(), block_hash(&block));
         assert_eq!(store.get_block(1).unwrap(), Some(block));
         let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis { chain_id: 1, initial_supply: 0, validators: vec![] });
-        store.save_snapshot(&genesis, [9;32]).unwrap();
+        store.save_snapshot(&genesis, [0;32]).unwrap();
         let loaded = store.load_snapshot(0).unwrap().unwrap();
-        assert_eq!(loaded.block_hash, [9;32]);
+        assert_eq!(loaded.block_hash, [0;32]);
+        assert_eq!(loaded.state.last_block_hash, [0;32]);
         assert_eq!(loaded.state.state_root(), loaded.state_root);
         assert!(loaded.certificate.is_none());
         assert!(loaded.epoch_transition_certificate.is_none());
+    }
+
+    #[test]
+    fn rejects_non_genesis_snapshot_without_checkpoint() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: 1, initial_supply: 0, validators: vec![]
+        });
+        let snapshot = StateSnapshot {
+            chain_id: CHAIN_ID,
+            height: 1,
+            block_hash: [7; 32],
+            state_root: genesis.state_root(),
+            state: genesis,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+        store.db.put(ChainStore::snapshot_key(1), serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        let err = store.load_snapshot(1).unwrap_err();
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "checkpoint block missing"));
+    }
+
+    #[test]
+    fn rejects_corrupted_genesis_snapshot_hash_linkage() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: 1, initial_supply: 0, validators: vec![]
+        });
+        let mut snapshot = StateSnapshot {
+            chain_id: CHAIN_ID,
+            height: 0,
+            block_hash: [0; 32],
+            state_root: genesis.state_root(),
+            state: genesis,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+        snapshot.block_hash = [9; 32];
+        store.db.put(ChainStore::snapshot_key(0), serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        let err = store.load_snapshot(0).unwrap_err();
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "genesis snapshot hash linkage mismatch"));
     }
 }
