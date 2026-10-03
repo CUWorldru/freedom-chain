@@ -157,7 +157,7 @@ impl ChainState {
  pub fn recover_bitcoin_reorg(&mut self,recovery:freedom_types::BitcoinReorgRecovery)->Result<(),StateError>{
   if !recovery.validate(){return Err(StateError::BitcoinReorgDetected);}
   let journal=self.bitcoin_reorg_evidence.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
-  if !journal.iter().any(|e|e.fingerprint==recovery.evidence_fingerprint){return Err(StateError::BitcoinReorgDetected);}
+  if !journal.iter().any(|e|e.fingerprint==recovery.evidence_fingerprint){return Err(StateError::BitcoinReorgDetected);} let checkpoint=self.bitcoin_checkpoints.get(&recovery.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?; if recovery.canonical_height<checkpoint.height||recovery.canonical_chainwork<checkpoint.chainwork{return Err(StateError::BitcoinReorgDetected);}
   let policy=self.bitcoin_reorg_policy.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
   let mut ids=recovery.validator_ids.clone();ids.sort();ids.dedup();
   if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
