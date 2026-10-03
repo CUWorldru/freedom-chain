@@ -1034,3 +1034,8 @@ Bitcoin reorg recovery now carries per-validator Ed25519 signatures. Recovery is
 ## M112 — Bitcoin Recovery Canonicality Binding
 
 Recovery authorizations now bind to a canonical Bitcoin height, block hash, and accumulated chainwork. Recovery is rejected if the declared canonical point is below the trusted checkpoint in height or chainwork, preventing recovery from being used to authorize rollback to an older/weaker branch.
+
+
+## M113 — Bitcoin Canonical Tip Proof
+
+Reorg recovery now supports an explicit `BitcoinCanonicalTipProof`. The recovery tip height, hash and accumulated chainwork must exactly match a contiguous, PoW-validated header chain extending the trusted checkpoint. A claimed canonical tip without a verifiable header chain cannot recover the bridge.
