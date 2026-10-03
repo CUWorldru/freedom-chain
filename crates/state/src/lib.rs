@@ -177,6 +177,14 @@ impl ChainState {
   Ok(())
  }
  pub fn bitcoin_utxo_commitment_attestation(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoCommitmentAttestation>{self.bitcoin_utxo_attestations.get(&bridge_id)}
+ pub fn validate_bitcoin_block_utxo_transition(&self,transition:&freedom_types::BitcoinUtxoAccumulatorTransition,previous:&[freedom_types::BitcoinUtxoStateEntry],block:&freedom_types::BitcoinSpendScanBlock)->Result<(),StateError>{
+  let canonical=self.bitcoin_canonical_tips.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if transition.previous_tip!=*canonical || block.height!=canonical.height+1 || transition.next_tip.height!=block.height || transition.next_tip.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
+  block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  let (root,count)=freedom_types::BitcoinUtxoAccumulatorTransition::verify_block_against_header(previous,block).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  if root!=transition.next_root||count!=transition.next_leaf_count{return Err(StateError::InvalidBridgeWithdrawal)}
+  Ok(())
+ }
  pub fn validate_bitcoin_utxo_transition(&self,transition:&freedom_types::BitcoinUtxoAccumulatorTransition,previous:&[freedom_types::BitcoinUtxoStateEntry])->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if transition.previous_tip.block_hash!=canonical.block_hash || transition.previous_tip.height!=canonical.height { return Err(StateError::InvalidBridgeWithdrawal); }
