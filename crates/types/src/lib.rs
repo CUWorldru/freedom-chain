@@ -2353,18 +2353,50 @@ pub struct BitcoinUtxoSmtUpdateProof {
 }
 
 impl BitcoinUtxoSmtUpdateProof {
-    pub fn verify(&self) -> bool {
-        if self.previous_root == [0;32] || self.next_root == [0;32]
-            || self.steps.is_empty() || self.steps.len() > 100_000 { return false; }
-        let mut root=self.previous_root;
-        let mut keys=std::collections::BTreeSet::new();
-        for step in &self.steps {
-            if !keys.insert(step.key) { return false; }
-            let Some(next)=step.verify(root) else { return false; };
-            root=next;
+    pub fn from_block_delta(
+        previous_root: Hash,
+        next_root: Hash,
+        previous: &[BitcoinUtxoStateEntry],
+        raw_transactions: &[Vec<u8>],
+        witness_steps: Vec<BitcoinUtxoSmtUpdateStep>,
+    ) -> Result<Self, String> {
+        let (spent,created)=BitcoinUtxoAccumulatorTransition::derive_block_delta(raw_transactions)?;
+        let mut expected=std::collections::BTreeMap::<(Hash,u32),Option<BitcoinUtxoStateEntry>>::new();
+        for e in previous {
+            if expected.insert((e.tx_hash,e.vout),Some(e.clone())).is_some() {
+                return Err("duplicate previous outpoint".into());
+            }
         }
-        root==self.next_root
+        for outpoint in spent {
+            if !expected.contains_key(&outpoint) {
+                return Err("block spends unavailable UTXO".into());
+            }
+            expected.insert(outpoint,None);
+        }
+        for e in created {
+            let key=(e.tx_hash,e.vout);
+            if expected.insert(key,Some(e)).is_some() {
+                return Err("created output collision".into());
+            }
+        }
+        if witness_steps.len()!=expected.len() {
+            return Err("witness step count does not match block delta".into());
+        }
+        for step in &witness_steps {
+            let key=match &step.new_entry {
+                Some(e)=>(e.tx_hash,e.vout),
+                None=>{
+                    let Some(Some(old))=expected.get_key_value(&(step.old_entry.as_ref().ok_or("missing deletion entry")?.tx_hash,step.old_entry.as_ref().unwrap().vout)).map(|(_,v)|v) else { return Err("invalid deletion".into()); };
+                    (old.tx_hash,old.vout)
+                }
+            };
+            if !expected.contains_key(&key) { return Err("unexpected witness key".into()); }
+            if step.old_entry != expected.get(&key).cloned().unwrap_or(None) { return Err("old entry mismatch".into()); }
+        }
+        Ok(Self{previous_root,next_root,steps:witness_steps})
     }
+
+
 }
 
 pub struct BitcoinUtxoCommitmentAttestation {
