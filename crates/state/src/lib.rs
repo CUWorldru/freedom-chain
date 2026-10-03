@@ -257,6 +257,21 @@ impl ChainState {
  fn put_len(out:&mut Vec<u8>, n:usize){out.extend_from_slice(&(n as u64).to_le_bytes());}
  fn put_bytes(out:&mut Vec<u8>, b:&[u8]){put_len(out,b.len());out.extend_from_slice(b);}
  fn enc_account(a:&Account)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&a.address);o.extend_from_slice(&a.public_key);o.extend_from_slice(&a.nonce.to_le_bytes());o.extend_from_slice(&a.balance.to_le_bytes());o.extend_from_slice(&a.locked.to_le_bytes());o.extend_from_slice(&a.staked.to_le_bytes());o}
+ fn enc_asset(a:&AssetDefinition)->Vec<u8>{
+  let mut o=Vec::new();
+  o.extend_from_slice(&a.asset_id);
+  o.extend_from_slice(&a.source_chain_id.to_le_bytes());
+  o.push(a.asset_type as u8);
+  put_len(&mut o,a.contract_address.len());
+  o.extend_from_slice(&a.contract_address);
+  put_len(&mut o,a.symbol.len());
+  o.extend_from_slice(a.symbol.as_bytes());
+  o.push(a.decimals);
+  o.extend_from_slice(&a.issuer);
+  o.extend_from_slice(&a.bridge_id);
+  o.push(a.status as u8);
+  o
+ }
  fn enc_node(n:&Node)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&n.node_id);o.extend_from_slice(&n.owner);o.extend_from_slice(&n.capabilities.to_le_bytes());o.extend_from_slice(&n.reputation.to_le_bytes());o.extend_from_slice(&n.total_wu.to_le_bytes());o.extend_from_slice(&n.successful_tasks.to_le_bytes());o.extend_from_slice(&n.failed_tasks.to_le_bytes());o}
  fn enc_contribution(c:&Contribution)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&c.contribution_id);o.extend_from_slice(&c.node_id);o.extend_from_slice(&c.task_id);o.extend_from_slice(&c.work_units.to_le_bytes());o.extend_from_slice(&c.quality_score.to_le_bytes());o.extend_from_slice(&c.verification_score.to_le_bytes());o.extend_from_slice(&c.result_hash);put_len(&mut o,c.verifier_set.len());for v in &c.verifier_set{o.extend_from_slice(v);}o.push(match c.status{ContributionStatus::Submitted=>1,ContributionStatus::Verified=>2,ContributionStatus::Rejected=>3,ContributionStatus::Rewarded=>4});match c.reward_id{Some(id)=>{o.push(1);o.extend_from_slice(&id)},None=>o.push(0)}o.extend_from_slice(&c.reward_amount.to_le_bytes());o}
  fn enc_reward(r:&Reward)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&r.reward_id);o.extend_from_slice(&r.owner);o.extend_from_slice(&r.contribution_id);o.extend_from_slice(&r.wu.to_le_bytes());o.extend_from_slice(&r.gross_reward.to_le_bytes());o.extend_from_slice(&r.final_reward.to_le_bytes());o.extend_from_slice(&r.epoch.to_le_bytes());o}
@@ -274,6 +289,7 @@ impl ChainState {
   let mut leaves=Vec::new();
   for (k,v) in &self.accounts{leaves.push(state_leaf(b"account",k,&enc_account(v)));}
   for (k,v) in &self.validators{leaves.push(state_leaf(b"validator",k,&enc_validator(v)));}
+  for (k,v) in &self.asset_registry{leaves.push(state_leaf(b"asset",k,&enc_asset(v)));}
   for (k,v) in &self.unbonding{leaves.push(state_leaf(b"unbonding",k,&enc_unbonding(v)));}
   for (k,v) in &self.active_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"active_validator",k,&x));} for (k,v) in &self.pending_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"pending_validator",k,&x));} if let Some(cert)=&self.validator_set_certificate{leaves.push(state_leaf(b"validator_set_certificate",&[0;1],&cert.hash()));}
   for (k,v) in &self.evidence{leaves.push(state_leaf(b"evidence",k,&enc_evidence(v)));}
@@ -293,7 +309,7 @@ impl ChainState {
   leaves.sort();
   freedom_primitives::merkle_root(&leaves)
  }
- pub fn assert_invariants(&self){assert!(self.supply.is_consistent());let sum=self.accounts.values().try_fold(0u128,|s,a|{let h=a.balance.checked_add(a.locked).and_then(|v|v.checked_add(a.staked))?;s.checked_add(h)});assert!(sum.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,sum.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_mfdm.checked_add(self.annual_reserve_mfdm).and_then(|x|x.checked_add(self.draw_prize_pool_mfdm)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
+ pub fn assert_invariants(&self){assert!(self.supply.is_consistent());for (id,asset) in &self.asset_registry{assert_eq!(id,&asset.asset_id);assert!(asset.validate_identity());assert!(!asset.symbol.is_empty());}let sum=self.accounts.values().try_fold(0u128,|s,a|{let h=a.balance.checked_add(a.locked).and_then(|v|v.checked_add(a.staked))?;s.checked_add(h)});assert!(sum.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,sum.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_mfdm.checked_add(self.annual_reserve_mfdm).and_then(|x|x.checked_add(self.draw_prize_pool_mfdm)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
 }
 
 #[cfg(test)]
