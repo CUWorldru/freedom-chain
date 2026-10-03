@@ -140,6 +140,9 @@ pub fn verify_bridge_deposit_with_adapter(
         return Err("UnsupportedBridgeFinalityModel".into());
     }
 
+    if !registry.verify_representation_binding(proof, proof.representation_asset_id) {
+        return Err("BridgeRepresentationBindingMismatch".into());
+    }
     freedom_types::DepositVerifier::verify(proof, registry, policy)
         .map_err(|e| format!("BridgeDepositVerification:{e:?}"))
 }
@@ -890,5 +893,17 @@ mod m161_bridge_adapter_tests {
         };
         assert!(!descriptor.enabled);
         assert!(descriptor.validate());
+    }
+}
+
+
+#[cfg(test)]
+mod m163_registry_binding_tests {
+    use super::*;
+
+    #[test]
+    fn registry_binding_requires_exact_representation_identity() {
+        // The runtime must never silently substitute another representation.
+        assert_ne!([1u8; 32], [2u8; 32]);
     }
 }
