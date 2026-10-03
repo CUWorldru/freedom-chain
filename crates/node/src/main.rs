@@ -295,6 +295,27 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_policy_preserves_thresholds() {
+        let peer = libp2p::PeerId::random();
+        let mut reputations = BTreeMap::new();
+        for height in 1..=PEER_REPUTATION_POLICY.misbehavior_threshold as u64 {
+            record_peer_evidence(&mut reputations, PeerReputationEvidence {
+                peer,
+                height,
+                request_id: [height as u8; 32],
+                fingerprint: [3u8; 32],
+                kind: PeerEvidenceKind::SnapshotConflict,
+                reason: "test".to_string(),
+            });
+        }
+        let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(reputation.score, PEER_REPUTATION_POLICY.misbehavior_threshold);
+        assert_eq!(reputation.cooldown_until_height, 5);
+        assert!(!peer_is_eligible(&reputations, peer, 3));
+        assert!(peer_is_eligible(&reputations, peer, 6));
+    }
+
+    #[test]
     fn peer_reputation_evidence_is_bounded() {
         let peer = libp2p::PeerId::random();
         let mut reputations = BTreeMap::new();
