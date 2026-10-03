@@ -334,3 +334,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Network round-trip coverage was added for evidence messages.
 - Evidence receipt records evidence in state; monetary slashing remains exclusively behind the existing SubmitEvidence transaction path.
 - Automatic publication from every locally detected equivocation remains a follow-up hardening step.
+
+
+## M31 — Automatic Equivocation Evidence Broadcast
+
+- Local double-proposal, double-prevote and double-precommit conflicts now generate deterministic equivocation evidence.
+- The observing validator signs an EvidenceMessage and broadcasts it through the dedicated evidence topic.
+- Evidence is recorded locally before broadcast and remains subject to the existing anti-replay and peer validation path.
+- Timeout conflicts are intentionally not mapped to a slashable evidence kind because Timeout is not currently an EquivocationKind.
