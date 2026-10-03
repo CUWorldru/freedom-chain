@@ -538,3 +538,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - epoch-transition certificate bindings are validated before persistence and again during snapshot loading;
 - invalid snapshot writes fail before creating a snapshot record, so callers cannot persist a logically inconsistent checkpoint;
 - regression tests cover missing checkpoints, checkpoint/state-root mismatch, and snapshot linkage failures.
+
+
+## M49 — Atomic Remote Snapshot Activation
+
+- remote snapshot activation persists the checkpoint, tip metadata, and validated snapshot through one RocksDB write batch;
+- live ChainState is replaced only after that persistence succeeds;
+- snapshot validation can run against the incoming checkpoint before either record is committed;
+- a failed activation cannot leave the node with an in-memory snapshot that was not durably persisted;
+- regression coverage verifies that a checkpoint/state linkage failure leaves both block metadata and snapshot storage unchanged.
