@@ -1,8 +1,66 @@
 use freedom_primitives::{domain_hash, hash_bytes, merkle_root, Hash};
+use freedom_crypto::verify;
 use freedom_state::ChainState;
-use freedom_types::{Block, Event, Receipt, Transaction};
+use freedom_types::{Block, Event, Receipt, Transaction, ValidatorSetCertificate};
 #[derive(Clone, Debug)] pub struct ConsensusConfig { pub min_validators: usize }
 impl Default for ConsensusConfig { fn default()->Self{Self{min_validators:3}}}
+pub fn validator_set_hash(set: &std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>) -> Hash {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"FREEDOM-VALSET-HASH-V1");
+    for (id, entry) in set {
+        bytes.extend_from_slice(id);
+        bytes.extend_from_slice(&entry.owner);
+        bytes.extend_from_slice(&entry.consensus_key);
+        bytes.extend_from_slice(&entry.stake.to_le_bytes());
+    }
+    hash_bytes(&bytes)
+}
+
+pub fn validate_validator_set_certificate(
+    state: &ChainState,
+    cert: &ValidatorSetCertificate,
+) -> Result<(), String> {
+    if cert.from_epoch != state.epoch || cert.to_epoch != state.epoch.saturating_add(1) {
+        return Err("invalid validator set certificate epoch transition".into());
+    }
+    if cert.previous_set_hash != validator_set_hash(&state.active_validator_set) {
+        return Err("validator set certificate previous set mismatch".into());
+    }
+    if cert.new_set_hash != validator_set_hash(&state.pending_validator_set) {
+        return Err("validator set certificate new set mismatch".into());
+    }
+    if cert.votes.is_empty() {
+        return Err("validator set certificate has no votes".into());
+    }
+    let mut ids = std::collections::BTreeSet::new();
+    for vote in &cert.votes {
+        if vote.from_epoch != cert.from_epoch
+            || vote.to_epoch != cert.to_epoch
+            || vote.previous_set_hash != cert.previous_set_hash
+            || vote.new_set_hash != cert.new_set_hash
+        {
+            return Err("validator set vote does not match certificate".into());
+        }
+        if !ids.insert(vote.validator_id) {
+            return Err("duplicate validator set vote".into());
+        }
+        let entry = state.active_validator_set.get(&vote.validator_id)
+            .ok_or_else(|| "validator set vote signer is not active".to_string())?;
+        if vote.signature.len() != 64 {
+            return Err("invalid validator set vote signature length".into());
+        }
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(&vote.signature);
+        if !verify(&entry.consensus_key, &vote.signing_bytes(), &sig) {
+            return Err("invalid validator set vote signature".into());
+        }
+    }
+    if !stake_quorum_reached(state, ids.iter()) {
+        return Err("validator set certificate lacks stake quorum".into());
+    }
+    Ok(())
+}
+
 pub fn validate_genesis(state:&ChainState,config:&ConsensusConfig)->Result<(),String>{if state.validators.len()<config.min_validators{return Err(format!("M0 requires at least {} validators",config.min_validators));}if state.supply.total!=0{return Err("genesis supply must be zero".into())}Ok(())}
 fn push_u32(o:&mut Vec<u8>,v:u32){o.extend_from_slice(&v.to_le_bytes())} fn push_u64(o:&mut Vec<u8>,v:u64){o.extend_from_slice(&v.to_le_bytes())} fn push_bytes(o:&mut Vec<u8>,b:&[u8]){push_u64(o,b.len() as u64);o.extend_from_slice(b)}
 fn canonical_tx(o:&mut Vec<u8>,tx:&Transaction){push_u32(o,tx.chain_id);o.extend_from_slice(&tx.sender);push_u64(o,tx.nonce);o.push(tx.kind.code());push_bytes(o,&tx.payload);o.extend_from_slice(&tx.fee.to_le_bytes());push_bytes(o,&tx.signature)}
