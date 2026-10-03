@@ -447,6 +447,35 @@ impl EvmTransferProof {
     }
 }
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TronTrc20TransferProof {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub tx_hash: Hash,
+    pub block_number: u64,
+    pub confirmations: u64,
+    pub token_contract: Vec<u8>,
+    pub from: Vec<u8>,
+    pub to: Vec<u8>,
+    pub amount: u128,
+    pub event_index: u32,
+    pub event_signature: Hash,
+    pub proof: Vec<u8>,
+}
+impl TronTrc20TransferProof {
+    pub fn replay_event_index(&self)->u64 { self.event_index as u64 }
+    pub fn proof_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-TRON-TRC20-PROOF-V1");
+        o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.chain_id.to_le_bytes());
+        o.extend_from_slice(&self.tx_hash);o.extend_from_slice(&self.block_number.to_le_bytes());
+        o.extend_from_slice(&self.confirmations.to_le_bytes());
+        for x in [&self.token_contract,&self.from,&self.to]{o.extend_from_slice(&(x.len() as u64).to_le_bytes());o.extend_from_slice(x);}
+        o.extend_from_slice(&self.amount.to_le_bytes());o.extend_from_slice(&self.event_index.to_le_bytes());
+        o.extend_from_slice(&self.event_signature);o.extend_from_slice(&(self.proof.len() as u64).to_le_bytes());o.extend_from_slice(&self.proof);o
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:Vec<Validator> }
 
@@ -826,4 +855,13 @@ mod m84_evm_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn erc20_transfer_requires_finality(){let a=EvmAdapter::new(d()).unwrap();assert_eq!(a.verify_erc20_transfer(&p(11)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_erc20_transfer(&p(12)).is_ok());}
  #[test] fn log_index_is_event_identity(){assert_eq!(p(12).event_index(),3);}
  #[test] fn erc20_recipient_is_20_bytes(){let a=EvmAdapter::new(d()).unwrap();assert!(a.build_erc20_withdrawal_intent([1;32],[2;32],10,vec![3;20],1).is_ok());assert_eq!(a.build_erc20_withdrawal_intent([1;32],[2;32],10,vec![3;19],1),Err(BridgeAdapterError::InvalidIntent));}
+}
+
+#[cfg(test)]
+mod m85_tron_tests { use super::*; use super::bridge_adapter::*;
+ fn d()->BridgeAdapterDescriptor{BridgeAdapterDescriptor{bridge_id:[8;32],chain_id:728126428,kind:BridgeAdapterKind::Tron,finality_model:BridgeFinalityModel::BlockFinality,required_confirmations:20,native_asset:false,enabled:true}}
+ fn p(c:u64)->TronTrc20TransferProof{TronTrc20TransferProof{bridge_id:[8;32],chain_id:728126428,tx_hash:[1;32],block_number:500,confirmations:c,token_contract:vec![0xaa;34],from:vec![0xbb;34],to:vec![0xcc;34],amount:1_000_000,event_index:4,event_signature:[5;32],proof:vec![6]}}
+ #[test] fn trc20_transfer_requires_finality(){let a=TronAdapter::new(d()).unwrap();assert_eq!(a.verify_trc20_transfer(&p(19)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_trc20_transfer(&p(20)).is_ok());}
+ #[test] fn event_index_is_replay_identity(){assert_eq!(p(20).replay_event_index(),4);}
+ #[test] fn trc20_recipient_is_canonical_length(){let a=TronAdapter::new(d()).unwrap();assert!(a.build_trc20_withdrawal_intent([1;32],[2;32],10,vec![3;34],1).is_ok());assert_eq!(a.build_trc20_withdrawal_intent([1;32],[2;32],10,vec![3;33],1),Err(BridgeAdapterError::InvalidIntent));}
 }
