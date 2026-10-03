@@ -494,3 +494,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Snapshot state payloads are bounded to 8 MiB before deserialization.
 - Snapshot responses are checked for checkpoint height/state-root and finality-certificate identity before deeper cryptographic validation.
 - These checks run at the node/network boundary before state activation or block execution.
+
+## M44 — Snapshot Recovery Integrity
+
+- genesis snapshots are treated as a special height-0 state and do not require a stored checkpoint block;
+- non-genesis snapshots require a matching stored checkpoint and finality data;
+- recovery rejects snapshots that are ahead of the stored chain height;
+- recovery verifies the latest block hash against persistent height/hash metadata before replay;
+- replay continues to enforce height, previous-hash, proposer, execution, and final-hash continuity;
+- corrupted snapshot linkage and missing checkpoint cases have storage regression tests.
