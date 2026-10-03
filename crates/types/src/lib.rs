@@ -193,6 +193,41 @@ pub struct BridgeMessage {
     pub message_hash: Hash,
 }
 
+impl VerifiedDeposit {
+    pub fn to_bridge_message(
+        &self,
+        destination_chain_id: u32,
+        nonce: u64,
+    ) -> Result<BridgeMessage, BridgeAdapterError> {
+        if destination_chain_id == 0 || self.amount == 0 || self.tx_hash == [0; 32] {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        if self.recipient.len() != 20 {
+            return Err(BridgeAdapterError::InvalidIntent);
+        }
+        let mut recipient = [0u8; 20];
+        recipient.copy_from_slice(&self.recipient);
+        let mut message = BridgeMessage {
+            protocol_version: BRIDGE_MESSAGE_PROTOCOL_VERSION,
+            source_chain_id: self.source_chain_id,
+            destination_chain_id,
+            bridge_id: self.bridge_id,
+            asset_id: self.canonical_asset_id,
+            source_tx_hash: self.tx_hash,
+            source_event_index: self.event_index,
+            nonce,
+            amount: self.amount,
+            recipient,
+            message_hash: [0; 32],
+        };
+        message.message_hash = message.compute_hash();
+        if !message.validate_hash() {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        Ok(message)
+    }
+}
+
 impl BridgeMessage {
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
@@ -4839,5 +4874,41 @@ mod m151_verifier_replay_tests {
         );
         let same_key = record.replay_key;
         assert_eq!(same_key, verified.replay_key);
+    }
+}
+
+#[cfg(test)]
+mod m152_bridge_message_tests {
+    use super::*;
+
+    #[test]
+    fn verified_deposit_converts_to_canonical_bridge_message() {
+        let deposit = VerifiedDeposit {
+            canonical_asset_id:[1;32], representation_asset_id:[2;32], bridge_id:[3;32],
+            source_chain_id:728126428, tx_hash:[4;32], event_index:7, block_or_slot:8,
+            confirmations:20, amount:500, recipient:vec![9;20], replay_key:[10;32],
+            proof_hash:[11;32],
+        };
+        let message = deposit.to_bridge_message(1, 42).unwrap();
+        assert_eq!(message.protocol_version, BRIDGE_MESSAGE_PROTOCOL_VERSION);
+        assert_eq!(message.asset_id, deposit.canonical_asset_id);
+        assert_eq!(message.source_tx_hash, deposit.tx_hash);
+        assert_eq!(message.source_event_index, deposit.event_index);
+        assert_eq!(message.amount, deposit.amount);
+        assert!(message.validate_hash());
+    }
+
+    #[test]
+    fn bridge_message_rejects_non_address_recipient() {
+        let deposit = VerifiedDeposit {
+            canonical_asset_id:[1;32], representation_asset_id:[2;32], bridge_id:[3;32],
+            source_chain_id:1, tx_hash:[4;32], event_index:7, block_or_slot:8,
+            confirmations:20, amount:500, recipient:vec![9;21], replay_key:[10;32],
+            proof_hash:[11;32],
+        };
+        assert_eq!(
+            deposit.to_bridge_message(1, 42),
+            Err(BridgeAdapterError::InvalidIntent)
+        );
     }
 }
