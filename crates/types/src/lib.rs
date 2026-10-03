@@ -241,6 +241,42 @@ pub struct TimeoutCertificate {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EquivocationKind {
+    DoublePrevote,
+    DoublePrecommit,
+    DoubleProposal,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EquivocationEvidence {
+    pub kind: EquivocationKind,
+    pub height: u64,
+    pub round: u64,
+    pub validator_id: Hash,
+    pub first: Vec<u8>,
+    pub second: Vec<u8>,
+    pub evidence_hash: Hash,
+}
+
+impl EquivocationEvidence {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"FREEDOM-EVIDENCE-V1");
+        out.extend_from_slice(&(match self.kind {
+            EquivocationKind::DoublePrevote => 1u8,
+            EquivocationKind::DoublePrecommit => 2u8,
+            EquivocationKind::DoubleProposal => 3u8,
+        }).to_le_bytes());
+        out.extend_from_slice(&self.height.to_le_bytes());
+        out.extend_from_slice(&self.round.to_le_bytes());
+        out.extend_from_slice(&self.validator_id);
+        out.extend_from_slice(&self.first);
+        out.extend_from_slice(&self.second);
+        out
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FinalityCertificate {
     pub block_hash: Hash,
     pub height: u64,
