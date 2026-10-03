@@ -40,6 +40,15 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - verified WU is accumulated on the node
 - no reward or FDM mint occurs in M2
 
+## M3 — Protocol-issued FDM rewards
+
+- FDM is minted only from verified contribution WU
+- reward is calculated with integer fixed-point quality and verification factors
+- each contribution can be rewarded exactly once
+- epoch issuance has a hard cap; unused capacity does not roll over
+- reward mint increases total and circulating supply together
+- Treasury and CU have no direct mint path
+
 ## Roadmap
 
 - M3: protocol-issued FDM rewards from verified contribution WU
