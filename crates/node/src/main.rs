@@ -992,7 +992,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     request_id: response.request_id,
                                                     fingerprint,
                                                     kind: PeerEvidenceKind::SyncConflict,
-            severity: PeerEvidenceSeverity::Normal,
+                                                    severity: PeerEvidenceSeverity::Normal,
                                                     reason: "batch disagrees with another valid sync response".to_string(),
                                                 };
                                                 sync_misbehavior.push(SyncMisbehaviorEvidence {
@@ -1002,6 +1002,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     batch_fingerprint: evidence.fingerprint,
                                                     reason: evidence.reason.clone(),
                                                 });
+                                                let confirming_peers = sync_candidates
+                                                    .values()
+                                                    .map(|(count, _)| *count as usize)
+                                                    .max()
+                                                    .unwrap_or(1);
+                                                evidence.severity = classify_peer_evidence(
+                                                    peer_reputations.get(&peer).unwrap_or(&PeerReputation {
+                                                        score: 0,
+                                                        cooldown_until_height: 0,
+                                                        last_decay_height: response.from_height,
+                                                        evidence: Vec::new(),
+                                                    }),
+                                                    &evidence.kind,
+                                                    confirming_peers,
+                                                );
+                                                let confirming_peers = snapshot_candidates
+                                                    .values()
+                                                    .map(|(count, _)| *count as usize)
+                                                    .max()
+                                                    .unwrap_or(1);
+                                                evidence.severity = classify_peer_evidence(
+                                                    peer_reputations.get(&peer).unwrap_or(&PeerReputation {
+                                                        score: 0,
+                                                        cooldown_until_height: response.height,
+                                                        evidence: Vec::new(),
+                                                    }),
+                                                    &evidence.kind,
+                                                    confirming_peers,
+                                                );
                                                 record_peer_evidence(&mut peer_reputations, evidence);
                                                 store.save_peer_reputation(&peer_reputations)?;
                                                 eprintln!(
@@ -1163,7 +1192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     request_id: response.request_id,
                                                     fingerprint: snapshot_fingerprint,
                                                     kind: PeerEvidenceKind::SnapshotConflict,
-            severity: PeerEvidenceSeverity::Normal,
+                                                    severity: PeerEvidenceSeverity::Normal,
                                                     reason: "snapshot commitment disagrees with another fully validated response".to_string(),
                                                 };
                                                 snapshot_misbehavior.push(SnapshotMisbehaviorEvidence {
