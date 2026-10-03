@@ -1305,8 +1305,7 @@ mod m156_bridge_mint_transaction_tests {
   let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender:state.accounts.values().next().unwrap().address,nonce:0,kind:TxKind::BridgeMint,payload,fee:7,signature:Vec::new()};
   tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
 
-  let receipt=freedom_runtime::execute_transaction(&mut state,&tx).unwrap();
-  assert!(receipt.success);
+  state.execute_transaction(&tx).unwrap();
   assert_eq!(state.accounts[&auth.recipient].balance,500);
   assert_eq!(state.accounts[&tx.sender].balance,993);
   assert_eq!(state.accounts[&tx.sender].nonce,1);
@@ -1315,7 +1314,7 @@ mod m156_bridge_mint_transaction_tests {
   assert_eq!(state.supply.treasury,7);
   assert_eq!(state.bridge_message_status[&message.replay_key()],BridgeMessageStatus::Minted);
   assert_eq!(state.bridge_deposit_replays[&auth.replay_key].status,freedom_types::DepositReplayStatus::Consumed);
-  assert!(receipt.events.iter().any(|e| matches!(e, freedom_types::Event::BridgeMinted{amount:500,..})));
+  assert!(state.events.iter().any(|e| matches!(e, freedom_types::Event::BridgeMinted{amount:500,..})));
   state.assert_invariants();
  }
 
@@ -1328,7 +1327,7 @@ mod m156_bridge_mint_transaction_tests {
   let sender=state.accounts.values().next().unwrap().address;
   let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload,fee:0,signature:Vec::new()};
   tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
-  assert!(freedom_runtime::execute_transaction(&mut state,&tx).is_err());
+  assert!(state.execute_transaction(&tx).is_err());
   assert_eq!(state.supply.total,0);
   assert!(state.bridge_deposit_replays.is_empty());
  }
@@ -1340,9 +1339,9 @@ mod m156_bridge_mint_transaction_tests {
   let sender=state.accounts.values().next().unwrap().address;
   let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload:payload.clone(),fee:0,signature:Vec::new()};
   tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
-  freedom_runtime::execute_transaction(&mut state,&tx).unwrap();
+  state.execute_transaction(&tx).unwrap();
   let mut replay=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:1,kind:TxKind::BridgeMint,payload,fee:0,signature:Vec::new()};
   replay.signature=sign(&relayer_key,&replay.signing_bytes()).to_vec();
-  assert_eq!(freedom_runtime::execute_transaction(&mut state,&replay).unwrap_err(), "DuplicateBridgeMessage");
+  assert_eq!(state.execute_transaction(&replay), Err(StateError::DuplicateBridgeMessage));
  }
 }
