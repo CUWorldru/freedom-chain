@@ -351,3 +351,17 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Slashing is capped by the validator's current stake and is idempotent per evidence hash.
 - The validator's owner account staked balance is reduced together with validator stake.
 - Slashing remains a deterministic state transition triggered by SubmitEvidence; merely receiving gossip evidence does not slash funds.
+
+
+## M33 — Validator Exit / Unbonding
+
+- Unstake no longer returns FDM immediately.
+- requested stake moves from active validator stake into unbonding_stake.
+- unbonding entries are committed in state and have deterministic IDs and release heights.
+- default unbonding cooldown is 200 blocks.
+- at maturity, unbonded FDM moves from account staked balance back to account balance.
+- active validator weight falls immediately, while the validator remains slashable through unbonding stake during cooldown.
+- deterministic equivocation slashing covers both active and unbonding stake.
+- validator-set refresh uses active stake, so a full validator exit is removed at the next epoch boundary.
+- legacy serialized validators without unbonding_stake deserialize as zero via Serde defaults.
+- M33 tests cover cooldown, maturity release and slashing of pending unbonding stake.
