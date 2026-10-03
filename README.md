@@ -547,3 +547,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - snapshot validation can run against the incoming checkpoint before either record is committed;
 - a failed activation cannot leave the node with an in-memory snapshot that was not durably persisted;
 - regression coverage verifies that a checkpoint/state linkage failure leaves both block metadata and snapshot storage unchanged.
+
+
+## M50 — Atomic Block Sync Persistence
+
+- synced blocks are first validated and executed against a cloned working state;
+- the complete accepted sync batch is persisted with one RocksDB write batch;
+- live ChainState is replaced only after the complete batch is durably persisted;
+- a persistence failure cannot leave a partially persisted sync batch with a corresponding in-memory state transition;
+- invalid members are rejected before any block from the batch is written;
+- sync no longer attempts to create non-finalized snapshots from an ordinary block-sync response; finalized snapshots remain tied to finality certificates.
