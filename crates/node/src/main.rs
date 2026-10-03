@@ -169,6 +169,15 @@ fn record_peer_evidence_with_confirmations(
         last_decay_height: height,
         evidence: Vec::new(),
     });
+    if entry.evidence.iter().any(|existing| {
+        existing.peer == evidence.peer
+            && existing.height == evidence.height
+            && existing.request_id == evidence.request_id
+            && existing.fingerprint == evidence.fingerprint
+            && existing.kind == evidence.kind
+    }) {
+        return;
+    }
     evidence.severity = classify_peer_evidence(entry, &evidence.kind, confirming_peers);
     entry.score = entry.score.saturating_add(peer_evidence_weight(
         &evidence.kind,
