@@ -1077,10 +1077,10 @@ impl CreateTicketPayload {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DrawConfig { pub draw_id: Hash, pub draw_type: DrawType, pub ticket_price_mfdm: u128, pub winner_count: u32, pub starts_at: u64, pub ends_at: u64, pub seed_block: u64 }
+pub struct DrawConfig { pub draw_id: Hash, pub draw_type: DrawType, #[serde(rename="ticket_price_native_units", alias="ticket_price_mfdm")] pub ticket_price_native_units: u128, pub winner_count: u32, pub starts_at: u64, pub ends_at: u64, pub seed_block: u64 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DrawResult { pub draw_id: Hash, pub total_tickets: u64, pub prize_pool_mfdm: u128, pub cu_fund_mfdm: u128, pub annual_reserve_mfdm: u128, pub winners: Vec<Hash>, pub randomness_seed: Hash, pub selection_proof: Hash }
+pub struct DrawResult { pub draw_id: Hash, pub total_tickets: u64, #[serde(rename="prize_pool_native_units", alias="prize_pool_mfdm")] pub prize_pool_native_units: u128, #[serde(rename="cu_fund_native_units", alias="cu_fund_mfdm")] pub cu_fund_native_units: u128, #[serde(rename="annual_reserve_native_units", alias="annual_reserve_mfdm")] pub annual_reserve_native_units: u128, pub winners: Vec<Hash>, pub randomness_seed: Hash, pub selection_proof: Hash }
 
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
