@@ -680,3 +680,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - one score and one cooldown policy determine peer eligibility for sync and snapshot discovery;
 - reputation remains local node evidence and does not change validator membership, stake, consensus weight or slashing;
 - new evidence kinds can be added without duplicating scoring and cooldown logic.
+
+
+## M65 — Peer Reputation Persistence
+
+- peer reputation is now persisted in the chain store and restored during node startup;
+- the persisted record includes peer scores, cooldown heights and structured evidence;
+- updates are written atomically as a single RocksDB key;
+- missing reputation data safely starts from an empty reputation map;
+- reputation remains local operational evidence and is not part of consensus state or validator stake.
