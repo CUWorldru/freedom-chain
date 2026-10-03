@@ -124,9 +124,29 @@ fn compact_peer_evidence(reputation: &mut PeerReputation) -> bool {
     true
 }
 
+fn classify_peer_evidence(reputation: &PeerReputation) -> PeerEvidenceSeverity {
+    let recent = reputation.evidence.iter().rev().take(PEER_REPUTATION_POLICY.evidence_limit);
+    let mut same_kind_recent = 0usize;
+    let mut recent_total = 0usize;
+    for evidence in recent {
+        recent_total += 1;
+        if evidence.kind == reputation.evidence.last().map(|e| e.kind.clone()).unwrap_or(PeerEvidenceKind::SyncConflict) {
+            same_kind_recent += 1;
+        }
+        if recent_total >= 3 {
+            break;
+        }
+    }
+    match same_kind_recent {
+        0 | 1 => PeerEvidenceSeverity::Normal,
+        2 => PeerEvidenceSeverity::Elevated,
+        _ => PeerEvidenceSeverity::Critical,
+    }
+}
+
 fn record_peer_evidence(
     reputations: &mut BTreeMap<libp2p::PeerId, PeerReputation>,
-    evidence: PeerReputationEvidence,
+    mut evidence: PeerReputationEvidence,
 ) {
     let peer = evidence.peer;
     let height = evidence.height;
@@ -136,6 +156,7 @@ fn record_peer_evidence(
         last_decay_height: height,
         evidence: Vec::new(),
     });
+    evidence.severity = classify_peer_evidence(entry);
     entry.score = entry.score.saturating_add(peer_evidence_weight(
         &evidence.kind,
         evidence.severity,
