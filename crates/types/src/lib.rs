@@ -2511,6 +2511,62 @@ impl BitcoinUtxoSmtUpdateProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CrossChainProofKind {
+    BitcoinUtxo,
+    Ethereum,
+    Tron,
+    Ton,
+    Solana,
+    GenericFinality,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrossChainFinalityEnvelope {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub sequence: u64,
+    pub proof_kind: CrossChainProofKind,
+    pub finalized_height: u64,
+    pub finalized_hash: Hash,
+    pub state_root: Hash,
+    pub previous_state_root: Hash,
+    pub proof_hash: Hash,
+}
+
+impl CrossChainFinalityEnvelope {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-CROSS-CHAIN-FINALITY-V1");
+        o.extend_from_slice(&self.bridge_id);
+        o.extend_from_slice(&self.chain_id.to_le_bytes());
+        o.extend_from_slice(&self.sequence.to_le_bytes());
+        o.push(match self.proof_kind {
+            CrossChainProofKind::BitcoinUtxo=>0,
+            CrossChainProofKind::Ethereum=>1,
+            CrossChainProofKind::Tron=>2,
+            CrossChainProofKind::Ton=>3,
+            CrossChainProofKind::Solana=>4,
+            CrossChainProofKind::GenericFinality=>255,
+        });
+        o.extend_from_slice(&self.finalized_height.to_le_bytes());
+        o.extend_from_slice(&self.finalized_hash);
+        o.extend_from_slice(&self.state_root);
+        o.extend_from_slice(&self.previous_state_root);
+        o.extend_from_slice(&self.proof_hash);
+        o
+    }
+
+    pub fn compute_hash(&self)->Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
+
+    pub fn validate_structure(&self)->bool {
+        self.bridge_id != [0;32] && self.chain_id != 0 && self.sequence > 0
+            && self.finalized_height > 0 && self.finalized_hash != [0;32]
+            && self.state_root != [0;32] && self.previous_state_root != [0;32]
+            && self.proof_hash != [0;32]
+    }
+}
+
 pub struct BitcoinUtxoBlockCommitment {
     pub block_height: u64,
     pub block_hash: Hash,
