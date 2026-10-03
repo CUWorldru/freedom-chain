@@ -194,3 +194,18 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - stale proposals, votes and timeout messages from other rounds are ignored/rejected.
 - a successful block finalization resets the round and advances to the next height.
 - M17 is still a prototype consensus runtime: durable peer state, block sync, persistent chain storage, lockstep timers, equivocation evidence/slashing and full Byzantine view-change rules remain before production.
+
+
+## M18 — Persistent chain storage / block sync
+
+- freedom-storage persists finalized blocks and chain metadata in RocksDB.
+- The validator replays stored blocks through the normal transactional execute_block path on startup.
+- Stored blocks are checked for height continuity, previous hash, deterministic proposer, state transition and latest-hash metadata before being accepted.
+- Finalized blocks are persisted before the node advances to the next height.
+- Validators periodically broadcast bounded sync requests for missing heights.
+- Peers answer with at most 32 stored blocks per sync response.
+- Sync responses are accepted only for the active request and are replayed sequentially through the same state-transition validation used by consensus.
+- Synced blocks are persisted locally after successful execution.
+- Block headers now commit the consensus round independently from the block epoch.
+- FREEDOM_DB_PATH selects the local RocksDB directory; default is ./data/freedom.
+- M18 is a verified-chain replay/sync prototype; production still needs a dedicated request/response transport, state snapshots, block availability scoring, pruning/checkpoints and robust peer-level anti-spam controls.
