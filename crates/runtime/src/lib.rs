@@ -14,6 +14,7 @@ let mut receipts=Vec::with_capacity(block.transactions.len());
 for tx in &block.transactions{receipts.push(execute_transaction(&mut working,tx)?);}
 if block.header.receipts_root!=receipts_root(&receipts){return Err("receipts root mismatch".into())}
 working.height=block.header.height;
+working.maybe_advance_epoch();
 if block.header.state_root!=working.state_root(){return Err("state root mismatch".into())}
 let committed=Block{header:block.header.clone(),transactions:block.transactions.clone(),receipts};
 let bh=block_hash(&committed);
