@@ -1126,3 +1126,14 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - Every spend must consume an currently available UTXO; every created output is inserted into the resulting state.
 - The resulting UTXO Merkle root and leaf count are recomputed from the complete post-block set.
 - This keeps the compact commitment path tied to actual Bitcoin transaction data rather than validator-supplied delta lists.
+
+
+## M125 — Canonical Bitcoin Block Binding
+
+- Binds the M124 UTXO transition to an actual Bitcoin block header.
+- The supplied transaction set must reproduce the header Merkle root.
+- The header must pass Bitcoin proof-of-work validation.
+- The block height must be exactly the canonical tip height plus one.
+- The header parent hash must equal the persisted canonical Bitcoin tip hash.
+- The resulting block hash must equal the transition next_tip.
+- UTXO root and leaf count are recomputed from the transaction set only after header binding succeeds.
