@@ -44,6 +44,23 @@ async fn make_evidence_message(evidence: freedom_types::EquivocationEvidence, se
     msg
 }
 
+#[cfg(test)]
+mod m31_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+
+    #[test]
+    fn evidence_message_is_signed_by_local_validator() {
+        let key=ed25519_dalek::SigningKey::from_bytes(&[11u8;32]);
+        let evidence=freedom_consensus::make_evidence(
+            freedom_types::EquivocationKind::DoublePrevote,
+            10,2,hash_bytes(b"bad-validator"),vec![1,2],vec![3,4]);
+        let msg=make_evidence_message(evidence,hash_bytes(b"sender"),&key);
+        assert_eq!(msg.signature.len(),64);
+        assert_ne!(msg.message_id(),[0u8;32]);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let validators: Vec<Validator> = (0u8..3).map(|i| {
         let key = [i + 1; 32];
