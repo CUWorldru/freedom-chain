@@ -505,6 +505,35 @@ impl TonJettonTransferProof {
     }
 }
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SolanaTransferProof {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub tx_hash: Hash,
+    pub slot: u64,
+    pub confirmations: u64,
+    pub token_mint: Vec<u8>,
+    pub source: Vec<u8>,
+    pub destination: Vec<u8>,
+    pub amount: u128,
+    pub instruction_index: u32,
+    pub program_id: Vec<u8>,
+    pub proof: Vec<u8>,
+}
+impl SolanaTransferProof {
+    pub fn replay_event_index(&self)->u64 { self.instruction_index as u64 }
+    pub fn proof_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-SOLANA-SPL-PROOF-V1");
+        o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.chain_id.to_le_bytes());
+        o.extend_from_slice(&self.tx_hash);o.extend_from_slice(&self.slot.to_le_bytes());
+        o.extend_from_slice(&self.confirmations.to_le_bytes());
+        for x in [&self.token_mint,&self.source,&self.destination,&self.program_id]{o.extend_from_slice(&(x.len() as u64).to_le_bytes());o.extend_from_slice(x);}
+        o.extend_from_slice(&self.amount.to_le_bytes());o.extend_from_slice(&self.instruction_index.to_le_bytes());
+        o.extend_from_slice(&(self.proof.len() as u64).to_le_bytes());o.extend_from_slice(&self.proof);o
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:Vec<Validator> }
 
@@ -762,6 +791,40 @@ impl ValidatorPrecommit {
 
 
 
+
+impl EvmAdapter {
+ pub fn verify_erc20_transfer(&self,p:&EvmTransferProof)->Result<BridgeDepositProof,BridgeAdapterError>{
+  if p.bridge_id!=self.descriptor.bridge_id||p.chain_id!=self.descriptor.chain_id||p.tx_hash==[0;32]||p.token_contract.is_empty()||p.from.is_empty()||p.to.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
+  if p.confirmations<self.descriptor.required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
+  Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.event_index(),block_or_slot:p.block_number,confirmations:p.confirmations,proof:p.proof_bytes()})
+ }
+ pub fn build_erc20_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.len()!=20{return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
+}
+impl TronAdapter {
+ pub fn verify_trc20_transfer(&self,p:&TronTrc20TransferProof)->Result<BridgeDepositProof,BridgeAdapterError>{
+  if p.bridge_id!=self.descriptor.bridge_id||p.chain_id!=self.descriptor.chain_id||p.tx_hash==[0;32]||p.token_contract.is_empty()||p.from.is_empty()||p.to.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
+  if p.confirmations<self.descriptor.required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
+  Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.replay_event_index(),block_or_slot:p.block_number,confirmations:p.confirmations,proof:p.proof_bytes()})
+ }
+ pub fn build_trc20_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.len()!=34{return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
+}
+impl TonAdapter {
+ pub fn verify_jetton_transfer(&self,p:&TonJettonTransferProof)->Result<BridgeDepositProof,BridgeAdapterError>{
+  if p.bridge_id!=self.descriptor.bridge_id||p.chain_id!=self.descriptor.chain_id||p.tx_hash==[0;32]||p.jetton_master.is_empty()||p.sender.is_empty()||p.recipient.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
+  if p.confirmations<self.descriptor.required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
+  Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.replay_event_index(),block_or_slot:p.block_or_seqno,confirmations:p.confirmations,proof:p.proof_bytes()})
+ }
+ pub fn build_jetton_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.is_empty(){return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
+}
+impl SolanaAdapter {
+ pub fn verify_spl_transfer(&self,p:&SolanaTransferProof)->Result<BridgeDepositProof,BridgeAdapterError>{
+  if p.bridge_id!=self.descriptor.bridge_id||p.chain_id!=self.descriptor.chain_id||p.tx_hash==[0;32]||p.token_mint.is_empty()||p.source.is_empty()||p.destination.is_empty()||p.amount==0||p.proof.is_empty()||p.program_id.is_empty(){return Err(BridgeAdapterError::InvalidProof)}
+  if p.confirmations<self.descriptor.required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
+  Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.replay_event_index(),block_or_slot:p.slot,confirmations:p.confirmations,proof:p.proof_bytes()})
+ }
+ pub fn build_spl_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.len()!=32{return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
+}
+
 #[cfg(test)]
 mod m78_bridge_message_tests {
  use super::*;
@@ -902,4 +965,13 @@ mod m86_ton_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn jetton_transfer_requires_finality(){let a=TonAdapter::new(d()).unwrap();assert_eq!(a.verify_jetton_transfer(&p(4)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_jetton_transfer(&p(5)).is_ok());}
  #[test] fn event_index_is_replay_identity(){assert_eq!(p(5).replay_event_index(),2);}
  #[test] fn jetton_withdrawal_preserves_address_bytes(){let a=TonAdapter::new(d()).unwrap();let x=a.build_jetton_withdrawal_intent([1;32],[2;32],10,vec![3;36],1).unwrap();assert!(x.validate_hash());}
+}
+
+#[cfg(test)]
+mod m87_solana_tests { use super::*; use super::bridge_adapter::*;
+ fn d()->BridgeAdapterDescriptor{BridgeAdapterDescriptor{bridge_id:[11;32],chain_id:101,kind:BridgeAdapterKind::Solana,finality_model:BridgeFinalityModel::SlotFinality,required_confirmations:32,native_asset:false,enabled:true}}
+ fn p(c:u64)->SolanaTransferProof{SolanaTransferProof{bridge_id:[11;32],chain_id:101,tx_hash:[1;32],slot:1000,confirmations:c,token_mint:vec![0xaa;32],source:vec![0xbb;32],destination:vec![0xcc;32],amount:1000,instruction_index:6,program_id:vec![0xdd;32],proof:vec![7]}}
+ #[test] fn spl_transfer_requires_slot_finality(){let a=SolanaAdapter::new(d()).unwrap();assert_eq!(a.verify_spl_transfer(&p(31)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_spl_transfer(&p(32)).is_ok());}
+ #[test] fn instruction_index_is_replay_identity(){assert_eq!(p(32).replay_event_index(),6);}
+ #[test] fn spl_withdrawal_requires_32_byte_recipient(){let a=SolanaAdapter::new(d()).unwrap();assert!(a.build_spl_withdrawal_intent([1;32],[2;32],10,vec![3;32],1).is_ok());assert_eq!(a.build_spl_withdrawal_intent([1;32],[2;32],10,vec![3;31],1),Err(BridgeAdapterError::InvalidIntent));}
 }
