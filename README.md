@@ -390,3 +390,16 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Both active and pending validator sets are committed into the state root.
 - Consensus continues to validate proposals, votes, precommits and timeouts against the active set of the current epoch.
 - M35 tests cover delayed exit and delayed activation across an epoch boundary.
+
+
+## M36 — Validator Set Transition Certificate
+
+- Added a canonical `validator_set_hash` committed over validator id, owner, consensus key and active stake.
+- Added `ValidatorSetVote` with the dedicated `FREEDOM-VALSET-VOTE-V1` signing domain.
+- Added `ValidatorSetCertificate` with the dedicated `FREEDOM-VALSET-CERT-V1` domain.
+- Certificate validation binds the transition to the current epoch, the committed active-set hash and the derived pending-set hash.
+- Every certificate vote must be signed by a validator in the current active set; duplicate signers and malformed signatures are rejected.
+- Certificate acceptance requires stake-weighted quorum from the current active validator set.
+- The accepted certificate is committed into `ChainState` and therefore into the state root.
+- Runtime exposes `commit_validator_set_certificate()` as the single validation-gated state transition API.
+- M36 is the transition-proof foundation. Automatic attachment of the certificate to an epoch-bound block and snapshot fast-sync activation are intentionally left for the next integration milestone.
