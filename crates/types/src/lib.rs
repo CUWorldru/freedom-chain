@@ -2666,7 +2666,6 @@ impl EthereumTransactionProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumSszMerkleProof {
     pub leaf: Hash,
     pub generalized_index: u64,
