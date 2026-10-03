@@ -787,3 +787,15 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - startup reconstructs dedup IDs from the retained legacy evidence journal before the node processes network input;
 - a regression test verifies that a legacy record cannot be counted again after migration;
 - reputation remains local node security state and is not promoted into consensus state merely to solve persistence concerns.
+
+
+## M77 — Universal Asset Registry
+
+- Freedom Chain now has a consensus-visible asset registry inside ChainState;
+- every asset has a cryptographic asset_id derived from source chain, asset type, canonical contract/native identifier, issuer, and bridge;
+- symbols are metadata only, so assets such as USDT on different chains remain distinct even when their symbols match;
+- FRC is registered as the native Freedom Chain asset at genesis;
+- external assets are represented as Bridged assets without assuming an EVM contract model;
+- asset identity is validated before registration and duplicate asset IDs are rejected;
+- the asset registry is included in the deterministic state root and therefore inherits existing block/snapshot state-root validation;
+- the registry field uses serde defaulting for backward-compatible state decoding while new genesis state always contains FRC.
