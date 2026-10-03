@@ -1165,3 +1165,12 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - Witness steps are checked against that block-derived delta before a compact proof is constructed.
 - The state layer first validates the block against the canonical Bitcoin parent and then verifies the compact SMT transition.
 - Bitcoin block hash and UTXO SMT root remain separate commitments; the block hash is never incorrectly treated as the UTXO root.
+
+
+## M129 — Automatic Bitcoin UTXO SMT Witness Generation
+
+- Adds deterministic empty-subtree hashes for the 256-level fixed-key SMT.
+- Adds a complete UTXO snapshot abstraction with root calculation and per-key proof generation.
+- Adds automatic compact update-proof construction by diffing previous and next snapshots.
+- Only changed UTXO keys become update steps; unchanged state is represented by Merkle siblings.
+- The resulting proof can be independently verified from previous root to next root without shipping the complete UTXO snapshot.
