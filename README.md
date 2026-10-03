@@ -403,3 +403,15 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - The accepted certificate is committed into `ChainState` and therefore into the state root.
 - Runtime exposes `commit_validator_set_certificate()` as the single validation-gated state transition API.
 - M36 is the transition-proof foundation. Automatic attachment of the certificate to an epoch-bound block and snapshot fast-sync activation are intentionally left for the next integration milestone.
+
+
+## M37 — Epoch Transition Proof → Block → Snapshot
+
+- `BlockHeader` now carries an optional `epoch_transition_certificate`.
+- The certificate hash is part of canonical block serialization and therefore the block hash.
+- Epoch-boundary blocks must carry a valid validator-set transition certificate; non-boundary blocks must not carry one.
+- Runtime block execution enforces the epoch-transition proof before committing the block.
+- State snapshots explicitly carry the epoch-transition certificate alongside the state and finality certificate.
+- Snapshot loading rejects a mismatch between the transported epoch proof and the certificate committed in `ChainState`.
+- The snapshot envelope is therefore no longer only a state dump: it carries the validator-set transition proof needed to audit the epoch boundary.
+- Automatic network collection/broadcast of validator-set votes and automatic snapshot activation from a remote peer remain the next integration step; this milestone makes the proof part of the authenticated block/snapshot path.
