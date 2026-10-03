@@ -45,6 +45,20 @@ impl From<ping::Event> for FreedomEvent {
     fn from(event: ping::Event) -> Self { Self::Ping(event) }
 }
 
+pub fn make_proposal(block: freedom_types::Block, consensus_key: &ed25519_dalek::SigningKey) -> BlockProposal {
+    let proposer = block.header.proposer;
+    let block_hash = block_hash(&block);
+    let mut proposal = BlockProposal {
+        block_hash,
+        height: block.header.height,
+        proposer,
+        block,
+        signature: Vec::new(),
+    };
+    sign_proposal(&mut proposal, consensus_key);
+    proposal
+}
+
 pub fn sign_proposal(proposal: &mut BlockProposal, consensus_key: &ed25519_dalek::SigningKey) {
     proposal.signature = sign(consensus_key, &proposal.signing_bytes()).to_vec();
 }
