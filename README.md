@@ -1024,3 +1024,8 @@ Persisted Bitcoin reorg severity now acts as a bridge safety gate. Elevated or C
 ## M110 — Bitcoin Reorg Recovery
 
 A blocked Bitcoin bridge can now be recovered through a persisted recovery authorization bound to the exact evidence fingerprint and a monotonic nonce. Recovery requires at least the bridge policy validator quorum and known validator identities. Evidence is retained for audit; recovery does not erase or rewrite the conflict history.
+
+
+## M111 — Authenticated Bitcoin Reorg Recovery
+
+Bitcoin reorg recovery now carries per-validator Ed25519 signatures. Recovery is accepted only when signatures authenticate against the current validator set and the authenticated count reaches the bridge policy quorum. Validator IDs alone are no longer sufficient authorization.
