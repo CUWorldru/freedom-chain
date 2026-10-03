@@ -476,6 +476,35 @@ impl TronTrc20TransferProof {
     }
 }
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TonJettonTransferProof {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub tx_hash: Hash,
+    pub block_or_seqno: u64,
+    pub confirmations: u64,
+    pub jetton_master: Vec<u8>,
+    pub sender: Vec<u8>,
+    pub recipient: Vec<u8>,
+    pub amount: u128,
+    pub event_index: u32,
+    pub event_signature: Hash,
+    pub proof: Vec<u8>,
+}
+impl TonJettonTransferProof {
+    pub fn replay_event_index(&self)->u64 { self.event_index as u64 }
+    pub fn proof_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-TON-JETTON-PROOF-V1");
+        o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.chain_id.to_le_bytes());
+        o.extend_from_slice(&self.tx_hash);o.extend_from_slice(&self.block_or_seqno.to_le_bytes());
+        o.extend_from_slice(&self.confirmations.to_le_bytes());
+        for x in [&self.jetton_master,&self.sender,&self.recipient]{o.extend_from_slice(&(x.len() as u64).to_le_bytes());o.extend_from_slice(x);}
+        o.extend_from_slice(&self.amount.to_le_bytes());o.extend_from_slice(&self.event_index.to_le_bytes());
+        o.extend_from_slice(&self.event_signature);o.extend_from_slice(&(self.proof.len() as u64).to_le_bytes());o.extend_from_slice(&self.proof);o
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:Vec<Validator> }
 
@@ -864,4 +893,13 @@ mod m85_tron_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn trc20_transfer_requires_finality(){let a=TronAdapter::new(d()).unwrap();assert_eq!(a.verify_trc20_transfer(&p(19)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_trc20_transfer(&p(20)).is_ok());}
  #[test] fn event_index_is_replay_identity(){assert_eq!(p(20).replay_event_index(),4);}
  #[test] fn trc20_recipient_is_canonical_length(){let a=TronAdapter::new(d()).unwrap();assert!(a.build_trc20_withdrawal_intent([1;32],[2;32],10,vec![3;34],1).is_ok());assert_eq!(a.build_trc20_withdrawal_intent([1;32],[2;32],10,vec![3;33],1),Err(BridgeAdapterError::InvalidIntent));}
+}
+
+#[cfg(test)]
+mod m86_ton_tests { use super::*; use super::bridge_adapter::*;
+ fn d()->BridgeAdapterDescriptor{BridgeAdapterDescriptor{bridge_id:[10;32],chain_id:239,kind:BridgeAdapterKind::Ton,finality_model:BridgeFinalityModel::BlockFinality,required_confirmations:5,native_asset:false,enabled:true}}
+ fn p(c:u64)->TonJettonTransferProof{TonJettonTransferProof{bridge_id:[10;32],chain_id:239,tx_hash:[1;32],block_or_seqno:900,confirmations:c,jetton_master:vec![0xaa;32],sender:vec![0xbb;36],recipient:vec![0xcc;36],amount:1000,event_index:2,event_signature:[4;32],proof:vec![5]}}
+ #[test] fn jetton_transfer_requires_finality(){let a=TonAdapter::new(d()).unwrap();assert_eq!(a.verify_jetton_transfer(&p(4)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_jetton_transfer(&p(5)).is_ok());}
+ #[test] fn event_index_is_replay_identity(){assert_eq!(p(5).replay_event_index(),2);}
+ #[test] fn jetton_withdrawal_preserves_address_bytes(){let a=TonAdapter::new(d()).unwrap();let x=a.build_jetton_withdrawal_intent([1;32],[2;32],10,vec![3;36],1).unwrap();assert!(x.validate_hash());}
 }
