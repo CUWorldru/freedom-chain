@@ -21,8 +21,169 @@ pub struct Transaction {
 pub enum TxKind {
     Transfer = 1, RegisterNode = 2, SubmitContribution = 3, ClaimReward = 4, Purchase = 10,
     Stake = 5, Unstake = 6, CreateTicket = 7, Burn = 8, Governance = 9, SubmitEvidence = 11,
+    BridgeMint = 12,
 }
 impl TxKind { pub fn code(self) -> u8 { self as u8 } }
+
+/// Consensus-executed bridge mint transaction payload.
+///
+/// The complete authenticated bridge proof is carried inside the signed
+/// transaction. The codec is deterministic and length-delimited so every
+/// node signs/verifies exactly the same bytes.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeMintTransactionPayload {
+    pub message: BridgeMessage,
+    pub deposit: VerifiedDeposit,
+    pub authorization: BridgeMintAuthorization,
+    pub approvals: BridgeMessageApprovalSet,
+}
+
+impl BridgeMintTransactionPayload {
+    const VERSION: u8 = 1;
+
+    fn put_u16(out: &mut Vec<u8>, v: u16) { out.extend_from_slice(&v.to_le_bytes()); }
+    fn put_u32(out: &mut Vec<u8>, v: u32) { out.extend_from_slice(&v.to_le_bytes()); }
+    fn put_u64(out: &mut Vec<u8>, v: u64) { out.extend_from_slice(&v.to_le_bytes()); }
+    fn put_u128(out: &mut Vec<u8>, v: u128) { out.extend_from_slice(&v.to_le_bytes()); }
+    fn put_hash(out: &mut Vec<u8>, v: &Hash) { out.extend_from_slice(v); }
+    fn put_bytes(out: &mut Vec<u8>, v: &[u8]) -> Result<(), String> {
+        if v.len() > u32::MAX as usize { return Err("bridge mint payload field too large".into()); }
+        Self::put_u32(out, v.len() as u32);
+        out.extend_from_slice(v);
+        Ok(())
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
+        let mut out = Vec::with_capacity(1024);
+        out.extend_from_slice(b"FREEDOM-BRIDGE-MINT-TX-V1");
+        out.push(Self::VERSION);
+
+        let m = &self.message;
+        out.push(BRIDGE_MESSAGE_PROTOCOL_VERSION as u8);
+        Self::put_u16(&mut out, m.protocol_version);
+        Self::put_u32(&mut out, m.source_chain_id);
+        Self::put_u32(&mut out, m.destination_chain_id);
+        Self::put_hash(&mut out, &m.bridge_id);
+        Self::put_hash(&mut out, &m.asset_id);
+        Self::put_hash(&mut out, &m.source_tx_hash);
+        Self::put_u64(&mut out, m.source_event_index);
+        Self::put_u64(&mut out, m.nonce);
+        Self::put_u128(&mut out, m.amount);
+        Self::put_hash(&mut out, &m.recipient);
+        Self::put_hash(&mut out, &m.message_hash);
+
+        let d = &self.deposit;
+        Self::put_hash(&mut out, &d.canonical_asset_id);
+        Self::put_hash(&mut out, &d.representation_asset_id);
+        Self::put_hash(&mut out, &d.bridge_id);
+        Self::put_u32(&mut out, d.source_chain_id);
+        Self::put_hash(&mut out, &d.tx_hash);
+        Self::put_u64(&mut out, d.event_index);
+        Self::put_u64(&mut out, d.block_or_slot);
+        Self::put_u64(&mut out, d.confirmations);
+        Self::put_u128(&mut out, d.amount);
+        Self::put_bytes(&mut out, &d.recipient)?;
+        Self::put_hash(&mut out, &d.replay_key);
+        Self::put_hash(&mut out, &d.proof_hash);
+
+        let a = &self.authorization;
+        Self::put_hash(&mut out, &a.bridge_id);
+        Self::put_hash(&mut out, &a.message_hash);
+        Self::put_hash(&mut out, &a.replay_key);
+        Self::put_hash(&mut out, &a.canonical_asset_id);
+        Self::put_hash(&mut out, &a.representation_asset_id);
+        Self::put_u32(&mut out, a.source_chain_id);
+        Self::put_hash(&mut out, &a.source_tx_hash);
+        Self::put_u64(&mut out, a.source_event_index);
+        Self::put_u32(&mut out, a.destination_chain_id);
+        Self::put_u64(&mut out, a.nonce);
+        Self::put_u128(&mut out, a.amount);
+        Self::put_hash(&mut out, &a.recipient);
+        Self::put_u16(&mut out, a.approval_count);
+        Self::put_hash(&mut out, &a.authorization_hash);
+
+        Self::put_hash(&mut out, &self.approvals.bridge_id);
+        Self::put_hash(&mut out, &self.approvals.message_hash);
+        if self.approvals.approvals.len() > u16::MAX as usize {
+            return Err("too many bridge approvals".into());
+        }
+        Self::put_u16(&mut out, self.approvals.approvals.len() as u16);
+        for approval in &self.approvals.approvals {
+            Self::put_hash(&mut out, &approval.bridge_id);
+            Self::put_hash(&mut out, &approval.message_hash);
+            Self::put_hash(&mut out, &approval.validator_id);
+            if approval.signature.len() > u16::MAX as usize {
+                return Err("bridge approval signature too large".into());
+            }
+            Self::put_u16(&mut out, approval.signature.len() as u16);
+            out.extend_from_slice(&approval.signature);
+        }
+        Ok(out)
+    }
+
+    pub fn decode(b: &[u8]) -> Result<Self, String> {
+        struct Reader<'a> { b: &'a [u8], i: usize }
+        impl<'a> Reader<'a> {
+            fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
+                let end = self.i.checked_add(n).ok_or_else(|| "bridge mint payload overflow".to_string())?;
+                if end > self.b.len() { return Err("bridge mint payload truncated".into()); }
+                let r = &self.b[self.i..end]; self.i = end; Ok(r)
+            }
+            fn u8(&mut self) -> Result<u8, String> { Ok(self.take(1)?[0]) }
+            fn u16(&mut self) -> Result<u16, String> { Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap())) }
+            fn u32(&mut self) -> Result<u32, String> { Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
+            fn u64(&mut self) -> Result<u64, String> { Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap())) }
+            fn u128(&mut self) -> Result<u128, String> { Ok(u128::from_le_bytes(self.take(16)?.try_into().unwrap())) }
+            fn hash(&mut self) -> Result<Hash, String> { Ok(self.take(32)?.try_into().unwrap()) }
+            fn bytes(&mut self) -> Result<Vec<u8>, String> {
+                let n=self.u32()? as usize; Ok(self.take(n)?.to_vec())
+            }
+        }
+        let mut r=Reader{b,i:0};
+        if r.take(b"FREEDOM-BRIDGE-MINT-TX-V1".len())? != b"FREEDOM-BRIDGE-MINT-TX-V1" { return Err("invalid bridge mint payload domain".into()); }
+        if r.u8()? != Self::VERSION { return Err("unsupported bridge mint payload version".into()); }
+        if r.u8()? != BRIDGE_MESSAGE_PROTOCOL_VERSION as u8 { return Err("invalid bridge message protocol marker".into()); }
+
+        let message=BridgeMessage{
+            protocol_version:r.u16()?, source_chain_id:r.u32()?, destination_chain_id:r.u32()?,
+            bridge_id:r.hash()?, asset_id:r.hash()?, source_tx_hash:r.hash()?,
+            source_event_index:r.u64()?, nonce:r.u64()?, amount:r.u128()?,
+            recipient:r.hash()?, message_hash:r.hash()?,
+        };
+        let deposit=VerifiedDeposit{
+            canonical_asset_id:r.hash()?, representation_asset_id:r.hash()?, bridge_id:r.hash()?,
+            source_chain_id:r.u32()?, tx_hash:r.hash()?, event_index:r.u64()?,
+            block_or_slot:r.u64()?, confirmations:r.u64()?, amount:r.u128()?,
+            recipient:r.bytes()?, replay_key:r.hash()?, proof_hash:r.hash()?,
+        };
+        let authorization=BridgeMintAuthorization{
+            bridge_id:r.hash()?, message_hash:r.hash()?, replay_key:r.hash()?,
+            canonical_asset_id:r.hash()?, representation_asset_id:r.hash()?,
+            source_chain_id:r.u32()?, source_tx_hash:r.hash()?, source_event_index:r.u64()?,
+            destination_chain_id:r.u32()?, nonce:r.u64()?, amount:r.u128()?,
+            recipient:r.hash()?, approval_count:r.u16()?, authorization_hash:r.hash()?,
+        };
+        let approvals_bridge_id=r.hash()?;
+        let approvals_message_hash=r.hash()?;
+        let count=r.u16()? as usize;
+        let mut approval_vec=Vec::with_capacity(count);
+        for _ in 0..count {
+            let bridge_id=r.hash()?;
+            let message_hash=r.hash()?;
+            let validator_id=r.hash()?;
+            let signature_len=r.u16()? as usize;
+            let signature=r.take(signature_len)?.to_vec();
+            approval_vec.push(BridgeMessageApproval{bridge_id,message_hash,validator_id,signature});
+        }
+        if r.i != r.b.len() { return Err("trailing bytes in bridge mint payload".into()); }
+        Ok(Self{
+            message,
+            deposit,
+            authorization,
+            approvals:BridgeMessageApprovalSet{bridge_id:approvals_bridge_id,message_hash:approvals_message_hash,approvals:approval_vec},
+        })
+    }
+}
 impl Transaction {
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
