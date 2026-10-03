@@ -3,6 +3,15 @@ use freedom_crypto::verify;
 use freedom_primitives::{CHAIN_ID,Hash};
 use freedom_state::{ChainState,StateError};
 use freedom_types::{Block,Genesis,Receipt,Transaction};
+pub fn commit_validator_set_certificate(
+    state: &mut ChainState,
+    certificate: &freedom_types::ValidatorSetCertificate,
+) -> Result<(), String> {
+    freedom_consensus::validate_validator_set_certificate(state, certificate)?;
+    state.validator_set_certificate = Some(certificate.clone());
+    Ok(())
+}
+
 pub fn initialize(g:&Genesis)->Result<ChainState,String>{if g.chain_id!=CHAIN_ID{return Err("invalid chain id".into())}let s=ChainState::genesis(g);validate_genesis(&s,&ConsensusConfig::default())?;s.assert_invariants();Ok(s)}
 pub fn execute_transaction(s:&mut ChainState,tx:&Transaction)->Result<Receipt,String>{if tx.chain_id!=CHAIN_ID{return Err("invalid chain id".into())}let a=s.accounts.get(&tx.sender).ok_or_else(||"sender account not found".to_string())?;if tx.signature.len()!=64{return Err("invalid signature length".into())}let mut sig=[0u8;64];sig.copy_from_slice(&tx.signature);if !verify(&a.public_key,&tx.signing_bytes(),&sig){return Err("invalid transaction signature".into())}let h:Hash=tx.hash();let before=s.events.len();s.execute_transaction(tx).map_err(format_state_error)?;s.assert_invariants();let events=s.events[before..].to_vec();Ok(Receipt{tx_hash:h,success:true,gas_used:1,events})}
 pub fn execute_block(s:&mut ChainState,block:&Block)->Result<Block,String>{
