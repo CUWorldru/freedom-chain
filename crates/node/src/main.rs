@@ -303,6 +303,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut timer = interval(Duration::from_secs(ROUND_TIMEOUT_SECS));
     let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
     let mut pending_sync = None::<Hash>;
+    let mut pending_sync_from = None::<u64>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut valset_votes: BTreeMap<Hash, freedom_types::ValidatorSetVote> = BTreeMap::new();
     let mut valset_certificate_broadcasted: Option<Hash> = None;
@@ -332,7 +333,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = sync_timer.tick() => {
-                if let Some(peer) = connected_peers.first().copied() { pending_sync = Some(send_sync_request(&mut swarm, peer, validator_id, state.height)); }
+                if let Some(peer) = connected_peers.first().copied() {
+                    pending_sync = Some(send_sync_request(&mut swarm, peer, validator_id, state.height));
+                    pending_sync_from = Some(state.height.saturating_add(1));
+                }
             }
             event = swarm.select_next_some() => {
                 match event {
@@ -342,6 +346,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
                         if !connected_peers.contains(&peer_id) { connected_peers.push(peer_id); }
                         pending_sync = Some(send_sync_request(&mut swarm, peer_id, validator_id, state.height));
+                        pending_sync_from = Some(state.height.saturating_add(1));
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => { connected_peers.retain(|p| *p != peer_id); println!("peer_disconnected={peer_id}"); },
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
@@ -392,7 +397,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 libp2p::request_response::Message::Response { response, .. } => {
                                     match response {
                                         SyncWireResponse::Blocks(response) => {
-                                            if pending_sync != Some(response.request_id) || freedom_network::validate_sync_response(&response).is_err() { continue; }
+                                            if pending_sync != Some(response.request_id)
+                                                || pending_sync_from != Some(response.from_height)
+                                                || freedom_network::validate_sync_response(&response).is_err()
+                                            { continue; }
                                             let mut working_state = state.clone();
                                             let mut accepted_blocks = Vec::new();
                                             for block in response.blocks {
@@ -412,6 +420,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 state = working_state;
                                                 println!("SYNCED blocks={} height={}", accepted, state.height);
                                                 pending_sync=None;
+                                                pending_sync_from=None;
                                                 round=0;
                                                 timeout_round_sent=None;
                                                 if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
