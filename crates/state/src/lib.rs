@@ -67,9 +67,9 @@ impl ChainState {
  }
 
  pub const UNBONDING_COOLDOWN: u64 = 200;
- pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis FDM must be zero");let validators=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators,nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_mfdm:0,annual_reserve_mfdm:0,draw_prize_pool_mfdm:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),asset_registry: Self::genesis_asset_registry(),processed_bridge_messages:BTreeMap::new(),bridge_message_status:BTreeMap::new(),bridge_withdrawals:BTreeMap::new(),bridge_withdrawal_status:BTreeMap::new(),bridge_accounting:BTreeMap::new(),bridge_security_policies:BTreeMap::new(),bridge_approval_sets:BTreeMap::new(),bridge_pause_authorizations:BTreeMap::new(),bridge_nonce_registry:BTreeMap::new(),bridge_rate_limits:BTreeMap::new(),bridge_withdrawal_rate_limit_period:BTreeMap::new(),bitcoin_checkpoints:BTreeMap::new(),bitcoin_canonical_tips:BTreeMap::new(),bitcoin_reorg_evidence:BTreeMap::new(),bitcoin_reorg_policy:BTreeMap::new(),bitcoin_reorg_recovery:BTreeMap::new(),pending_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),validator_set_certificate:None,staking_activated:false,epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
+ pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis native asset supply must be zero");let validators=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators,nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_mfdm:0,annual_reserve_mfdm:0,draw_prize_pool_mfdm:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),asset_registry: Self::genesis_asset_registry(),processed_bridge_messages:BTreeMap::new(),bridge_message_status:BTreeMap::new(),bridge_withdrawals:BTreeMap::new(),bridge_withdrawal_status:BTreeMap::new(),bridge_accounting:BTreeMap::new(),bridge_security_policies:BTreeMap::new(),bridge_approval_sets:BTreeMap::new(),bridge_pause_authorizations:BTreeMap::new(),bridge_nonce_registry:BTreeMap::new(),bridge_rate_limits:BTreeMap::new(),bridge_withdrawal_rate_limit_period:BTreeMap::new(),bitcoin_checkpoints:BTreeMap::new(),bitcoin_canonical_tips:BTreeMap::new(),bitcoin_reorg_evidence:BTreeMap::new(),bitcoin_reorg_policy:BTreeMap::new(),bitcoin_reorg_recovery:BTreeMap::new(),pending_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),validator_set_certificate:None,staking_activated:false,epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
  pub fn genesis_asset_registry() -> BTreeMap<Hash, AssetDefinition> {
-  let contract_address = b"FRC".to_vec();
+  let contract_address = freedom_primitives::NATIVE_ASSET_SYMBOL.as_bytes().to_vec();
   let asset_id = AssetDefinition::compute_asset_id(
    freedom_primitives::CHAIN_ID,
    AssetType::Native,
@@ -82,7 +82,7 @@ impl ChainState {
    source_chain_id: freedom_primitives::CHAIN_ID,
    asset_type: AssetType::Native,
    contract_address,
-   symbol: "FRC".to_string(),
+   symbol: freedom_primitives::NATIVE_ASSET_SYMBOL.to_string(),
    decimals: 18,
    issuer: [0; 32],
    bridge_id: [0; 32],
@@ -907,13 +907,13 @@ mod m77_asset_registry_tests {
  }
 
  #[test]
- fn genesis_registers_frc_as_native_asset() {
+ fn genesis_registers_321m_as_native_asset() {
   let state=ChainState::genesis(&Genesis::default());
-  let frc=state.asset_registry.values().find(|a| a.symbol=="FRC").unwrap();
-  assert_eq!(frc.source_chain_id, freedom_primitives::CHAIN_ID);
-  assert_eq!(frc.asset_type, AssetType::Native);
-  assert_eq!(frc.status, AssetStatus::Active);
-  assert!(frc.validate_identity());
+  let native=state.asset_registry.values().find(|a| a.symbol==freedom_primitives::NATIVE_ASSET_SYMBOL).unwrap();
+  assert_eq!(native.source_chain_id, freedom_primitives::CHAIN_ID);
+  assert_eq!(native.asset_type, AssetType::Native);
+  assert_eq!(native.status, AssetStatus::Active);
+  assert!(native.validate_identity());
  }
 
  #[test]
