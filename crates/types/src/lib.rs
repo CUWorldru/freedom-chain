@@ -534,8 +534,26 @@ impl CrossChainAssetRepresentation {
     pub fn validate(&self) -> bool {
         self.canonical_asset_id != [0; 32]
             && self.representation.validate_identity()
+            && self.validate_external_identity()
             && !self.representation.symbol.is_empty()
             && self.representation.status == AssetStatus::Active
+    }
+
+    pub fn validate_external_identity(&self) -> bool {
+        match self.asset_kind {
+            CrossChainAssetKind::BitcoinUtxo => {
+                self.representation.asset_type == AssetType::Native
+                    && self.representation.contract_address.as_slice() == b"BTC"
+            }
+            CrossChainAssetKind::Erc20
+            | CrossChainAssetKind::Trc20
+            | CrossChainAssetKind::TonJetton
+            | CrossChainAssetKind::SolanaSpl => {
+                self.representation.asset_type == AssetType::Bridged
+                    && !self.representation.contract_address.is_empty()
+            }
+            CrossChainAssetKind::Other => false,
+        }
     }
 
     pub fn matches_proof(&self, proof: &CrossChainAssetProof) -> bool {
