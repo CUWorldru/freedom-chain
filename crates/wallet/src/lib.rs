@@ -20,21 +20,23 @@ pub fn wallet_id(address: &Address) -> Hash {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WalletSnapshot {
     pub address: Address,
-    pub balance_mfdm: u128,
-    pub balance_fdm: String,
+    #[serde(rename="balance_321m_units", alias="balance_mfdm")]
+    pub balance_321m_units: u128,
+    #[serde(rename="balance_321m", alias="balance_fdm")]
+    pub balance_321m: String,
 }
 
 pub fn snapshot(state: &freedom_state::ChainState, address: &Address) -> Option<WalletSnapshot> {
     let account = state.accounts.get(address)?;
-    Some(WalletSnapshot { address:*address, balance_mfdm:account.balance, balance_fdm:format_mfdm(account.balance) })
+    Some(WalletSnapshot { address:*address, balance_321m_units:account.balance, balance_321m:format_321m(account.balance) })
 }
 
 pub fn history(state: &freedom_state::ChainState, address: &Address) -> Vec<freedom_state::LedgerEntry> {
     state.ledger.iter().filter(|e| &e.sender == address).cloned().collect()
 }
 
-pub fn format_mfdm(amount: u128) -> String {
-    let whole = amount / freedom_primitives::FDM_SCALE;
+pub fn format_321m(amount: u128) -> String {
+    let whole = amount / freedom_primitives::NATIVE_ASSET_SCALE;
     let frac = amount % freedom_primitives::FDM_SCALE;
     if frac == 0 { return whole.to_string(); }
     format!("{whole}.{:05}", frac).trim_end_matches('0').to_string()
@@ -56,14 +58,17 @@ mod tests {
         let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         state.insert_account(freedom_state::Account::new(w.public_key, 12345));
         let s = snapshot(&state, &w.address).unwrap();
-        assert_eq!(s.balance_mfdm, 12345);
-        assert_eq!(s.balance_fdm, "0.12345");
+        assert_eq!(s.balance_321m_units, 12345);
+        assert_eq!(s.balance_321m, "0.12345");
     }
 
     #[test]
-    fn mfdm_formatting_is_integer_only() {
-        assert_eq!(format_mfdm(100_000), "1");
+    fn native_asset_formatting_is_integer_only() {
+        assert_eq!(format_321m(100_000), "1");
         assert_eq!(format_mfdm(10_000), "0.1");
         assert_eq!(format_mfdm(1), "0.00001");
     }
+#[deprecated(note="use format_321m; legacy FDM unit name retained for compatibility")]
+pub fn format_mfdm(amount:u128)->String{format_321m(amount)}
+
 }
