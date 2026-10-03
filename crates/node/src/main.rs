@@ -223,6 +223,26 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_accepts_multiple_evidence_kinds() {
+        let peer = libp2p::PeerId::random();
+        let mut reputations = BTreeMap::new();
+        for kind in [PeerEvidenceKind::SyncConflict, PeerEvidenceKind::SnapshotConflict] {
+            record_peer_evidence(&mut reputations, PeerReputationEvidence {
+                peer,
+                height: 20,
+                request_id: [1u8; 32],
+                fingerprint: [2u8; 32],
+                kind,
+                reason: "test".to_string(),
+            });
+        }
+        let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(reputation.score, 2);
+        assert_eq!(reputation.evidence.len(), 2);
+        assert!(peer_is_eligible(&reputations, peer, 20));
+    }
+
+    #[test]
     fn peer_sync_score_enters_and_exits_cooldown() {
         let peer = libp2p::PeerId::random();
         let mut scores = BTreeMap::new();
