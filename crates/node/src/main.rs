@@ -363,7 +363,6 @@ mod m31_tests {
 
     #[test]
     fn peer_reputation_confirmation_escalates_severity() {
-        let peer = libp2p::PeerId::random();
         let reputation = PeerReputation {
             score: 0,
             cooldown_until_height: 0,
@@ -382,7 +381,6 @@ mod m31_tests {
             classify_peer_evidence(&reputation, &PeerEvidenceKind::SyncConflict, 3),
             PeerEvidenceSeverity::Critical
         );
-        let _ = peer;
     }
 
     #[test]
