@@ -310,6 +310,19 @@ mod tests {
     }
 
     #[test]
+    fn evidence_message_round_trip() {
+        let evidence = freedom_types::EquivocationEvidence {
+            kind: freedom_types::EquivocationKind::DoublePrevote,
+            height: 7, round: 1, validator_id: [4;32],
+            first: vec![1,2], second: vec![3,4], evidence_hash: [5;32],
+        };
+        let msg = freedom_types::EvidenceMessage { evidence, sender: [6;32], signature: vec![7;64] };
+        let bytes = encode_message(&NetworkMessage::Evidence(msg.clone())).unwrap();
+        let decoded = decode_message(&bytes).unwrap();
+        assert_eq!(decoded, NetworkMessage::Evidence(msg));
+    }
+
+    #[test]
     fn swarm_has_authenticated_peer_identity() {
         let swarm = build_swarm().unwrap();
         assert!(!local_peer_id(&swarm).to_bytes().is_empty());
