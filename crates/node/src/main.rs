@@ -367,8 +367,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let from_height = state.height.saturating_add(1);
                     let peer_count = connected_peers.len().min(2);
                     sync_required = peer_count.max(1);
+                    sync_candidates.clear();
+                    sync_round_peers.clear();
+                    sync_conflicts.clear();
                     for _ in 0..peer_count {
                         let peer = match select_sync_peer(&connected_peers, &mut sync_peer_cursor) {
+
                             Some(peer) => peer,
                             None => break,
                         };
@@ -409,6 +413,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         pending_sync.retain(|(pending_peer, ..)| *pending_peer != peer_id);
                         if pending_sync.is_empty() {
                             sync_candidates.clear();
+                            sync_round_peers.clear();
+                            sync_conflicts.clear();
                             sync_required = 1;
                         }
                         if pending_snapshot.map(|(pending_peer, ..)| pending_peer == peer_id).unwrap_or(false) {
@@ -511,6 +517,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 println!("SYNCED blocks={} height={}", accepted, state.height);
                                                 pending_sync.clear();
                                                 sync_candidates.clear();
+                                                sync_round_peers.clear();
+                                                sync_conflicts.clear();
                                                 sync_required = 1;
                                                 round=0;
                                                 timeout_round_sent=None;
