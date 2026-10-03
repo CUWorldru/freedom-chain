@@ -256,3 +256,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Conflicting prevotes/precommits from the same validator are rejected as equivocation evidence.
 - `FinalityCertificate` now carries the precommit quorum used for finality; snapshots use this certificate.
 - The round-change path is still prototype-level: a full Tendermint-style unlock/valid-round proof and slashing/evidence state are future work.
+
+
+## M23 — View Change and Locked-Round Proofs
+
+- Added a signed `TimeoutCertificate` for a quorum of validators that timed out at the previous round.
+- Proposals in a later round may carry a `valid_round` plus a precommit quorum proving the locked block from an earlier round.
+- Locked blocks are retained across round changes; a proposer must carry the corresponding proof instead of silently replacing a locked block.
+- Proposal validation checks timeout certificates and valid-round precommit proofs before accepting a cross-round locked proposal.
+- The node now packages timeout quorum evidence during view change and re-proposes a locked block when it has one.
+- This remains a prototype BFT implementation; durable evidence/slashing, validator-set changes, and a fully specified unlock/valid-round protocol remain future work.
