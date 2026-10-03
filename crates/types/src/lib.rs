@@ -609,6 +609,18 @@ pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
     current
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinBlockHeader {
+    pub version: u32,
+    pub prev_block_hash: Hash,
+    pub merkle_root: Hash,
+    pub time: u32,
+    pub bits: u32,
+    pub nonce: u32,
+}
+impl BitcoinBlockHeader {
+    pub fn serialize(&self)->[u8;80]{let mut o=[0u8;80];o[0..4].copy_from_slice(&self.version.to_le_bytes());o[4..36].copy_from_slice(&self.prev_block_hash);o[36..68].copy_from_slice(&self.merkle_root);o[68..72].copy_from_slice(&self.time.to_le_bytes());o[72..76].copy_from_slice(&self.bits.to_le_bytes());o[76..80].copy_from_slice(&self.nonce.to_le_bytes());o}
+    pub fn block_hash(&self)->Hash{bitcoin_sha256d(&self.serialize())}
+}
 pub struct BitcoinMerkleProof {
     pub bridge_id: Hash,
     pub chain_id: u32,
@@ -618,12 +630,14 @@ pub struct BitcoinMerkleProof {
     pub merkle_root: Hash,
     pub merkle_branch: Vec<Hash>,
     pub merkle_index: u32,
+    pub block_header: BitcoinBlockHeader,
 }
 impl BitcoinMerkleProof {
     pub fn verify(&self,required_confirmations:u64)->bool{
-        self.bridge_id!=[0;32]&&self.chain_id!=0&&self.tx_hash!=[0;32]&&self.merkle_root!=[0;32]&&!self.merkle_branch.is_empty()&&self.confirmations>=required_confirmations&&bitcoin_merkle_root(self.tx_hash,&self.merkle_branch,self.merkle_index)==self.merkle_root
+        self.bridge_id!=[0;32]&&self.chain_id!=0&&self.tx_hash!=[0;32]&&self.merkle_root!=[0;32]&&!self.merkle_branch.is_empty()&&self.confirmations>=required_confirmations&&self.block_header.merkle_root==self.merkle_root&&self.block_header.block_hash()!=[0;32]&&bitcoin_merkle_root(self.tx_hash,&self.merkle_branch,self.merkle_index)==self.merkle_root
     }
 }
+
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EvmTransferProof {
