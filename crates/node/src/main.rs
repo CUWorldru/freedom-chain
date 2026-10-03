@@ -20,6 +20,17 @@ fn request_id(validator_id: Hash, from_height: u64) -> Hash {
     hash_bytes(&[b"FREEDOM-SYNC-V1", &validator_id, &from_height.to_le_bytes()].concat())
 }
 
+fn select_sync_peer(peers: &[libp2p::PeerId], cursor: &mut usize) -> Option<libp2p::PeerId> {
+    if peers.is_empty() {
+        *cursor = 0;
+        return None;
+    }
+    *cursor %= peers.len();
+    let peer = peers[*cursor];
+    *cursor = (*cursor + 1) % peers.len();
+    Some(peer)
+}
+
 fn send_snapshot_request(
     swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
     peer: libp2p::PeerId,
@@ -78,6 +89,20 @@ async fn make_evidence_message(evidence: freedom_types::EquivocationEvidence, se
 
 #[cfg(test)]
 mod m31_tests {
+    #[test]
+    fn sync_peer_selection_rotates_and_handles_empty() {
+        let a = libp2p::PeerId::random();
+        let b = libp2p::PeerId::random();
+        let peers = vec![a, b];
+        let mut cursor = 0;
+        assert_eq!(select_sync_peer(&peers, &mut cursor), Some(a));
+        assert_eq!(select_sync_peer(&peers, &mut cursor), Some(b));
+        assert_eq!(select_sync_peer(&peers, &mut cursor), Some(a));
+        assert_eq!(select_sync_peer(&[], &mut cursor), None);
+        assert_eq!(cursor, 0);
+    }
+
+
     use super::*;
     use freedom_primitives::hash_bytes;
 
@@ -335,9 +360,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ = sync_timer.tick() => {
                 if !connected_peers.is_empty() && pending_sync.is_none() {
-                    sync_peer_cursor %= connected_peers.len();
-                    let peer = connected_peers[sync_peer_cursor];
-                    sync_peer_cursor = (sync_peer_cursor + 1) % connected_peers.len();
+                    let peer = match select_sync_peer(&connected_peers, &mut sync_peer_cursor) {
+                        Some(peer) => peer,
+                        None => continue,
+                    };
                     let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
                     pending_sync = Some((peer, sync_outbound_id, sync_id, state.height.saturating_add(1)));
                 }
