@@ -137,3 +137,13 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - Empty blocks exercise TX root, receipts root, state root and block hash commitments.
 - Block execution is transactional: failed execution or commitment validation does not partially mutate live state.
 - M12 is a local deterministic block-production harness, not yet a networked BFT consensus implementation.
+
+
+## M13 — Mempool / Transaction Pool / Block Builder
+
+- signed transactions can enter a deterministic mempool
+- stale nonces, invalid signatures, wrong chain IDs and duplicate transaction hashes are rejected
+- block candidates are ordered deterministically by sender, nonce and transaction hash
+- the block builder simulates execution before producing transaction and receipt commitments
+- committed transactions are removed from the mempool
+- M13 still uses the local deterministic proposer from M12; network propagation and real BFT voting remain future work
