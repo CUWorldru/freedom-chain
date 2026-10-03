@@ -42,6 +42,17 @@ impl Transaction {
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StakePayload { pub amount: u128 }
+impl StakePayload {
+    pub fn encode(&self)->Vec<u8>{self.amount.to_le_bytes().to_vec()}
+    pub fn decode(b:&[u8])->Result<Self,String>{if b.len()!=16{return Err("stake payload must be exactly 16 bytes".into())}let mut a=[0u8;16];a.copy_from_slice(b);Ok(Self{amount:u128::from_le_bytes(a)})}
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnstakePayload { pub amount: u128 }
+impl UnstakePayload {
+    pub fn encode(&self)->Vec<u8>{self.amount.to_le_bytes().to_vec()}
+    pub fn decode(b:&[u8])->Result<Self,String>{if b.len()!=16{return Err("unstake payload must be exactly 16 bytes".into())}let mut a=[0u8;16];a.copy_from_slice(b);Ok(Self{amount:u128::from_le_bytes(a)})}
+}
 pub struct TransferPayload { pub to: Address, pub amount: u128 }
 impl TransferPayload {
     pub fn encode(&self) -> Vec<u8> {
