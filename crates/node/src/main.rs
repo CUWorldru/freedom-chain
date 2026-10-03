@@ -1,7 +1,7 @@
 use freedom_consensus::{block_hash, proposer_for_height_round};
 use freedom_network::{
     build_swarm, decode_message, make_proposal, make_sync_request, make_timeout, publish,
-    NetworkMessage, SyncRequest, SyncResponse,
+    NetworkMessage, SyncResponse,
 };
 use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_SUPPLY, Hash};
 use freedom_runtime::{build_next_block, execute_block, initialize, Mempool, ValidatorProtocol};
@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
         let mempool = Mempool::new();
-        let block = build_next_block(&state, &mempool, owner, 1, round, 100)?;
+        let block = build_next_block(&state, &mempool, owner, 1, 0, round, 100)?;
         let proposal = make_proposal(block.clone(), round, &consensus_key);
         blocks.insert(proposal.block_hash, block);
         println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
