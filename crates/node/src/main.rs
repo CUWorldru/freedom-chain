@@ -154,7 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
         let mempool = Mempool::new();
-        let block = build_next_block(&state, &mempool, owner, 1, 0, round, 100)?;
+        let block = build_next_block(&state, &mempool, owner, 1, if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 { state.epoch.saturating_add(1) } else { state.epoch }, round, 100)?;
         let proposal = make_proposal(block.clone(), round, &consensus_key, None, Vec::new(), None);
         blocks.insert(proposal.block_hash, block);
         println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
@@ -459,7 +459,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let next_height = state.height + 1;
                                             if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                                 let mempool = Mempool::new();
-                                                let next_block = build_next_block(&state, &mempool, owner, 1, 0, round, 100)?;
+                                                let next_block = build_next_block(&state, &mempool, owner, 1, if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 { state.epoch.saturating_add(1) } else { state.epoch }, round, 100)?;
                                                 let next_proposal = make_proposal(next_block.clone(), round, &consensus_key, None, Vec::new(), None);
                                                 blocks.insert(next_proposal.block_hash, next_block);
                                                 println!("proposing height={} round={} hash={}", next_height, round, hex::encode(next_proposal.block_hash));
@@ -503,7 +503,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 (block, Some(lr), locked_precommits)
                                             } else {
                                                 let mempool = Mempool::new();
-                                                (build_next_block(&state, &mempool, owner, 1, 0, round, 100)?, None, Vec::new())
+                                                (build_next_block(&state, &mempool, owner, 1, if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 { state.epoch.saturating_add(1) } else { state.epoch }, round, 100)?, None, Vec::new())
                                             };
                                             let proposal = make_proposal(block.clone(), round, &consensus_key, valid_round, valid_precommits, Some(timeout_certificate));
                                             blocks.insert(proposal.block_hash, block);
