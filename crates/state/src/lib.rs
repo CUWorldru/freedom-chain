@@ -226,3 +226,23 @@ impl ChainState {
  }
  pub fn assert_invariants(&self){assert!(self.supply.is_consistent());let sum=self.accounts.values().try_fold(0u128,|s,a|{let h=a.balance.checked_add(a.locked).and_then(|v|v.checked_add(a.staked))?;s.checked_add(h)});assert!(sum.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,sum.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_mfdm.checked_add(self.annual_reserve_mfdm).and_then(|x|x.checked_add(self.draw_prize_pool_mfdm)).map(|x|x<=self.supply.treasury).unwrap_or(false));for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
 }
+
+#[cfg(test)]
+mod m32_tests {
+ use super::*;
+ #[test]
+ fn slash_amount_is_deterministic_by_evidence_kind() {
+  let s=1_000_000u128;
+  let g=freedom_types::Genesis::default();
+  let state=ChainState::genesis(&g);
+  assert_eq!(state.deterministic_slash_amount(&freedom_types::EquivocationKind::DoubleProposal,s),50_000);
+  assert_eq!(state.deterministic_slash_amount(&freedom_types::EquivocationKind::DoublePrevote,s),100_000);
+  assert_eq!(state.deterministic_slash_amount(&freedom_types::EquivocationKind::DoublePrecommit,s),100_000);
+ }
+ #[test]
+ fn zero_stake_has_zero_slash() {
+  let g=freedom_types::Genesis::default();
+  let state=ChainState::genesis(&g);
+  assert_eq!(state.deterministic_slash_amount(&freedom_types::EquivocationKind::DoublePrecommit,0),0);
+ }
+}
