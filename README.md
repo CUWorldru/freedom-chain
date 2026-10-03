@@ -1059,3 +1059,8 @@ Bitcoin deposit finality is now derived from the verified canonical tip: `tip_he
 ## M117 — Bitcoin UTXO Deposit Binding
 
 Bitcoin UTXO deposits now expose an explicit commitment over transaction hash, output index, amount and scriptPubKey. State validation requires the proof to match the expected UTXO identity and value, uses the persisted canonical tip for finality depth, and keeps the bridge reorg gate active. This prevents an external caller from swapping the transaction output, amount or destination script independently of the proof.
+
+
+## M118 — Bitcoin UTXO Full Inclusion Boundary
+
+Bitcoin UTXO proofs now carry the raw transaction and cryptographically bind it to the claimed transaction hash using SHA-256d. Deposit validation requires a non-empty Merkle branch and derives the Merkle root from the transaction hash before the existing canonical-tip/finality checks. Full Bitcoin transaction parsing and output-level amount/script extraction remain the next verifier boundary.
