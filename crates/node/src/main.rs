@@ -327,7 +327,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut timeout_round_sent = None::<u64>;
     let mut timer = interval(Duration::from_secs(ROUND_TIMEOUT_SECS));
     let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
-    let mut pending_sync = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
+    let mut pending_sync = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
+    let mut sync_candidates = BTreeMap::<Hash, (u64, SyncResponse)>::new();
     let mut pending_snapshot = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut sync_peer_cursor = 0usize;
@@ -359,13 +360,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = sync_timer.tick() => {
-                if !connected_peers.is_empty() && pending_sync.is_none() {
-                    let peer = match select_sync_peer(&connected_peers, &mut sync_peer_cursor) {
-                        Some(peer) => peer,
-                        None => continue,
-                    };
-                    let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
-                    pending_sync = Some((peer, sync_outbound_id, sync_id, state.height.saturating_add(1)));
+                if !connected_peers.is_empty() && pending_sync.is_empty() {
+                    let from_height = state.height.saturating_add(1);
+                    let peer_count = connected_peers.len().min(2);
+                    for _ in 0..peer_count {
+                        let peer = match select_sync_peer(&connected_peers, &mut sync_peer_cursor) {
+                            Some(peer) => peer,
+                            None => break,
+                        };
+                        let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
+                        pending_sync.push((peer, sync_outbound_id, sync_id, from_height));
+                    }
                 }
             }
             event = swarm.select_next_some() => {
