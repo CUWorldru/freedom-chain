@@ -2250,7 +2250,19 @@ fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitcoinNetworkCheckpoint {
+    pub height: u64,
+    pub block_hash: Hash,
+}
+
+impl BitcoinNetworkCheckpoint {
+    pub fn validate(&self) -> bool {
+        self.height > 0 && self.block_hash != [0u8; 32]
+    }
+}
+
 pub struct BitcoinChainContext {
+    pub checkpoint: BitcoinNetworkCheckpoint,
     pub start_height: u64,
     pub base_start_height: u64,
     pub base_headers: Vec<BitcoinBlockHeader>,
@@ -2263,7 +2275,9 @@ pub struct BitcoinChainContext {
 
 impl BitcoinChainContext {
     pub fn validate(&self) -> bool {
-        self.tip_height > 0
+        self.checkpoint.validate()
+            && self.checkpoint.height <= self.base_start_height
+            && self.tip_height > 0
             && self.start_height > 0
             && self.base_start_height < self.start_height
             && self.base_start_height + self.base_headers.len() as u64 == self.start_height
@@ -2274,6 +2288,7 @@ impl BitcoinChainContext {
             && !self.headers.is_empty()
             && self.difficulty_windows.iter().all(BitcoinDifficultyWindow::validate)
             && self.validate_timestamp_rules()
+            && self.verify_checkpoint_anchor()
     }
 
     fn median_time_past(headers: &[BitcoinBlockHeader], index: usize) -> Option<u32> {
@@ -2309,6 +2324,17 @@ impl BitcoinChainContext {
             }
         }
         true
+    }
+
+    fn verify_checkpoint_anchor(&self) -> bool {
+        if !self.checkpoint.validate() || self.checkpoint.height > self.base_start_height {
+            return false;
+        }
+        let checkpoint_index = (self.checkpoint.height - self.base_start_height) as usize;
+        if checkpoint_index >= self.base_headers.len() {
+            return false;
+        }
+        self.base_headers[checkpoint_index].block_hash() == self.checkpoint.block_hash
     }
 
     pub fn cumulative_chainwork(&self) -> Result<BitcoinChainWork, BridgeAdapterError> {
