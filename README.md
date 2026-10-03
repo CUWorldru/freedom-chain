@@ -742,3 +742,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - the third recent conflict of the same kind is Elevated;
 - the fourth and subsequent recent conflicts are Critical;
 - the classification is bounded to recent evidence, so compaction remains compatible with the policy.
+
+
+## M72 — Independent Confirmation Severity
+
+- severity policy now accepts an independent-confirmation count;
+- one confirming source remains Normal unless repetition rules escalate it;
+- two independent confirmations produce Elevated severity;
+- three or more independent confirmations produce Critical severity;
+- the current recording path remains conservative and supplies one confirmation until the transport layer provides explicit independent-peer context;
+- repeated evidence from the same peer is not treated as independent confirmation.
