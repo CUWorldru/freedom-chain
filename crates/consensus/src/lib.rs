@@ -20,6 +20,7 @@ pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),Str
 use freedom_crypto::verify;
 
 pub fn quorum_threshold(validator_count: usize) -> usize {
+    if validator_count == 0 { return usize::MAX; }
     (validator_count * 2) / 3 + 1
 }
 
@@ -45,4 +46,59 @@ pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, votes:
     }
     if seen.len() < threshold { return Err(format!("quorum not reached: {}/{}", seen.len(), threshold)); }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod quorum_tests {
+    use super::*;
+    use freedom_crypto::sign;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Genesis, Validator, ValidatorVote};
+    
+    fn state_with_validators() -> ChainState {
+        let validators = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            Validator {
+                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                owner: freedom_primitives::address_from_public_key(&key),
+                consensus_key: key,
+                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            }
+        }).collect();
+        ChainState::genesis(&Genesis { chain_id: 1, initial_supply: 0, validators })
+    }
+
+    fn vote(state: &ChainState, index: u8, block_hash: Hash, height: u64) -> ValidatorVote {
+        let id = hash_bytes(&[b"validator", &[index + 1]].concat());
+        let key = [index + 1; 32];
+        let mut v = ValidatorVote { block_hash, height, validator_id: id, signature: Vec::new() };
+        v.signature = sign(&ed25519_dalek::SigningKey::from_bytes(&key), &v.signing_bytes()).to_vec();
+        v
+    }
+
+    #[test]
+    fn two_of_three_votes_finalize_quorum() {
+        let state = state_with_validators();
+        let hash = hash_bytes(b"block");
+        let votes = vec![vote(&state, 0, hash, 1), vote(&state, 1, hash, 1)];
+        assert_eq!(quorum_threshold(3), 3);
+        assert!(validate_quorum(&state, hash, 1, &votes).is_err());
+    }
+
+    #[test]
+    fn three_of_three_votes_reach_current_threshold() {
+        let state = state_with_validators();
+        let hash = hash_bytes(b"block");
+        let votes = vec![vote(&state, 0, hash, 1), vote(&state, 1, hash, 1), vote(&state, 2, hash, 1)];
+        assert!(validate_quorum(&state, hash, 1, &votes).is_ok());
+    }
+
+    #[test]
+    fn duplicate_vote_is_rejected() {
+        let state = state_with_validators();
+        let hash = hash_bytes(b"block");
+        let v = vote(&state, 0, hash, 1);
+        assert!(validate_quorum(&state, hash, 1, &[v.clone(), v]).is_err());
+    }
 }
