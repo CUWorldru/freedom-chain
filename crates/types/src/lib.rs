@@ -712,6 +712,57 @@ impl CanonicalAssetProfile {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExternalAssetConfig {
+    pub profile: CanonicalAssetProfile,
+    pub source_chain_id: u32,
+    pub asset_kind: CrossChainAssetKind,
+    pub asset_type: AssetType,
+    pub contract_address: Vec<u8>,
+    pub issuer: Hash,
+    pub bridge_id: Hash,
+    pub status: AssetStatus,
+}
+
+impl ExternalAssetConfig {
+    pub fn validate(&self) -> bool {
+        self.source_chain_id != 0
+            && self.issuer != [0; 32]
+            && self.bridge_id != [0; 32]
+            && self.asset_type == match self.asset_kind {
+                CrossChainAssetKind::BitcoinUtxo
+                | CrossChainAssetKind::EthereumNative => AssetType::Native,
+                CrossChainAssetKind::Erc20
+                | CrossChainAssetKind::Trc20
+                | CrossChainAssetKind::TonJetton
+                | CrossChainAssetKind::SolanaSpl => AssetType::Bridged,
+                CrossChainAssetKind::Other => return false,
+            }
+            && self.profile.symbol() != ""
+    }
+
+    pub fn build(&self) -> Result<CrossChainAssetRepresentation, String> {
+        if !self.validate() {
+            return Err("InvalidExternalAssetConfig".into());
+        }
+        let representation = AssetDefinition::new_external(
+            self.source_chain_id,
+            self.asset_type,
+            self.contract_address.clone(),
+            self.profile.symbol().to_string(),
+            self.profile.decimals(),
+            self.issuer,
+            self.bridge_id,
+            self.status,
+        )?;
+        Ok(CrossChainAssetRepresentation {
+            canonical_asset_id: self.profile.canonical_id(self.issuer),
+            representation,
+            asset_kind: self.asset_kind,
+        })
+    }
+}
+
 pub struct CrossChainAssetRegistry {
     pub canonical_asset_id: Hash,
     pub symbol: String,
