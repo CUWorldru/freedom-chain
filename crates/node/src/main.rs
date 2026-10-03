@@ -476,6 +476,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             pending_sync.remove(pending_index.unwrap());
 
                                             let fingerprint = hash_bytes(&serde_json::to_vec(&response.blocks)?);
+                                            if sync_required > 1 && !sync_candidates.is_empty() && !sync_candidates.contains_key(&fingerprint) {
+                                                sync_conflicts.insert(peer, response.from_height);
+                                                eprintln!(
+                                                    "SYNC_CONFLICT peer={} from={} existing_candidates={}",
+                                                    peer,
+                                                    response.from_height,
+                                                    sync_candidates.len()
+                                                );
+                                            }
                                             let entry = sync_candidates.entry(fingerprint).or_insert((0, response.clone()));
                                             entry.0 += 1;
                                             let required = sync_required;
