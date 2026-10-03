@@ -1903,8 +1903,28 @@ pub struct BitcoinUtxoProof {
     pub merkle_index: u32,
     pub script_pubkey: Vec<u8>,
     pub raw_transaction: Vec<u8>,
+    #[serde(default)]
+    pub block_header: Option<BitcoinBlockHeader>,
 }
 impl BitcoinUtxoProof {
+    pub fn verify_block_header(&self) -> Result<BitcoinBlockHeader, BridgeAdapterError> {
+        let header = self
+            .block_header
+            .as_ref()
+            .ok_or(BridgeAdapterError::InvalidProof)?;
+        if header.merkle_root != bitcoin_merkle_root(
+            self.tx_hash,
+            &self.merkle_branch,
+            self.merkle_index,
+        ) {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        if !bitcoin_pow_valid(header) {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        Ok(header.clone())
+    }
+
     pub fn validate(&self, required_confirmations: u64) -> bool {
         self.bridge_id != [0; 32]
             && self.chain_id != 0
