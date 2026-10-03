@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
         let mempool = Mempool::new();
         let block = build_next_block(&state, &mempool, owner, 1, 0, round, 100)?;
-        let proposal = make_proposal(block.clone(), round, &consensus_key);
+        let proposal = make_proposal(block.clone(), round, &consensus_key, None, Vec::new(), None);
         blocks.insert(proposal.block_hash, block);
         println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
         publish(&mut swarm, &NetworkMessage::Proposal(proposal))?;
@@ -335,7 +335,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let hash = vote.block_hash;
                                     let ready = protocol.receive_vote(&state, vote, hash, state.height + 1, round)?;
                                     if ready {
-                                        let precommit = protocol.lock_on_prevote_quorum(&state, hash, state.height + 1, round)?;
+                                        let block = blocks.get(&hash).ok_or_else(|| "prevote quorum block missing".to_string())?;
+                                        let precommit = protocol.lock_on_prevote_quorum(&state, hash, state.height + 1, round, block)?;
                                         publish(&mut swarm, &NetworkMessage::Precommit(precommit))?;
                                     }
                                 }
@@ -365,7 +366,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                                 let mempool = Mempool::new();
                                                 let next_block = build_next_block(&state, &mempool, owner, 1, 0, round, 100)?;
-                                                let next_proposal = make_proposal(next_block.clone(), round, &consensus_key);
+                                                let next_proposal = make_proposal(next_block.clone(), round, &consensus_key, None, Vec::new(), None);
                                                 blocks.insert(next_proposal.block_hash, next_block);
                                                 println!("proposing height={} round={} hash={}", next_height, round, hex::encode(next_proposal.block_hash));
                                                 publish(&mut swarm, &NetworkMessage::Proposal(next_proposal))?;
@@ -376,17 +377,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Ok(NetworkMessage::Timeout(timeout)) => {
                                     if timeout.height != state.height + 1 || timeout.round != round { continue; }
                                     if protocol.receive_timeout(&state, timeout, state.height + 1, round)? {
+                                        let timeout_certificate = freedom_types::TimeoutCertificate {
+                                            height: state.height + 1,
+                                            round,
+                                            timeouts: protocol.timeouts.values().cloned().collect(),
+                                        };
+                                        let previous_round = round;
                                         round = round.saturating_add(1);
+                                        let locked_block = protocol.locked_block.clone();
+                                        let locked_round = protocol.locked_round;
+                                        let locked_precommits = protocol.precommits.values().cloned().collect::<Vec<_>>();
                                         protocol.reset_round();
                                         blocks.clear();
                                         timeout_round_sent = None;
                                         println!("VIEW_CHANGE height={} new_round={}", state.height + 1, round);
                                         if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
-                                            let mempool = Mempool::new();
-                                            let block = build_next_block(&state, &mempool, owner, 1, 0, round, 100)?;
-                                            let proposal = make_proposal(block.clone(), round, &consensus_key);
+                                            let (block, valid_round, valid_precommits) = if let (Some(block), Some(lr)) = (locked_block, locked_round) {
+                                                (block, Some(lr), locked_precommits)
+                                            } else {
+                                                let mempool = Mempool::new();
+                                                (build_next_block(&state, &mempool, owner, 1, 0, round, 100)?, None, Vec::new())
+                                            };
+                                            let proposal = make_proposal(block.clone(), round, &consensus_key, valid_round, valid_precommits, Some(timeout_certificate));
                                             blocks.insert(proposal.block_hash, block);
-                                            println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
+                                            println!("proposing height={} round={} hash={} previous_round={}", state.height + 1, round, hex::encode(proposal.block_hash), previous_round);
                                             publish(&mut swarm, &NetworkMessage::Proposal(proposal))?;
                                         }
                                     }
