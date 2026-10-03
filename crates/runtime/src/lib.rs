@@ -246,15 +246,24 @@ pub struct ValidatorProtocol {
     pub validator_id: Hash,
     pub consensus_key: ed25519_dalek::SigningKey,
     pub votes: std::collections::BTreeMap<Hash, freedom_types::ValidatorVote>,
+    pub precommits: std::collections::BTreeMap<Hash, freedom_types::ValidatorPrecommit>,
     pub timeouts: std::collections::BTreeMap<Hash, freedom_types::ValidatorTimeout>,
+    pub locked_round: Option<u64>,
+    pub locked_block_hash: Option<Hash>,
 }
 
 impl ValidatorProtocol {
     pub fn new(validator_id: Hash, consensus_key: ed25519_dalek::SigningKey) -> Self {
-        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new() }
+        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), precommits: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new(), locked_round: None, locked_block_hash: None }
     }
 
-    pub fn reset_round(&mut self) { self.votes.clear(); self.timeouts.clear(); }
+    pub fn reset_round(&mut self) { self.votes.clear(); self.precommits.clear(); self.timeouts.clear(); }
+
+    pub fn reset_height(&mut self) {
+        self.reset_round();
+        self.locked_round = None;
+        self.locked_block_hash = None;
+    }
 
     pub fn receive_proposal(&self, state: &ChainState, proposal: &freedom_types::BlockProposal) -> Result<freedom_types::ValidatorVote, String> {
         freedom_network::make_vote(state, self.validator_id, proposal, &self.consensus_key)
@@ -264,13 +273,66 @@ impl ValidatorProtocol {
 
     pub fn receive_vote(&mut self, state: &ChainState, vote: freedom_types::ValidatorVote, expected_block_hash: Hash, height: u64, round: u64) -> Result<bool, String> {
         freedom_consensus::validate_vote(state, &vote, expected_block_hash, height, round)?;
+        if let Some(existing) = self.votes.get(&vote.validator_id) {
+            if existing.block_hash != vote.block_hash || existing.round != vote.round {
+                return Err("validator prevote equivocation detected".into());
+            }
+            return Ok(self.votes.len() >= freedom_consensus::quorum_threshold(state.validators.len()));
+        }
         self.votes.insert(vote.validator_id, vote);
         Ok(self.votes.len() >= freedom_consensus::quorum_threshold(state.validators.len()))
     }
 
-    pub fn finalize_if_quorum(&self, state: &mut ChainState, block: &Block, round: u64) -> Result<Block, String> {
+    pub fn lock_on_prevote_quorum(
+        &mut self,
+        state: &ChainState,
+        block_hash: Hash,
+        height: u64,
+        round: u64,
+    ) -> Result<freedom_types::ValidatorPrecommit, String> {
         let votes: Vec<_> = self.votes.values().cloned().collect();
-        freedom_consensus::validate_quorum(state, block_hash(block), block.header.height, round, &votes)?;
+        freedom_consensus::validate_quorum(state, block_hash, height, round, &votes)?;
+        if let Some(locked) = self.locked_block_hash {
+            if locked != block_hash {
+                return Err("locked on a different block".into());
+            }
+        }
+        self.locked_round = Some(round);
+        self.locked_block_hash = Some(block_hash);
+        let mut precommit = freedom_types::ValidatorPrecommit {
+            block_hash,
+            height,
+            round,
+            validator_id: self.validator_id,
+            signature: Vec::new(),
+        };
+        precommit.signature = freedom_crypto::sign(&self.consensus_key, &precommit.signing_bytes()).to_vec();
+        self.precommits.insert(self.validator_id, precommit.clone());
+        Ok(precommit)
+    }
+
+    pub fn receive_precommit(
+        &mut self,
+        state: &ChainState,
+        precommit: freedom_types::ValidatorPrecommit,
+        expected_block_hash: Hash,
+        height: u64,
+        round: u64,
+    ) -> Result<bool, String> {
+        freedom_consensus::validate_precommit(state, &precommit, expected_block_hash, height, round)?;
+        if let Some(existing) = self.precommits.get(&precommit.validator_id) {
+            if existing.block_hash != precommit.block_hash || existing.round != precommit.round {
+                return Err("validator precommit equivocation detected".into());
+            }
+            return Ok(self.precommits.len() >= freedom_consensus::quorum_threshold(state.validators.len()));
+        }
+        self.precommits.insert(precommit.validator_id, precommit);
+        Ok(self.precommits.len() >= freedom_consensus::quorum_threshold(state.validators.len()))
+    }
+
+    pub fn finalize_if_quorum(&self, state: &mut ChainState, block: &Block, round: u64) -> Result<Block, String> {
+        let precommits: Vec<_> = self.precommits.values().cloned().collect();
+        freedom_consensus::validate_precommit_quorum(state, block_hash(block), block.header.height, round, &precommits)?;
         execute_block(state, block)
     }
 }
