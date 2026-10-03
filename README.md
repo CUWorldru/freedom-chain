@@ -1250,3 +1250,10 @@ The current boundary deliberately does not claim full Ethereum consensus verific
 Adds SSZ-oriented SHA-256 Merkle primitives and generalized-index proofs. `EthereumSszMerkleProof` verifies a leaf against a trusted SSZ root using the generalized-index branch, while chunking and deterministic power-of-two merkleization provide the base for beacon-state/checkpoint proofs.
 
 Ethereum execution MPT continues to use Keccak-256; SSZ consensus structures use SHA-256 as required by Ethereum's consensus-layer hash tree.
+
+
+## M139 — Ethereum Validator / Sync Committee SSZ Proofs
+
+Adds validator membership and sync-committee SSZ Merkle proof structures. Proofs use the consensus-layer SHA-256 SSZ tree, generalized indices, and explicit binding to a finalized checkpoint root.
+
+This milestone proves tree membership only. It does not yet verify validator signatures, committee participation, or BLS aggregate signatures; those are M140 cryptographic checks.
