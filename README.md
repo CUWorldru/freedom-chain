@@ -651,3 +651,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - cooldown is height-based and expires after three chain heights, avoiding permanent exclusion from one local observation;
 - peer scoring affects sync selection only and does not alter consensus validator status or slash stake;
 - a peer that has never produced evidence remains eligible by default.
+
+
+## M62 — Multi-Peer Snapshot Verification
+
+- snapshot discovery can collect finalized snapshots from up to two eligible peers;
+- each response must first pass the existing transport, checkpoint, finality-certificate, validator-set, epoch-transition and state-commitment checks;
+- verified snapshot commitments are fingerprinted from height, block hash, state root, certificate, finality validator-set hash and epoch-transition certificate;
+- when two snapshot peers participate, activation requires matching commitments from both;
+- differing snapshot commitments are recorded as a conflict and never selected arbitrarily;
+- snapshot activation continues to use the atomic checkpoint+snapshot persistence path from M49.
