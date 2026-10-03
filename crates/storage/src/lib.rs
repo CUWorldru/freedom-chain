@@ -24,6 +24,8 @@ pub struct StateSnapshot {
     pub block_hash: [u8;32],
     pub state_root: [u8;32],
     pub state: ChainState,
+    #[serde(default)]
+    pub certificate: Option<freedom_types::FinalityCertificate>,
 }
 
 pub struct ChainStore { db: DB }
@@ -76,7 +78,25 @@ impl ChainStore {
     }
 
     pub fn save_snapshot(&self, state: &ChainState, block_hash: [u8;32]) -> Result<(), StorageError> {
-        let snapshot = StateSnapshot { height: state.height, block_hash, state_root: state.state_root(), state: state.clone() };
+        self.save_snapshot_with_certificate_opt(state, block_hash, None)
+    }
+
+    pub fn save_snapshot_with_certificate(
+        &self,
+        state: &ChainState,
+        block_hash: [u8;32],
+        certificate: freedom_types::FinalityCertificate,
+    ) -> Result<(), StorageError> {
+        self.save_snapshot_with_certificate_opt(state, block_hash, Some(certificate))
+    }
+
+    fn save_snapshot_with_certificate_opt(
+        &self,
+        state: &ChainState,
+        block_hash: [u8;32],
+        certificate: Option<freedom_types::FinalityCertificate>,
+    ) -> Result<(), StorageError> {
+        let snapshot = StateSnapshot { height: state.height, block_hash, state_root: state.state_root(), state: state.clone(), certificate };
         let bytes = serde_json::to_vec(&snapshot).map_err(|e| StorageError::Codec(e.to_string()))?;
         self.db.put(Self::snapshot_key(state.height), bytes).map_err(|e| StorageError::Rocks(e.to_string()))?;
         Ok(())
@@ -145,5 +165,6 @@ mod tests {
         let loaded = store.load_snapshot(0).unwrap().unwrap();
         assert_eq!(loaded.block_hash, [9;32]);
         assert_eq!(loaded.state.state_root(), loaded.state_root);
+        assert!(loaded.certificate.is_none());
     }
 }
