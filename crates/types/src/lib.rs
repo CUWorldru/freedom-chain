@@ -655,7 +655,7 @@ impl BitcoinChainCheckpoint {
     pub fn validate(&self)->bool{self.block_hash!=[0;32]&&self.chainwork!=[0;32]}
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BitcoinCheckpointError { InvalidCheckpoint, EmptyHeaders, HeightMismatch, LinkageMismatch, InsufficientChainwork }
+pub enum BitcoinCheckpointError { InvalidCheckpoint, EmptyHeaders, HeightMismatch, LinkageMismatch, InsufficientChainwork, ReorgDetected }
 pub fn bitcoin_validate_from_checkpoint(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinChainCheckpoint,BitcoinCheckpointError>{
     if !checkpoint.validate(){return Err(BitcoinCheckpointError::InvalidCheckpoint);}
     if headers.is_empty(){return Err(BitcoinCheckpointError::EmptyHeaders);}
@@ -669,6 +669,15 @@ pub fn bitcoin_validate_from_checkpoint(checkpoint:&BitcoinChainCheckpoint,heade
 fn bitcoin_add_chainwork(a:[u8;32],b:[u8;32])->[u8;32]{
     let mut out=[0u8;32];let mut carry=0u16;
     for i in (0..32).rev(){let x=a[i] as u16+b[i] as u16+carry;out[i]=(x&0xff) as u8;carry=x>>8;}out
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitcoinReorgReport { pub checkpoint_height:u64, pub checkpoint_hash:Hash, pub candidate_tip_height:u64, pub candidate_tip_hash:Hash, pub candidate_chainwork:[u8;32] }
+pub fn bitcoin_evaluate_reorg(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinReorgReport,BitcoinCheckpointError>{
+ if !checkpoint.validate(){return Err(BitcoinCheckpointError::InvalidCheckpoint);} if headers.is_empty(){return Err(BitcoinCheckpointError::EmptyHeaders);}
+ let work=bitcoin_chainwork(headers).map_err(|_|BitcoinCheckpointError::InsufficientChainwork)?;
+ let candidate_work=bitcoin_add_chainwork(checkpoint.chainwork,work);
+ let tip=bitcoin_validate_from_checkpoint(checkpoint,headers).map_err(|e|if e==BitcoinCheckpointError::LinkageMismatch{BitcoinCheckpointError::ReorgDetected}else{e})?;
+ Ok(BitcoinReorgReport{checkpoint_height:checkpoint.height,checkpoint_hash:checkpoint.block_hash,candidate_tip_height:tip.height,candidate_tip_hash:tip.block_hash,candidate_chainwork:candidate_work})
 }
 pub struct BitcoinMerkleProof {
     pub bridge_id: Hash,
@@ -1267,6 +1276,14 @@ mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn bitcoin_utxo_requires_six_confirmations(){let a=BitcoinAdapter::new(d()).unwrap();assert_eq!(a.verify_utxo_deposit(&p(5)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_utxo_deposit(&p(6)).is_ok());}
  #[test] fn bitcoin_vout_is_replay_event_identity(){assert_eq!(p(6).event_index(),2);}
  #[test] fn bitcoin_withdrawal_uses_script_bytes(){let a=BitcoinAdapter::new(d()).unwrap();let x=a.build_utxo_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();assert!(x.validate_hash());}
+}
+
+#[cfg(test)]
+mod m106_bitcoin_reorg_tests {
+ use super::*;
+ fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,prev_block_hash:prev,merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0}}
+ #[test] fn conflicting_branch_is_reported_as_reorg(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};assert_eq!(bitcoin_evaluate_reorg(&cp,&[h([8;32])]),Err(BitcoinCheckpointError::ReorgDetected));}
+ #[test] fn continuing_branch_has_report(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};let a=h(cp.block_hash);let r=bitcoin_evaluate_reorg(&cp,&[a]).unwrap();assert_eq!(r.candidate_tip_height,101);}
 }
 
 #[cfg(test)]
