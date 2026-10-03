@@ -464,3 +464,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Added checkpoint-bound finality validation: certificate block hash, height and round must exactly match the checkpoint block.
 - Snapshot activation uses the checkpoint-bound validator instead of validating a certificate in isolation.
 - Stored snapshots with finality certificates revalidate the certificate against their persisted checkpoint block before being returned.
+
+
+## M42 — Snapshot Checkpoint Finality
+
+- Finality verification is now explicitly bound to the checkpoint block hash, height and round.
+- Precommit quorum verification is stake-weighted and can operate against an explicit historical validator set.
+- Snapshots retain the validator set that actually signed the checkpoint finality certificate.
+- Snapshot storage validates that certificate against the stored checkpoint and historical validator set.
+- Snapshot transport carries that historical validator set, and the receiving node verifies its canonical set hash against the known epoch-transition proof or snapshot active set before accepting the certificate.
+- At epoch boundaries the finality proof is therefore checked against the previous epoch validator set rather than the already-activated next epoch set.
