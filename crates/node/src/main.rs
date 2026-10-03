@@ -127,6 +127,23 @@ mod m31_tests {
     }
 
     #[test]
+    fn sync_misbehavior_evidence_carries_request_and_fingerprint() {
+        let peer = libp2p::PeerId::random();
+        let fingerprint = hash_bytes(b"offending-batch");
+        let evidence = SyncMisbehaviorEvidence {
+            peer,
+            from_height: 12,
+            request_id: [7; 32],
+            batch_fingerprint: fingerprint,
+            reason: "test".to_string(),
+        };
+        assert_eq!(evidence.from_height, 12);
+        assert_eq!(evidence.request_id, [7; 32]);
+        assert_eq!(evidence.batch_fingerprint, fingerprint);
+        assert_eq!(evidence.peer, peer);
+    }
+
+    #[test]
     fn sync_conflict_is_detected_by_batch_fingerprint() {
         let a = vec![1u8, 2, 3];
         let b = vec![1u8, 2, 4];
