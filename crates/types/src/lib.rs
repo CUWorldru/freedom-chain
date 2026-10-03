@@ -645,6 +645,31 @@ pub fn bitcoin_chainwork_cmp(a:&[BitcoinBlockHeader],b:&[BitcoinBlockHeader])->R
     Ok(bitcoin_chainwork(a)?.cmp(&bitcoin_chainwork(b)?))
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinChainCheckpoint {
+    pub height: u64,
+    pub block_hash: Hash,
+    pub chainwork: [u8;32],
+}
+impl BitcoinChainCheckpoint {
+    pub fn validate(&self)->bool{self.block_hash!=[0;32]&&self.chainwork!=[0;32]}
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BitcoinCheckpointError { InvalidCheckpoint, EmptyHeaders, HeightMismatch, LinkageMismatch, InsufficientChainwork }
+pub fn bitcoin_validate_from_checkpoint(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinChainCheckpoint,BitcoinCheckpointError>{
+    if !checkpoint.validate(){return Err(BitcoinCheckpointError::InvalidCheckpoint);}
+    if headers.is_empty(){return Err(BitcoinCheckpointError::EmptyHeaders);}
+    if headers[0].prev_block_hash!=checkpoint.block_hash{return Err(BitcoinCheckpointError::LinkageMismatch);}
+    let end_height=checkpoint.height.checked_add(headers.len() as u64).ok_or(BitcoinCheckpointError::HeightMismatch)?;
+    let work=bitcoin_chainwork(headers).map_err(|_|BitcoinCheckpointError::InsufficientChainwork)?;
+    let total=bitcoin_add_chainwork(checkpoint.chainwork,work);
+    if total<=checkpoint.chainwork{return Err(BitcoinCheckpointError::InsufficientChainwork);}
+    Ok(BitcoinChainCheckpoint{height:end_height,block_hash:headers.last().unwrap().block_hash(),chainwork:total})
+}
+fn bitcoin_add_chainwork(a:[u8;32],b:[u8;32])->[u8;32]{
+    let mut out=[0u8;32];let mut carry=0u16;
+    for i in (0..32).rev(){let x=a[i] as u16+b[i] as u16+carry;out[i]=(x&0xff) as u8;carry=x>>8;}out
+}
 pub struct BitcoinMerkleProof {
     pub bridge_id: Hash,
     pub chain_id: u32,
@@ -1242,6 +1267,14 @@ mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn bitcoin_utxo_requires_six_confirmations(){let a=BitcoinAdapter::new(d()).unwrap();assert_eq!(a.verify_utxo_deposit(&p(5)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_utxo_deposit(&p(6)).is_ok());}
  #[test] fn bitcoin_vout_is_replay_event_identity(){assert_eq!(p(6).event_index(),2);}
  #[test] fn bitcoin_withdrawal_uses_script_bytes(){let a=BitcoinAdapter::new(d()).unwrap();let x=a.build_utxo_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();assert!(x.validate_hash());}
+}
+
+#[cfg(test)]
+mod m103_bitcoin_checkpoint_tests {
+ use super::*;
+ fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,prev_block_hash:prev,merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0}}
+ #[test] fn checkpoint_continuation_is_accepted(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};let a=h(cp.block_hash);let r=bitcoin_validate_from_checkpoint(&cp,&[a]).unwrap();assert_eq!(r.height,101);}
+ #[test] fn wrong_checkpoint_link_is_rejected(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};assert_eq!(bitcoin_validate_from_checkpoint(&cp,&[h([8;32])]),Err(BitcoinCheckpointError::LinkageMismatch));}
 }
 
 #[cfg(test)]
