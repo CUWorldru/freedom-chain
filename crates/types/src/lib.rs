@@ -2287,6 +2287,7 @@ pub fn bitcoin_utxo_smt_leaf(entry: Option<&BitcoinUtxoStateEntry>) -> Hash {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinUtxoSmtProof {
+    pub key: Hash,
     pub entry: Option<BitcoinUtxoStateEntry>,
     pub siblings: Vec<Hash>,
 }
@@ -2294,23 +2295,53 @@ pub struct BitcoinUtxoSmtProof {
 impl BitcoinUtxoSmtProof {
     pub fn verify(&self, root: Hash) -> bool {
         if self.siblings.len() != BITCOIN_UTXO_SMT_DEPTH { return false; }
-        let key=match &self.entry {
-            Some(e)=>bitcoin_utxo_smt_key(&e.tx_hash,e.vout),
-            None=>return false,
-        };
+        if let Some(e)=&self.entry {
+            if bitcoin_utxo_smt_key(&e.tx_hash,e.vout) != self.key { return false; }
+        }
         let mut current=bitcoin_utxo_smt_leaf(self.entry.as_ref());
-        let mut bit=0usize;
-        for sibling in &self.siblings {
-            let byte=key[bit/8];
-            let right=((byte>>(bit%8))&1)==1;
+        for bit in 0..BITCOIN_UTXO_SMT_DEPTH {
+            let right=((self.key[bit/8]>>(bit%8))&1)==1;
+            let sibling=&self.siblings[bit];
             current=if right {
                 freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",sibling.as_slice(),current.as_slice()].concat())
             } else {
                 freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",current.as_slice(),sibling.as_slice()].concat())
             };
-            bit+=1;
         }
         current==root
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSmtUpdateStep {
+    pub key: Hash,
+    pub old_entry: Option<BitcoinUtxoStateEntry>,
+    pub new_entry: Option<BitcoinUtxoStateEntry>,
+    pub siblings: Vec<Hash>,
+}
+
+impl BitcoinUtxoSmtUpdateStep {
+    fn root_for(&self, entry: Option<&BitcoinUtxoStateEntry>) -> Option<Hash> {
+        if self.siblings.len()!=BITCOIN_UTXO_SMT_DEPTH { return None; }
+        if let Some(e)=entry {
+            if bitcoin_utxo_smt_key(&e.tx_hash,e.vout)!=self.key { return None; }
+        }
+        let mut current=bitcoin_utxo_smt_leaf(entry);
+        for bit in 0..BITCOIN_UTXO_SMT_DEPTH {
+            let right=((self.key[bit/8]>>(bit%8))&1)==1;
+            let sibling=&self.siblings[bit];
+            current=if right {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",sibling.as_slice(),current.as_slice()].concat())
+            } else {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",current.as_slice(),sibling.as_slice()].concat())
+            };
+        }
+        Some(current)
+    }
+
+    pub fn verify(&self, current_root: Hash) -> Option<Hash> {
+        if self.root_for(self.old_entry.as_ref())? != current_root { return None; }
+        self.root_for(self.new_entry.as_ref())
     }
 }
 
@@ -2318,23 +2349,21 @@ impl BitcoinUtxoSmtProof {
 pub struct BitcoinUtxoSmtUpdateProof {
     pub previous_root: Hash,
     pub next_root: Hash,
-    pub removals: Vec<BitcoinUtxoSmtProof>,
-    pub additions: Vec<BitcoinUtxoSmtProof>,
+    pub steps: Vec<BitcoinUtxoSmtUpdateStep>,
 }
 
 impl BitcoinUtxoSmtUpdateProof {
-    pub fn validate(&self) -> bool {
+    pub fn verify(&self) -> bool {
         if self.previous_root == [0;32] || self.next_root == [0;32]
-            || self.removals.is_empty() && self.additions.is_empty() {
-            return false;
-        }
+            || self.steps.is_empty() || self.steps.len() > 100_000 { return false; }
+        let mut root=self.previous_root;
         let mut keys=std::collections::BTreeSet::new();
-        for p in self.removals.iter().chain(self.additions.iter()) {
-            let Some(e)=&p.entry else { return false; };
-            if !keys.insert(bitcoin_utxo_smt_key(&e.tx_hash,e.vout)) { return false; }
-            if !p.verify(self.previous_root) { return false; }
+        for step in &self.steps {
+            if !keys.insert(step.key) { return false; }
+            let Some(next)=step.verify(root) else { return false; };
+            root=next;
         }
-        true
+        root==self.next_root
     }
 }
 
