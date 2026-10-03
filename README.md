@@ -831,3 +831,17 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - M79 bridge records remain deserializable because lifecycle status is stored in a separate serde-defaulted map;
 - legacy M79 records without a status are safely treated as Verified when first accepted, providing an explicit migration path;
 - M80 does not yet create supply or mint balances: the Minted state is a state-machine transition only, while actual supply accounting is deferred to the supply-invariant milestone.
+
+
+## M81 — Universal Bidirectional Bridge Accounting
+
+- bridge withdrawals are now modeled generically for any external network; the protocol does not hard-code Bitcoin, Ethereum, TRON, TON, Solana, or another chain into the withdrawal state machine;
+- external recipient addresses are stored as opaque bytes, allowing UTXO addresses, EVM/TRON contract addresses, TON/Solana addresses, and other network-specific formats to be handled by separate adapters;
+- outbound lifecycle is consensus-visible and forward-only: Requested → Validated → Approved → Signing → Broadcast → ExternalConfirmed → Finalized, with controlled rejection from the early stages;
+- withdrawal identity is bound to bridge, asset, destination chain, sender, and nonce, while the request hash commits to the complete withdrawal payload including the external recipient;
+- bidirectional bridge accounting tracks verified external locked, Freedom minted, Freedom burned, and external released amounts;
+- accounting enforces the conservation invariant minted - burned == external_locked - external_released, plus monotonic safety bounds preventing mint above verified lock, burn above minted, or release above burned;
+- final external release cannot be finalized until the corresponding Freedom-side representation has been burned;
+- bridge withdrawals, lifecycle status, and accounting are included in the deterministic state root and survive serde-defaulted state migration;
+- M81 is the protocol accounting/state-machine foundation only: it does not yet broadcast real Bitcoin/EVM/TRON/TON/Solana transactions or hold private bridge signing keys;
+- network-specific adapters will be implemented separately, with Bitcoin using a UTXO model and EVM/TRON/TON/Solana using their respective transaction/finality models.
