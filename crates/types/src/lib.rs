@@ -227,5 +227,27 @@ pub struct FinalityCertificate {
     pub block_hash: Hash,
     pub height: u64,
     pub round: u64,
-    pub votes: Vec<ValidatorVote>,
+    pub precommits: Vec<ValidatorPrecommit>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValidatorPrecommit {
+    pub block_hash: Hash,
+    pub height: u64,
+    pub round: u64,
+    pub validator_id: Hash,
+    pub signature: Vec<u8>,
+}
+impl ValidatorPrecommit {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"FREEDOM-PRECOMMIT-V1");
+        out.extend_from_slice(&self.block_hash);
+        out.extend_from_slice(&self.height.to_le_bytes());
+        out.extend_from_slice(&self.round.to_le_bytes());
+        out.extend_from_slice(&self.validator_id);
+        out
+    }
+}
+
+
