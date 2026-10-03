@@ -290,7 +290,7 @@ impl ValidatorProtocol {
             return Ok(freedom_consensus::stake_quorum_reached(state, self.votes.keys()));
         }
         self.votes.insert(vote.validator_id, vote);
-        Ok(self.votes.len() >= freedom_consensus::quorum_threshold(state.validators.len()))
+        Ok(freedom_consensus::stake_quorum_reached(state, self.votes.keys()))
     }
 
     pub fn lock_on_prevote_quorum(
@@ -339,7 +339,7 @@ impl ValidatorProtocol {
             return Ok(freedom_consensus::stake_quorum_reached(state, self.precommits.keys()));
         }
         self.precommits.insert(precommit.validator_id, precommit);
-        Ok(self.precommits.len() >= freedom_consensus::quorum_threshold(state.validators.len()))
+        Ok(freedom_consensus::stake_quorum_reached(state, self.precommits.keys()))
     }
 
     pub fn finalize_if_quorum(&self, state: &mut ChainState, block: &Block, round: u64) -> Result<Block, String> {
