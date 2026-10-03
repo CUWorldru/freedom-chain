@@ -247,18 +247,6 @@ pub fn validate_precommit(
 ) -> Result<(), String> {
     validate_precommit_against_set(&state.active_validator_set, precommit, expected_block_hash, expected_height, expected_round)
 }
-    if precommit.block_hash != expected_block_hash { return Err("precommit block hash mismatch".into()); }
-    if precommit.height != expected_height { return Err("precommit height mismatch".into()); }
-    if precommit.round != expected_round { return Err("precommit round mismatch".into()); }
-    let validator = state.active_validator_set.get(&precommit.validator_id).ok_or_else(|| "unknown validator".to_string())?;
-    if precommit.signature.len() != 64 { return Err("invalid precommit signature length".into()); }
-    let mut sig = [0u8; 64];
-    sig.copy_from_slice(&precommit.signature);
-    if !verify(&validator.consensus_key, &precommit.signing_bytes(), &sig) {
-        return Err("invalid precommit signature".into());
-    }
-    Ok(())
-}
 
 pub fn validate_precommit_quorum_for_set(
     validator_set: &std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
