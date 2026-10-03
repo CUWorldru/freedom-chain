@@ -123,7 +123,6 @@ impl ChainStore {
         }
         if snapshot.height != height || snapshot.state.height != height { return Err(StorageError::InvalidSnapshot("height mismatch".into())); }
         if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }
-        let checkpoint = if snapshot.height == 0 { None } else { None };
 if snapshot.epoch_transition_certificate.as_ref().map(|c| c.hash())
             != snapshot.state.validator_set_certificate.as_ref().map(|c| c.hash()) {
             return Err(StorageError::InvalidSnapshot("epoch transition certificate mismatch".into()));
