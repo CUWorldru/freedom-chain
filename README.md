@@ -625,3 +625,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - when only one peer is available, the node retains a single-peer bootstrap path;
 - disconnects clear outstanding candidates tied to the lost sync round;
 - the old unauthenticated gossipsub sync request/response path is no longer accepted; synchronization uses the authenticated request-response transport with M56 peer/request binding.
+
+
+## M59 — Peer Disagreement Handling
+
+- sync rounds now record which peers participated and the starting height they were asked to serve;
+- when peers return different block batches for the same sync round, the node records the conflicting peer and batch height instead of selecting one arbitrarily;
+- disagreement evidence is scoped to the current sync round and is cleared after the round ends or a peer disconnects;
+- a disagreement does not by itself label a peer malicious: the node remains neutral until stronger cryptographic or protocol evidence exists;
+- the sync quorum still requires matching batches before state or storage changes.
