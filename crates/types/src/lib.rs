@@ -2423,6 +2423,40 @@ impl BitcoinUtxoSmtUpdateStep {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+impl BitcoinUtxoSmtUpdateProof {
+    pub fn build(
+        previous: &BitcoinUtxoSmtSnapshot,
+        next: &BitcoinUtxoSmtSnapshot,
+    ) -> Result<Self,String> {
+        let mut old=std::collections::BTreeMap::<Hash,BitcoinUtxoStateEntry>::new();
+        let mut new=std::collections::BTreeMap::<Hash,BitcoinUtxoStateEntry>::new();
+        for e in &previous.entries {
+            if old.insert(bitcoin_utxo_smt_key(&e.tx_hash,e.vout),e.clone()).is_some(){return Err("duplicate previous SMT key".into());}
+        }
+        for e in &next.entries {
+            if new.insert(bitcoin_utxo_smt_key(&e.tx_hash,e.vout),e.clone()).is_some(){return Err("duplicate next SMT key".into());}
+        }
+        let mut keys=std::collections::BTreeSet::new();
+        keys.extend(old.keys().copied());
+        keys.extend(new.keys().copied());
+        let previous_root=previous.root()?;
+        let next_root=next.root()?;
+        let mut steps=Vec::new();
+        for key in keys {
+            if old.get(&key)==new.get(&key){continue;}
+            let old_proof=previous.proof_for(key)?;
+            steps.push(BitcoinUtxoSmtUpdateStep{
+                key,
+                old_entry:old.get(&key).cloned(),
+                new_entry:new.get(&key).cloned(),
+                siblings:old_proof.siblings,
+            });
+        }
+        if steps.is_empty(){return Err("SMT snapshots are identical".into());}
+        Ok(Self{previous_root,next_root,steps})
+    }
+}
+
 pub struct BitcoinUtxoSmtUpdateProof {
     pub previous_root: Hash,
     pub next_root: Hash,
