@@ -641,25 +641,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         state.validator_set_certificate = Some(cert);
                                     }
                                 }
-                                Ok(NetworkMessage::SyncRequest(req)) => {
-                                    if req.from_height == 0 || req.from_height > req.to_height {
-                                        continue;
-                                    }
-                                    let latest = state.height;
-                                    let to = req.to_height.min(latest).min(req.from_height.saturating_add(31));
-                                    if req.from_height <= to {
-                                        match store.range(req.from_height, to) {
-                                            Ok(blocks) => {
-                                                let response = NetworkMessage::SyncResponse(SyncResponse {
-                                                    request_id: req.request_id,
-                                                    from_height: req.from_height,
-                                                    blocks,
-                                                });
-                                                let _ = publish(&mut swarm, &response);
-                                            }
-                                            Err(e) => eprintln!("sync read error: {e}"),
-                                        }
-                                    }
+                                Ok(NetworkMessage::SyncRequest(_req)) => {
+                                    eprintln!("IGNORED_LEGACY_GOSSIPSUB_SYNC_REQUEST");
                                 }
                                 Ok(NetworkMessage::SyncResponse(_response)) => {
                                     eprintln!("IGNORED_LEGACY_GOSSIPSUB_SYNC_RESPONSE");
