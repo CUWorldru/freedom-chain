@@ -8,6 +8,8 @@ pub fn execute_transaction(s:&mut ChainState,tx:&Transaction)->Result<Receipt,St
 pub fn execute_block(s:&mut ChainState,block:&Block)->Result<Block,String>{
 if block.header.height!=s.height+1{return Err("invalid block height".into())}
 if block.header.previous_hash!=s.last_block_hash{return Err("invalid previous block hash".into())}
+let expected_epoch=if s.epoch_length>0 && block.header.height%s.epoch_length==0{block.header.height/s.epoch_length}else{s.epoch};
+if block.header.epoch!=expected_epoch{return Err("invalid block epoch".into())}
 if block.header.tx_root!=tx_root(&block.transactions){return Err("transaction root mismatch".into())}
 let mut working=s.clone();
 let mut receipts=Vec::with_capacity(block.transactions.len());
