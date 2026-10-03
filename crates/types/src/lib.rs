@@ -709,3 +709,23 @@ mod m78_bridge_message_tests {
   );
  }
 }
+
+
+#[cfg(test)]
+mod m82_adapter_type_tests {
+ use super::*;
+ #[test]
+ fn adapter_intent_binds_external_destination_and_amount() {
+  let mut x=BridgeWithdrawalIntent{withdrawal_id:[1;32],bridge_id:[2;32],destination_chain_id:3,asset_id:[4;32],amount:500,recipient:b"address".to_vec(),nonce:7,intent_hash:[0;32]};
+  x.intent_hash=x.compute_hash(); assert!(x.validate_hash());
+  x.amount+=1; assert!(!x.validate_hash());
+ }
+ #[test]
+ fn descriptors_cover_major_network_families() {
+  assert_eq!(BridgeAdapterKind::Bitcoin as u8,1);
+  assert_eq!(BridgeAdapterKind::Evm as u8,2);
+  assert_eq!(BridgeAdapterKind::Tron as u8,3);
+  assert_eq!(BridgeAdapterKind::Ton as u8,4);
+  assert_eq!(BridgeAdapterKind::Solana as u8,5);
+ }
+}
