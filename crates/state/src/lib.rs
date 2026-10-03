@@ -283,6 +283,7 @@ impl ChainState {
   }
   self.bridge_withdrawal_status.insert(id,next); Ok(())
  }
+ pub fn bitcoin_deposit_allowed(&self,bridge_id:Hash)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)}
  pub fn record_verified_external_lock(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 || !self.asset_registry.contains_key(&asset_id) { return Err(StateError::InvalidBridgeAccounting); }
   let a=self.bridge_accounting.entry(asset_id).or_default();
