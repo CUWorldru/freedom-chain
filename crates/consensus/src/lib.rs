@@ -86,7 +86,7 @@ mod quorum_tests {
                 validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
                 owner: freedom_primitives::address_from_public_key(&key),
                 consensus_key: key,
-                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         ChainState::genesis(&Genesis { chain_id: 1, initial_supply: 0, validators })
