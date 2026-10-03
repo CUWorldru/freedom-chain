@@ -2584,7 +2584,7 @@ impl EthereumTransactionProof {
     pub fn verify_binding(&self, envelope:&CrossChainFinalityEnvelope)->bool {
         self.validate_structure()
             && envelope.proof_kind==CrossChainProofKind::Ethereum
-            && envelope.finalized_block_number()==self.block_number
+            && envelope.finalized_height==self.block_number
             && envelope.finalized_hash==self.block_hash
             && envelope.proof_hash==self.proof_hash()
     }
