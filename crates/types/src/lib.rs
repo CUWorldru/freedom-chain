@@ -2578,6 +2578,7 @@ pub struct BitcoinUtxoCommitmentAttestation {
     pub bitcoin_tip_height: u64,
     pub bitcoin_tip_hash: Hash,
     pub bitcoin_tip_chainwork: [u8; 32],
+    pub previous_utxo_root: Hash,
     pub accumulator_root: Hash,
     pub validator_ids: Vec<Hash>,
     pub signatures: Vec<BitcoinReorgRecoverySignature>,
@@ -2595,6 +2596,7 @@ impl BitcoinUtxoCommitmentAttestation {
         o.extend_from_slice(&self.bitcoin_tip_height.to_le_bytes());
         o.extend_from_slice(&self.bitcoin_tip_hash);
         o.extend_from_slice(&self.bitcoin_tip_chainwork);
+        o.extend_from_slice(&self.previous_utxo_root);
         o.extend_from_slice(&self.accumulator_root);
         for id in &self.validator_ids { o.extend_from_slice(id); }
         o
@@ -2612,6 +2614,7 @@ impl BitcoinUtxoCommitmentAttestation {
             && self.bitcoin_tip_height > 0
             && self.bitcoin_tip_hash != [0;32]
             && self.bitcoin_tip_chainwork != [0;32]
+            && self.previous_utxo_root != [0;32]
             && self.accumulator_root != [0;32]
             && !self.validator_ids.is_empty()
             && self.validator_ids.len() == self.signatures.len()
