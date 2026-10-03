@@ -77,7 +77,10 @@ impl SubmitContributionPayload {
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Receipt { pub tx_hash: Hash, pub success: bool, pub gas_used: u64 }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Event { FdmTransferred { from: Address, to: Address, amount: u128 }, TicketCreated { ticket_id: Hash, draw_id: Hash, owner: Address }, DrawFundAllocated { draw_id: Hash, prize_pool: u128, cu_fund: u128, annual_reserve: u128 }, DrawExecuted { draw_id: Hash, randomness_seed: Hash, selection_proof: Hash }, PrizePaid { draw_id: Hash, ticket_id: Hash, winner: Address, amount: u128 } }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Receipt { pub tx_hash: Hash, pub success: bool, pub gas_used: u64, pub events: Vec<Event> }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Validator {
     pub validator_id: Hash, pub owner: Address, pub consensus_key: [u8;32], pub stake:u128,
@@ -158,4 +161,4 @@ impl CreateTicketPayload {
 pub struct DrawConfig { pub draw_id: Hash, pub draw_type: DrawType, pub ticket_price_mfdm: u128, pub winner_count: u32, pub starts_at: u64, pub ends_at: u64, pub seed_block: u64 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DrawResult { pub draw_id: Hash, pub total_tickets: u64, pub prize_pool_mfdm: u128, pub cu_fund_mfdm: u128, pub annual_reserve_mfdm: u128, pub winners: Vec<Hash>, pub randomness_seed: Hash }
+pub struct DrawResult { pub draw_id: Hash, pub total_tickets: u64, pub prize_pool_mfdm: u128, pub cu_fund_mfdm: u128, pub annual_reserve_mfdm: u128, pub winners: Vec<Hash>, pub randomness_seed: Hash, pub selection_proof: Hash }
