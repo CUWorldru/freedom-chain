@@ -700,6 +700,15 @@ impl BitcoinReorgPolicy {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinCanonicalTipProof { pub start_height:u64, pub headers:Vec<BitcoinBlockHeader>, pub tip_height:u64, pub tip_hash:Hash, pub chainwork:[u8;32] }
+impl BitcoinCanonicalTipProof {
+ pub fn verify(&self,checkpoint:&BitcoinChainCheckpoint)->bool{
+  if self.headers.is_empty()||self.start_height!=checkpoint.height.saturating_add(1){return false;}
+  let Ok(cp)=bitcoin_validate_from_checkpoint(checkpoint,&self.headers) else{return false;};
+  cp.height==self.tip_height&&cp.block_hash==self.tip_hash&&cp.chainwork==self.chainwork
+ }
+}
 pub struct BitcoinReorgRecoverySignature { pub validator_id:Hash, pub signature:Vec<u8> }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinReorgRecovery { pub bridge_id:Hash, pub evidence_fingerprint:Hash, pub nonce:u64, pub canonical_height:u64, pub canonical_block_hash:Hash, pub canonical_chainwork:[u8;32], pub validator_ids:Vec<Hash>, pub signatures:Vec<BitcoinReorgRecoverySignature>, pub recovery_hash:Hash }
