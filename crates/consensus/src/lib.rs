@@ -318,3 +318,23 @@ pub fn detect_precommits_evidence(
     }
     out
 }
+
+
+#[cfg(test)]
+mod m24_evidence_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+
+    #[test]
+    fn evidence_hash_is_deterministic_and_valid() {
+        let a = make_evidence(
+            freedom_types::EquivocationKind::DoublePrevote,
+            10, 2, hash_bytes(b"validator"),
+            b"vote-a".to_vec(), b"vote-b".to_vec(),
+        );
+        assert!(validate_evidence(&a).is_ok());
+        let mut tampered = a.clone();
+        tampered.second = b"vote-c".to_vec();
+        assert!(validate_evidence(&tampered).is_err());
+    }
+}
