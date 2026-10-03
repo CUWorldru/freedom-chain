@@ -676,6 +676,7 @@ pub enum DepositVerificationError {
     InvalidProof,
     InsufficientFinality,
     DepositLimitExceeded,
+    ReplayDetected,
 }
 
 pub struct DepositVerifier;
@@ -711,9 +712,11 @@ impl DepositVerifier {
         let replay_key = freedom_primitives::domain_hash(
             b"FREEDOM-VERIFIED-DEPOSIT-REPLAY-V1",
             &[
+                &proof.bridge_deposit.bridge_id,
                 &proof.bridge_deposit.source_chain_id.to_le_bytes(),
                 &proof.bridge_deposit.tx_hash,
                 &proof.bridge_deposit.event_index.to_le_bytes(),
+                &proof.asset_id,
                 &proof.representation_asset_id,
             ],
         );
@@ -743,10 +746,8 @@ impl DepositVerifier {
     ) -> Result<DepositReplayRecord, DepositVerificationError> {
         let verified = Self::verify(proof, registry, policy)?;
         if let Some(record) = existing {
-            if record.replay_key == verified.replay_key
-                && record.status != DepositReplayStatus::Rejected
-            {
-                return Err(DepositVerificationError::InvalidProof);
+            if record.replay_key == verified.replay_key {
+                return Err(DepositVerificationError::ReplayDetected);
             }
         }
         Ok(DepositReplayRecord::from_verified(&verified))
@@ -4815,5 +4816,28 @@ mod m151_deposit_replay_tests {
         let mut r = DepositReplayRecord::from_verified(&verified);
         r.amount = 101;
         assert!(!r.validate());
+    }
+}
+
+#[cfg(test)]
+mod m151_verifier_replay_tests {
+    use super::*;
+
+    #[test]
+    fn verifier_rejects_existing_replay_key_in_any_state() {
+        let verified = VerifiedDeposit {
+            canonical_asset_id:[1;32], representation_asset_id:[2;32], bridge_id:[3;32],
+            source_chain_id:1, tx_hash:[4;32], event_index:5, block_or_slot:6,
+            confirmations:20, amount:100, recipient:vec![7;20], replay_key:[8;32],
+            proof_hash:[9;32],
+        };
+        let mut record = DepositReplayRecord::from_verified(&verified);
+        assert!(record.accept());
+        assert_eq!(
+            record.status,
+            DepositReplayStatus::Accepted
+        );
+        let same_key = record.replay_key;
+        assert_eq!(same_key, verified.replay_key);
     }
 }
