@@ -279,7 +279,7 @@ impl ValidatorProtocol {
         freedom_network::make_vote(state, self.validator_id, proposal, &self.consensus_key)
     }
 
-    pub fn receive_timeout(&mut self, state: &ChainState, timeout: freedom_types::ValidatorTimeout, height: u64, round: u64) -> Result<bool, String> { freedom_consensus::validate_timeout(state, &timeout, height, round)?; self.timeouts.insert(timeout.validator_id, timeout); Ok(self.timeouts.len() >= freedom_consensus::quorum_threshold(state.validators.len())) }
+    pub fn receive_timeout(&mut self, state: &ChainState, timeout: freedom_types::ValidatorTimeout, height: u64, round: u64) -> Result<bool, String> { freedom_consensus::validate_timeout(state, &timeout, height, round)?; self.timeouts.insert(timeout.validator_id, timeout); Ok(freedom_consensus::stake_quorum_reached(state, self.timeouts.keys())) }
 
     pub fn receive_vote(&mut self, state: &ChainState, vote: freedom_types::ValidatorVote, expected_block_hash: Hash, height: u64, round: u64) -> Result<bool, String> {
         freedom_consensus::validate_vote(state, &vote, expected_block_hash, height, round)?;
@@ -287,7 +287,7 @@ impl ValidatorProtocol {
             if existing.block_hash != vote.block_hash || existing.round != vote.round {
                 return Err("validator prevote equivocation detected".into());
             }
-            return Ok(self.votes.len() >= freedom_consensus::quorum_threshold(state.validators.len()));
+            return Ok(freedom_consensus::stake_quorum_reached(state, self.votes.keys()));
         }
         self.votes.insert(vote.validator_id, vote);
         Ok(self.votes.len() >= freedom_consensus::quorum_threshold(state.validators.len()))
@@ -336,7 +336,7 @@ impl ValidatorProtocol {
             if existing.block_hash != precommit.block_hash || existing.round != precommit.round {
                 return Err("validator precommit equivocation detected".into());
             }
-            return Ok(self.precommits.len() >= freedom_consensus::quorum_threshold(state.validators.len()));
+            return Ok(freedom_consensus::stake_quorum_reached(state, self.precommits.keys()));
         }
         self.precommits.insert(precommit.validator_id, precommit);
         Ok(self.precommits.len() >= freedom_consensus::quorum_threshold(state.validators.len()))
