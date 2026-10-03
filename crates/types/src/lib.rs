@@ -167,6 +167,7 @@ pub struct DrawResult { pub draw_id: Hash, pub total_tickets: u64, pub prize_poo
 pub struct BlockProposal {
     pub block_hash: Hash,
     pub height: u64,
+    pub round: u64,
     pub proposer: Address,
     pub block: Block,
     pub signature: Vec<u8>,
@@ -177,6 +178,7 @@ impl BlockProposal {
         out.extend_from_slice(b"FREEDOM-PROPOSAL-V1");
         out.extend_from_slice(&self.block_hash);
         out.extend_from_slice(&self.height.to_le_bytes());
+        out.extend_from_slice(&self.round.to_le_bytes());
         out.extend_from_slice(&self.proposer);
         out
     }
@@ -186,6 +188,7 @@ impl BlockProposal {
 pub struct ValidatorVote {
     pub block_hash: Hash,
     pub height: u64,
+    pub round: u64,
     pub validator_id: Hash,
     pub signature: Vec<u8>,
 }
@@ -195,6 +198,25 @@ impl ValidatorVote {
         out.extend_from_slice(b"FREEDOM-VOTE-V1");
         out.extend_from_slice(&self.block_hash);
         out.extend_from_slice(&self.height.to_le_bytes());
+        out.extend_from_slice(&self.round.to_le_bytes());
+        out.extend_from_slice(&self.validator_id);
+        out
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValidatorTimeout {
+    pub height: u64,
+    pub round: u64,
+    pub validator_id: Hash,
+    pub signature: Vec<u8>,
+}
+impl ValidatorTimeout {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"FREEDOM-TIMEOUT-V1");
+        out.extend_from_slice(&self.height.to_le_bytes());
+        out.extend_from_slice(&self.round.to_le_bytes());
         out.extend_from_slice(&self.validator_id);
         out
     }

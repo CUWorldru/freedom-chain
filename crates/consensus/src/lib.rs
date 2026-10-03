@@ -12,7 +12,9 @@ pub fn tx_root(txs:&[Transaction])->Hash{let leaves:Vec<Hash>=txs.iter().map(|t|
 pub fn receipts_root(rs:&[Receipt])->Hash{let leaves:Vec<Hash>=rs.iter().map(|r|domain_hash(b"FREEDOM-RECEIPT-LEAF-V1",&[&hash_bytes(&canonical_receipt_bytes(r))])).collect();merkle_root(&leaves)}
 pub fn canonical_block_bytes(block:&Block)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BLOCK-V1");let h=&block.header;push_u64(&mut o,h.height);o.extend_from_slice(&h.previous_hash);o.extend_from_slice(&h.state_root);o.extend_from_slice(&h.tx_root);o.extend_from_slice(&h.receipts_root);push_u64(&mut o,h.timestamp);push_u64(&mut o,h.epoch);o.extend_from_slice(&h.proposer);push_u64(&mut o,block.transactions.len() as u64);for tx in &block.transactions{canonical_tx(&mut o,tx)}push_u64(&mut o,block.receipts.len() as u64);for r in &block.receipts{push_bytes(&mut o,&canonical_receipt_bytes(r))}o}
 pub fn block_hash(block:&Block)->Hash{domain_hash(b"FREEDOM-BLOCK-HASH-V1",&[&canonical_block_bytes(block)])}
-pub fn proposer_for_height(state:&ChainState,height:u64)->Option<freedom_primitives::Address>{if state.validators.is_empty(){return None}let mut ids:Vec<_>=state.validators.keys().copied().collect();ids.sort();let id=ids[((height-1) as usize)%ids.len()];state.validators.get(&id).map(|v|v.owner)}
+pub fn proposer_for_height_round(state:&ChainState,height:u64,round:u64)->Option<freedom_primitives::Address>{if state.validators.is_empty(){return None}let mut ids:Vec<_>=state.validators.keys().copied().collect();ids.sort();let index=((height-1).saturating_add(round)) as usize % ids.len();let id=ids[index];state.validators.get(&id).map(|v|v.owner)}
+pub fn proposer_for_height(state:&ChainState,height:u64)->Option<freedom_primitives::Address>{proposer_for_height_round(state,height,0)}
+
 pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{if block.header.height!=state.height+1{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
 #[cfg(test)]mod tests{use super::*;use freedom_primitives::{merkle_proof,merkle_root,verify_merkle_proof};use freedom_types::{TxKind,Transaction,Receipt};#[test]fn merkle_proof_verifies(){let leaves=vec![hash_bytes(b"a"),hash_bytes(b"b"),hash_bytes(b"c")];let root=merkle_root(&leaves);let proof=merkle_proof(&leaves,2).unwrap();assert!(verify_merkle_proof(root,leaves[2],&proof));}#[test]fn roots_are_order_sensitive(){let a=Transaction{chain_id:1,sender:[1;32],nonce:0,kind:TxKind::Transfer,payload:vec![1],fee:0,signature:vec![2;64]};let b=Transaction{chain_id:1,sender:[1;32],nonce:1,kind:TxKind::Transfer,payload:vec![2],fee:0,signature:vec![3;64]};assert_ne!(tx_root(&[a.clone(),b.clone()]),tx_root(&[b,a]));let r1=Receipt{tx_hash:a.hash(),success:true,gas_used:1,events:vec![]};let r2=Receipt{tx_hash:b.hash(),success:true,gas_used:1,events:vec![]};assert_ne!(receipts_root(&[r1.clone(),r2.clone()]),receipts_root(&[r2,r1]));}}
 
@@ -101,4 +103,20 @@ mod quorum_tests {
         let v = vote(&state, 0, hash, 1);
         assert!(validate_quorum(&state, hash, 1, &[v.clone(), v]).is_err());
     }
+}
+
+pub fn validate_timeout(state:&ChainState, timeout:&freedom_types::ValidatorTimeout, height:u64, round:u64)->Result<(),String>{
+ if timeout.height!=height{return Err("timeout height mismatch".into())}
+ if timeout.round!=round{return Err("timeout round mismatch".into())}
+ let v=state.validators.get(&timeout.validator_id).ok_or_else(||"unknown validator".to_string())?;
+ if timeout.signature.len()!=64{return Err("invalid timeout signature length".into())}
+ let mut sig=[0u8;64];sig.copy_from_slice(&timeout.signature);
+ if !freedom_crypto::verify(&v.consensus_key,&timeout.signing_bytes(),&sig){return Err("invalid timeout signature".into())}
+ Ok(())
+}
+pub fn validate_timeout_quorum(state:&ChainState,height:u64,round:u64,timeouts:&[freedom_types::ValidatorTimeout])->Result<(),String>{
+ let mut seen=std::collections::BTreeSet::new();
+ for t in timeouts{validate_timeout(state,t,height,round)?;if !seen.insert(t.validator_id){return Err("duplicate timeout validator".into())}}
+ if seen.len()<quorum_threshold(state.validators.len()){return Err("timeout quorum not reached".into())}
+ Ok(())
 }
