@@ -3656,3 +3656,120 @@ mod ethereum_m142_tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod m144_tron_event_tests {
+    use super::*;
+
+    fn varint(mut v: u64) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let mut b = (v & 0x7f) as u8;
+            v >>= 7;
+            if v != 0 { b |= 0x80; }
+            out.push(b);
+            if v == 0 { return out; }
+        }
+    }
+
+    fn field_u64(field: u64, value: u64) -> Vec<u8> {
+        let mut out = varint(field << 3);
+        out.extend_from_slice(&varint(value));
+        out
+    }
+
+    fn field_bytes(field: u64, value: &[u8]) -> Vec<u8> {
+        let mut out = varint((field << 3) | 2);
+        out.extend_from_slice(&varint(value.len() as u64));
+        out.extend_from_slice(value);
+        out
+    }
+
+    fn header() -> TronBlockHeaderProof {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&field_u64(1, 1_725_000_000_000));
+        raw.extend_from_slice(&field_bytes(2, &[0x22; 32]));
+        raw.extend_from_slice(&field_bytes(3, &[0x11; 32]));
+        raw.extend_from_slice(&field_u64(7, 42));
+        raw.extend_from_slice(&field_bytes(9, &[0x41, 1, 2, 3]));
+        let mut p = TronBlockHeaderProof { raw_data: raw, block_id: [0; 32] };
+        p.block_id = p.computed_block_id().unwrap();
+        p
+    }
+
+    #[test]
+    fn tron_trc20_transfer_event_is_abi_bound() {
+        let raw_data = b"example-tron-transaction-raw-data".to_vec();
+        let tx_hash = {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(&raw_data).into()
+        };
+        let mut from = [0u8; 32];
+        from[12..].copy_from_slice(&[0x11; 20]);
+        let mut to = [0u8; 32];
+        to[12..].copy_from_slice(&[0x22; 20]);
+        let mut amount = [0u8; 32];
+        amount[16..].copy_from_slice(&1_000_000u128.to_be_bytes());
+
+        let h = header();
+        let proof = TronTransactionEventProof {
+            raw_data,
+            tx_hash,
+            block_number: 42,
+            block_id: h.block_id,
+            transaction_index: 3,
+            contract_address: vec![0xaa; 20],
+            topics: vec![TronTransactionEventProof::TRANSFER_EVENT_SIGNATURE, from, to],
+            data: amount.to_vec(),
+            execution_success: true,
+        };
+
+        assert!(proof.validate_transfer_event());
+        assert_eq!(proof.from_topic(), Ok([0x11; 20]));
+        assert_eq!(proof.to_topic(), Ok([0x22; 20]));
+        assert_eq!(proof.amount(), Ok(1_000_000));
+        assert!(proof.verify_binding(&h, tx_hash, 3));
+
+        let mut broken = proof.clone();
+        broken.topics[0] = [0x00; 32];
+        assert!(!broken.validate_transfer_event());
+
+        let mut broken_tx = proof.clone();
+        broken_tx.raw_data.push(0);
+        assert!(!broken_tx.validate_transfer_event());
+    }
+
+    #[test]
+    fn tron_trc20_transfer_rejects_failed_execution_and_noncanonical_topics() {
+        let raw_data = b"raw".to_vec();
+        let tx_hash = {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(&raw_data).into()
+        };
+        let h = header();
+        let mut topics = vec![[0u8; 32]; 3];
+        topics[0] = TronTransactionEventProof::TRANSFER_EVENT_SIGNATURE;
+        topics[1][12..].copy_from_slice(&[1u8; 20]);
+        topics[2][12..].copy_from_slice(&[2u8; 20]);
+        let mut data = [0u8; 32];
+        data[31] = 1;
+
+        let mut p = TronTransactionEventProof {
+            raw_data,
+            tx_hash,
+            block_number: 42,
+            block_id: h.block_id,
+            transaction_index: 0,
+            contract_address: vec![3u8; 20],
+            topics,
+            data: data.to_vec(),
+            execution_success: false,
+        };
+        assert!(!p.validate_transfer_event());
+        p.execution_success = true;
+        assert!(p.validate_transfer_event());
+        p.topics[1][0] = 1;
+        assert!(!p.validate_transfer_event());
+    }
+}
