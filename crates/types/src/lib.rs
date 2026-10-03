@@ -687,6 +687,71 @@ pub struct CrossChainAssetRegistry {
 }
 
 impl CrossChainAssetRegistry {
+    pub fn from_profile(
+        profile: CanonicalAssetProfile,
+        issuer: Hash,
+        representation: AssetDefinition,
+        asset_kind: CrossChainAssetKind,
+    ) -> Result<Self, String> {
+        if issuer == [0; 32] {
+            return Err("InvalidCanonicalIssuer".into());
+        }
+        if representation.symbol != profile.symbol()
+            || representation.decimals != profile.decimals()
+        {
+            return Err("CanonicalRepresentationMetadataMismatch".into());
+        }
+        let canonical_asset_id = profile.canonical_id(issuer);
+        let registry = Self {
+            canonical_asset_id,
+            symbol: profile.symbol().to_string(),
+            decimals: profile.decimals(),
+            representations: vec![CrossChainAssetRepresentation {
+                canonical_asset_id,
+                representation,
+                asset_kind,
+            }],
+        };
+        if !registry.validate() {
+            return Err("InvalidCanonicalAssetRegistry".into());
+        }
+        Ok(registry)
+    }
+
+    pub fn add_representation(
+        &mut self,
+        representation: AssetDefinition,
+        asset_kind: CrossChainAssetKind,
+    ) -> Result<(), String> {
+        if representation.symbol != self.symbol || representation.decimals != self.decimals {
+            return Err("RepresentationMetadataMismatch".into());
+        }
+        let entry = CrossChainAssetRepresentation {
+            canonical_asset_id: self.canonical_asset_id,
+            representation,
+            asset_kind,
+        };
+        if self.representations.iter().any(|r| {
+            r.representation.asset_id == entry.representation.asset_id
+        }) {
+            return Err("DuplicateRepresentation".into());
+        }
+        if self.representations.iter().any(|r| {
+            r.representation.source_chain_id == entry.representation.source_chain_id
+                && r.asset_kind == entry.asset_kind
+                && r.representation.contract_address == entry.representation.contract_address
+                && r.representation.bridge_id == entry.representation.bridge_id
+        }) {
+            return Err("DuplicateExternalIdentity".into());
+        }
+        self.representations.push(entry);
+        if !self.validate() {
+            self.representations.pop();
+            return Err("InvalidCanonicalAssetRegistry".into());
+        }
+        Ok(())
+    }
+
     pub fn is_multi_representation(&self) -> bool {
         self.representations.len() > 1
     }
