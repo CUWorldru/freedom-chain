@@ -4,6 +4,7 @@ use freedom_primitives::{Address, Hash};
 use freedom_state::ChainState;
 use freedom_types::{BlockProposal, ValidatorVote, ValidatorTimeout};
 use libp2p::{
+    request_response::{self, ProtocolSupport},
     gossipsub::{self, IdentTopic, MessageAuthenticity, ValidationMode},
     identify, ping,
     swarm::NetworkBehaviour,
@@ -17,12 +18,65 @@ pub const VOTE_TOPIC: &str = "freedom/1/votes";
 pub const TIMEOUT_TOPIC: &str = "freedom/1/timeouts";
 pub const SYNC_TOPIC: &str = "freedom/1/sync";
 pub const MAX_SYNC_BLOCKS: u64 = 32;
+pub const SYNC_PROTOCOL: &str = "/freedom/1/sync/1";
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SyncRequest { pub request_id: Hash, pub from_height: u64, pub to_height: u64 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SyncResponse { pub request_id: Hash, pub from_height: u64, pub blocks: Vec<freedom_types::Block> }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SnapshotSyncRequest { pub request_id: Hash, pub height: u64 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SnapshotSyncResponse {
+    pub request_id: Hash,
+    pub height: u64,
+    pub block_hash: Hash,
+    pub state_root: Hash,
+    pub state_json: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SyncWireRequest { Blocks(SyncRequest), Snapshot(SnapshotSyncRequest) }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SyncWireResponse { Blocks(SyncResponse), Snapshot(SnapshotSyncResponse) }
+
+#[derive(Clone)]
+pub struct FreedomSyncCodec;
+
+#[async_trait::async_trait]
+impl request_response::Codec for FreedomSyncCodec {
+    type Protocol = String;
+    type Request = SyncWireRequest;
+    type Response = SyncWireResponse;
+
+    async fn read_request<T>(&mut self, _: &Self::Protocol, io: &mut T) -> std::io::Result<Self::Request>
+    where T: futures::io::AsyncRead + Unpin + Send {
+        let mut bytes = Vec::new();
+        futures::io::AsyncReadExt::read_to_end(io, &mut bytes).await?;
+        serde_json::from_slice(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+    async fn write_request<T>(&mut self, _: &Self::Protocol, io: &mut T, req: SyncWireRequest) -> std::io::Result<()>
+    where T: futures::io::AsyncWrite + Unpin + Send {
+        let bytes = serde_json::to_vec(&req).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        futures::io::AsyncWriteExt::write_all(io, &bytes).await?;
+        futures::io::AsyncWriteExt::close(io).await
+    }
+    async fn read_response<T>(&mut self, _: &Self::Protocol, io: &mut T) -> std::io::Result<Self::Response>
+    where T: futures::io::AsyncRead + Unpin + Send {
+        let mut bytes = Vec::new();
+        futures::io::AsyncReadExt::read_to_end(io, &mut bytes).await?;
+        serde_json::from_slice(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+    async fn write_response<T>(&mut self, _: &Self::Protocol, io: &mut T, response: SyncWireResponse) -> std::io::Result<()>
+    where T: futures::io::AsyncWrite + Unpin + Send {
+        let bytes = serde_json::to_vec(&response).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        futures::io::AsyncWriteExt::write_all(io, &bytes).await?;
+        futures::io::AsyncWriteExt::close(io).await
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NetworkMessage {
@@ -40,6 +94,7 @@ pub struct FreedomBehaviour {
     pub identify: identify::Behaviour,
     pub ping: ping::Behaviour,
     pub kademlia: libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore>,
+    pub sync: request_response::Behaviour<FreedomSyncCodec>,
 }
 
 pub enum FreedomEvent {
@@ -47,6 +102,7 @@ pub enum FreedomEvent {
     Identify(identify::Event),
     Ping(ping::Event),
     Kademlia(libp2p::kad::Event),
+    Sync(request_response::Event<SyncWireRequest, SyncWireResponse>),
 }
 
 impl From<gossipsub::Event> for FreedomEvent {
@@ -58,6 +114,7 @@ impl From<identify::Event> for FreedomEvent {
 impl From<ping::Event> for FreedomEvent {
     fn from(event: ping::Event) -> Self { Self::Ping(event) }
 }
+impl From<request_response::Event<SyncWireRequest, SyncWireResponse>> for FreedomEvent { fn from(event: request_response::Event<SyncWireRequest, SyncWireResponse>) -> Self { Self::Sync(event) } }
 impl From<libp2p::kad::Event> for FreedomEvent {
     fn from(event: libp2p::kad::Event) -> Self { Self::Kademlia(event) }
 }
@@ -179,6 +236,11 @@ pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Erro
                 ),
                 ping: ping::Behaviour::default(),
                 kademlia: libp2p::kad::Behaviour::new(peer_id, libp2p::kad::store::MemoryStore::new(peer_id)),
+                sync: request_response::Behaviour::with_codec(
+                    FreedomSyncCodec,
+                    std::iter::once((SYNC_PROTOCOL.to_string(), ProtocolSupport::Full)),
+                    request_response::Config::default(),
+                ),
             })
         })?
         .build();
@@ -209,6 +271,10 @@ pub fn publish(
         NetworkMessage::SyncRequest(_) | NetworkMessage::SyncResponse(_) => (sync_topic(), encode_message(message)?),
     };
     Ok(swarm.behaviour_mut().gossipsub.publish(topic, bytes)?)
+}
+
+pub fn send_sync_request(swarm: &mut Swarm<FreedomBehaviour>, peer: PeerId, request: SyncWireRequest) -> request_response::OutboundRequestId {
+    swarm.behaviour_mut().sync.send_request(&peer, request)
 }
 
 #[cfg(test)]
