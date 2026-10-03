@@ -924,3 +924,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - threshold signatures are tracked separately from validator quorum, allowing `Quorum`, `Threshold`, or `QuorumAndThreshold` policy modes;
 - malformed or mismatched approvals do not count toward quorum;
 - cryptographic signature verification and MPC aggregation remain executor/crypto-layer responsibilities; this milestone defines the consensus-visible approval evidence and counting rules.
+
+
+## M90 — Bridge Approval Authentication
+
+- bridge approvals can now be authenticated with the chain's existing Ed25519 crypto primitive;
+- validator identity is bound as `hash(public_key) == validator_id`, preventing a valid signature from being presented under another validator identity;
+- signature verification covers the domain-separated approval hash, which includes bridge, request, withdrawal, validator, nonce, amount, destination chain, asset, and intent hash;
+- `BridgeApprovalSet::authenticated_approvals` counts only structurally valid approvals whose registered validator public key matches the claimed identity and whose signature verifies;
+- duplicate validators remain deduplicated;
+- threshold/MPC aggregate signature verification is intentionally still separate because the concrete external signer scheme may differ by bridge deployment.
