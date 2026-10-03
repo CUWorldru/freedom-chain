@@ -522,6 +522,40 @@ pub struct AssetDefinition {
 }
 
 impl AssetDefinition {
+    pub fn new_external(
+        source_chain_id: u32,
+        asset_type: AssetType,
+        contract_address: Vec<u8>,
+        symbol: String,
+        decimals: u8,
+        issuer: Hash,
+        bridge_id: Hash,
+        status: AssetStatus,
+    ) -> Result<Self, String> {
+        let asset_id = Self::compute_asset_id(
+            source_chain_id,
+            asset_type,
+            &contract_address,
+            issuer,
+            bridge_id,
+        );
+        let asset = Self {
+            asset_id,
+            source_chain_id,
+            asset_type,
+            contract_address,
+            symbol,
+            decimals,
+            issuer,
+            bridge_id,
+            status,
+        };
+        if !asset.validate_identity() {
+            return Err("InvalidAssetDefinition".into());
+        }
+        Ok(asset)
+    }
+
     pub fn compute_asset_id(
         source_chain_id: u32,
         asset_type: AssetType,
