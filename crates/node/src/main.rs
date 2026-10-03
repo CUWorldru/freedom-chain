@@ -241,6 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             state_root: snapshot.state_root,
                                                             checkpoint,
                                                             certificate,
+                                                            finality_validator_set: snapshot.finality_validator_set.clone(),
                                                             epoch_transition_certificate: snapshot.epoch_transition_certificate.clone(),
                                                             chain_id: freedom_primitives::CHAIN_ID,
                                                             state_json,
@@ -288,8 +289,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 Ok(s) => s,
                                                 Err(e) => { eprintln!("SNAPSHOT_REJECTED invalid state encoding: {e}"); continue; }
                                             };
-                                            if let Err(e) = freedom_consensus::validate_finality_certificate_for_block(
-                                                &snapshot_state,
+                                            let expected_finality_set_hash = if let Some(cert) = &response.checkpoint.header.epoch_transition_certificate {
+                                                cert.previous_set_hash
+                                            } else {
+                                                freedom_consensus::validator_set_hash(&snapshot_state.active_validator_set)
+                                            };
+                                            if freedom_consensus::validator_set_hash(&response.finality_validator_set) != expected_finality_set_hash {
+                                                eprintln!("SNAPSHOT_REJECTED finality validator set hash mismatch");
+                                                continue;
+                                            }
+                                            if let Err(e) = freedom_consensus::validate_finality_certificate_for_set(
+                                                &response.finality_validator_set,
                                                 &response.checkpoint,
                                                 &response.certificate,
                                             ) {
@@ -482,6 +492,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let ready = protocol.receive_precommit(&state, precommit, hash, state.height + 1, round)?;
                                     if ready {
                                         if let Some(block) = blocks.get(&hash).cloned() {
+                                            let finality_validator_set = state.active_validator_set.clone();
                                             let committed = protocol.finalize_if_quorum(&mut state, &block, round)?;
                                             store.put_block(&committed)?;
                                             if committed.header.height % snapshot_interval == 0 {
@@ -491,7 +502,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     round,
                                                     precommits: protocol.precommits.values().cloned().collect(),
                                                 };
-                                                store.save_snapshot_with_certificate(&state, freedom_consensus::block_hash(&committed), certificate)?;
+                                                store.save_snapshot_with_certificate_and_validator_set(
+                                                    &state,
+                                                    freedom_consensus::block_hash(&committed),
+                                                    certificate,
+                                                    finality_validator_set,
+                                                )?;
                                             }
                                             println!("FINALIZED height={} round={} hash={}", committed.header.height, round, hex::encode(block_hash(&committed)));
                                             protocol.reset_height();
