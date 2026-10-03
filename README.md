@@ -30,7 +30,7 @@
 
 M2 establishes the evidence layer for useful network work without minting 321M yet.
 
-- Freedom Nodes can be registered by signed transactions
+- 321MORE Nodes can be registered by signed transactions
 - Contributions reference a node and task
 - Work Units (WU) measure verified useful work
 - quality scores use fixed-point integer values 0..=10_000
@@ -59,9 +59,9 @@ M2 establishes the evidence layer for useful network work without minting 321M y
 - purchase records provide an on-chain billing receipt
 - wallet balance remains authoritative on 321MORE Network
 
-## M5 — Freedom Wallet foundation
+## M5 — 321MORE Wallet foundation
 
-- wallet abstraction uses the canonical Freedom address format
+- wallet abstraction uses the canonical 321MORE address format
 - wallet identity is derived from the address and is not a second account type
 - 321M display uses integer native units with `100_000 native units = 1 321M`
 - wallet layer does not mint, burn, or alter balances
