@@ -245,3 +245,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Snapshots without a finality certificate are not served as fast-sync checkpoints.
 - Legacy Gossipsub block sync remains a compatibility path; it is not treated as a finality certificate.
 - This is still prototype BFT: validator-set changes, lock/precommit phases, equivocation evidence/slashing, and stronger checkpoint selection remain future work.
+
+
+## M22 — BFT Finality Core
+
+- Consensus now has explicit PREVOTE and PRECOMMIT phases.
+- A validator records a lock after a quorum of matching prevotes and refuses a conflicting proposal while that lock is active.
+- PRECOMMIT signatures use a distinct `FREEDOM-PRECOMMIT-V1` signing domain.
+- Finalization requires a quorum of matching precommits, not the old single-phase vote quorum.
+- Conflicting prevotes/precommits from the same validator are rejected as equivocation evidence.
+- `FinalityCertificate` now carries the precommit quorum used for finality; snapshots use this certificate.
+- The round-change path is still prototype-level: a full Tendermint-style unlock/valid-round proof and slashing/evidence state are future work.
