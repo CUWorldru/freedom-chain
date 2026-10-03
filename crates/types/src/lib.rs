@@ -2269,8 +2269,32 @@ impl BitcoinNetworkProfile {
         genesis_hash: BITCOIN_MAINNET_GENESIS_HASH,
     };
 
+    pub const MAINNET_CHECKPOINTS: &[(u64, Hash)] = &[
+        (227_931, [
+            0x8b, 0x08, 0xc0, 0x59, 0x75, 0x6a, 0xdd, 0x15,
+            0x91, 0xb1, 0x7b, 0xa3, 0x9f, 0x0d, 0x3b, 0xa3,
+            0xfe, 0x9d, 0x0f, 0x2e, 0x42, 0x9a, 0x4b, 0x02,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]),
+        (363_725, [
+            0x31, 0x50, 0x8b, 0x48, 0x91, 0x0a, 0x88, 0x1a,
+            0xf2, 0xc5, 0x7a, 0xe6, 0x46, 0x46, 0x3b, 0xc9,
+            0x8e, 0x8f, 0x0d, 0x4e, 0x1f, 0x0b, 0xc6, 0x08,
+            0x56, 0x75, 0x5d, 0x24, 0xb6, 0xc2, 0x04, 0x00,
+        ]),
+    ];
+
     pub fn validate(self) -> bool {
         self == Self::MAINNET
+    }
+
+    pub fn is_known_mainnet_checkpoint(self, height: u64, block_hash: Hash) -> bool {
+        self.validate()
+            && Self::MAINNET_CHECKPOINTS
+                .iter()
+                .any(|(known_height, known_hash)| {
+                    *known_height == height && *known_hash == block_hash
+                })
     }
 }
 
@@ -2307,7 +2331,12 @@ impl BitcoinChainContext {
         self.profile.validate()
             && self.checkpoint.validate()
             && self.checkpoint.profile == self.profile
-            && self.checkpoint.height <= self.base_start_height
+            && self.checkpoint.height >= self.base_start_height
+            && self.checkpoint.height < self.start_height
+            && self.profile.is_known_mainnet_checkpoint(
+                self.checkpoint.height,
+                self.checkpoint.block_hash,
+            )
             && self.tip_height > 0
             && self.start_height > 0
             && self.base_start_height < self.start_height
@@ -2361,7 +2390,13 @@ impl BitcoinChainContext {
         if !self.profile.validate()
             || !self.checkpoint.validate()
             || self.checkpoint.profile != self.profile
-            || self.checkpoint.height > self.base_start_height {
+            || !self.profile.is_known_mainnet_checkpoint(
+                self.checkpoint.height,
+                self.checkpoint.block_hash,
+            )
+            || self.checkpoint.height < self.base_start_height
+            || self.checkpoint.height >= self.start_height
+        {
             return false;
         }
         let checkpoint_index = (self.checkpoint.height - self.base_start_height) as usize;
