@@ -333,7 +333,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         continue;
                                     }
                                     blocks.insert(proposal.block_hash, proposal.block.clone());
-                                    let vote = protocol.receive_proposal(&state, &proposal)?;
+                                    let vote = match protocol.receive_proposal(&mut state, &proposal) {
+                                        Ok(v) => v,
+                                        Err(e) if e == "validator proposal equivocation detected" => {
+                                            let key=(proposal.proposer,proposal.height,proposal.round);
+                                            if let Some(existing)=protocol.proposals.get(&key) {
+                                                let evidence=freedom_consensus::make_evidence(
+                                                    freedom_types::EquivocationKind::DoubleProposal,
+                                                    proposal.height,proposal.round,proposal.proposer,
+                                                    existing.signing_bytes(),proposal.signing_bytes());
+                                                state.record_equivocation(evidence.clone())?;
+                                                let msg=make_evidence_message(evidence,validator_id,&consensus_key);
+                                                publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
+                                            }
+                                            continue;
+                                        }
+                                        Err(e) => return Err(e),
+                                    };
                                     publish(&mut swarm, &NetworkMessage::Vote(vote))?;
                                     timeout_round_sent = None;
                                 }
