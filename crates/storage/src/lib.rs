@@ -138,13 +138,19 @@ impl ChainStore {
             return Err(StorageError::InvalidSnapshot("chain id mismatch".into()));
         }
         if snapshot.height != height || snapshot.state.height != height { return Err(StorageError::InvalidSnapshot("height mismatch".into())); }
-        if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }        let stored_checkpoint = self.get_block(snapshot.height)?
-            .ok_or_else(|| StorageError::InvalidSnapshot("checkpoint block missing".into()))?;
-        if freedom_consensus::block_hash(&stored_checkpoint) != snapshot.block_hash {
-            return Err(StorageError::InvalidSnapshot("snapshot checkpoint hash mismatch".into()));
-        }
-        if stored_checkpoint.header.state_root != snapshot.state_root {
-            return Err(StorageError::InvalidSnapshot("checkpoint state root mismatch".into()));
+        if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }        if snapshot.height == 0 {
+            if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
+                return Err(StorageError::InvalidSnapshot("genesis snapshot hash linkage mismatch".into()));
+            }
+        } else {
+            let stored_checkpoint = self.get_block(snapshot.height)?
+                .ok_or_else(|| StorageError::InvalidSnapshot("checkpoint block missing".into()))?;
+            if freedom_consensus::block_hash(&stored_checkpoint) != snapshot.block_hash {
+                return Err(StorageError::InvalidSnapshot("snapshot checkpoint hash mismatch".into()));
+            }
+            if stored_checkpoint.header.state_root != snapshot.state_root {
+                return Err(StorageError::InvalidSnapshot("checkpoint state root mismatch".into()));
+            }
         }
         if snapshot.certificate.is_none() && snapshot.height != 0 {
             return Err(StorageError::InvalidSnapshot("snapshot has no finality certificate".into()));
