@@ -3,7 +3,7 @@ use freedom_network::{
     build_swarm, decode_message, make_proposal, make_sync_request, make_timeout, make_validator_set_vote, publish,
     NetworkMessage, SyncResponse, SyncWireRequest, SyncWireResponse,
 };
-use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_SUPPLY, Hash};
+use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_SUPPLY, Hash, NETWORK_NAME};
 use freedom_runtime::{build_next_block, execute_block, initialize, Mempool, ValidatorProtocol};
 use freedom_storage::ChainStore;
 use freedom_types::{Genesis, Validator};
@@ -958,7 +958,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("321MORE Network validator={validator_index}");
+    println!("{NETWORK_NAME} validator={validator_index}");
     println!("peer_id={}", swarm.local_peer_id());
     println!("validators={}", state.validators.len());
     println!("height={}", state.height);
