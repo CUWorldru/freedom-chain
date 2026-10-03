@@ -412,7 +412,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_conflicts = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_misbehavior = Vec::<SyncMisbehaviorEvidence>::new();
     let mut peer_sync_scores = BTreeMap::<libp2p::PeerId, PeerSyncScore>::new();
-    let mut pending_snapshot = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
+    let mut pending_snapshot = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
+    let mut snapshot_candidates = BTreeMap::<Hash, (u64, freedom_network::SnapshotSyncResponse)>::new();
+    let mut snapshot_required = 1usize;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut sync_peer_cursor = 0usize;
     let mut valset_votes: BTreeMap<Hash, freedom_types::ValidatorSetVote> = BTreeMap::new();
@@ -481,8 +483,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pending_sync.push((peer_id, sync_outbound_id, sync_id, state.height.saturating_add(1)));
                             sync_round_peers.insert(peer_id, state.height.saturating_add(1));
                         }
-                        let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
-                        pending_snapshot = Some((peer_id, snapshot_outbound_id, snapshot_request_id, u64::MAX));
+                        if pending_snapshot.is_empty() {
+                            let snapshot_peer_count = connected_peers.len().min(2);
+                            snapshot_required = snapshot_peer_count.max(1);
+                            snapshot_candidates.clear();
+                            for snapshot_peer in connected_peers.iter().copied().take(snapshot_peer_count) {
+                                if !peer_is_sync_eligible(&peer_sync_scores, snapshot_peer, state.height) {
+                                    continue;
+                                }
+                                let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, snapshot_peer, validator_id, u64::MAX);
+                                pending_snapshot.push((snapshot_peer, snapshot_outbound_id, snapshot_request_id, u64::MAX));
+                            }
+                        }
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => {
                         connected_peers.retain(|p| *p != peer_id);
@@ -499,8 +511,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             sync_misbehavior.clear();
                             sync_required = 1;
                         }
-                        if pending_snapshot.map(|(pending_peer, ..)| pending_peer == peer_id).unwrap_or(false) {
-                            pending_snapshot = None;
+                        pending_snapshot.retain(|(pending_peer, ..)| *pending_peer != peer_id);
+                        if pending_snapshot.is_empty() {
+                            snapshot_candidates.clear();
+                            snapshot_required = 1;
                         }
                         println!("peer_disconnected={peer_id}");
                     },
