@@ -4153,3 +4153,33 @@ mod m146_tron_usdt_tests {
         assert!(!proof.validate_with_contract(20, &[1; 20]));
     }
 }
+
+#[cfg(test)]
+mod m147_bridge_lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn tron_usdt_proof_converts_to_bridge_deposit() {
+        let mut p = TronUsdtDepositProof {
+            bridge_id: [7;32],
+            chain_id: TronUsdtDepositProof::TRON_MAINNET_CHAIN_ID,
+            confirmations: 20,
+            usdt_contract: vec![0xaa;20],
+            header: TronBlockHeaderProof { raw_data: vec![1], block_id: [1;32] },
+            inclusion: TronTransactionInclusionProof {
+                tx_hash: [2;32], block_number: 42, block_id: [1;32],
+                transaction_index: 0, transaction_count: 1, siblings: vec![],
+            },
+            event: TronTransactionEventProof {
+                raw_data: vec![3], tx_hash: [2;32], block_number: 42,
+                block_id: [1;32], transaction_index: 0, event_index: 7,
+                contract_address: vec![0xaa;20], topics: vec![],
+                data: vec![], execution_success: true,
+            },
+        };
+        // This fixture is intentionally structurally incomplete; lifecycle must reject it.
+        assert!(p.to_bridge_deposit(20, &[0xaa;20]).is_err());
+        p.confirmations = 19;
+        assert_eq!(p.to_bridge_deposit(20, &[0xaa;20]), Err(BridgeAdapterError::InsufficientFinality));
+    }
+}
