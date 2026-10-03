@@ -302,6 +302,7 @@ impl CrossChainAssetRepresentation {
     pub fn matches_proof(&self, proof: &CrossChainAssetProof) -> bool {
         self.validate()
             && proof.asset_id == self.canonical_asset_id
+            && proof.representation_asset_id == self.representation.representation.asset_id
             && proof.asset_kind == self.asset_kind
             && proof.bridge_deposit.source_chain_id == self.representation.source_chain_id
     }
@@ -332,7 +333,10 @@ impl CrossChainAssetRegistry {
             && self.decimals <= 38
             && !self.representations.is_empty()
             && self.representations.iter().all(|r| {
-                r.canonical_asset_id == self.canonical_asset_id && r.validate()
+                r.canonical_asset_id == self.canonical_asset_id
+                    && r.validate()
+                    && r.representation.symbol == self.symbol
+                    && r.representation.decimals == self.decimals
             })
             && self.representations.iter().all(|a| {
                 self.representations.iter().filter(|b| {
@@ -581,6 +585,7 @@ pub enum CrossChainAssetKind {
 pub struct CrossChainAssetProof {
     pub bridge_deposit: BridgeDepositProof,
     pub asset_id: Hash,
+    pub representation_asset_id: Hash,
     pub asset_kind: CrossChainAssetKind,
     pub amount: u128,
     pub recipient: Vec<u8>,
@@ -598,6 +603,7 @@ impl CrossChainAssetProof {
         b.extend_from_slice(&self.bridge_deposit.block_or_slot.to_le_bytes());
         b.extend_from_slice(&self.bridge_deposit.confirmations.to_le_bytes());
         b.extend_from_slice(&self.asset_id);
+        b.extend_from_slice(&self.representation_asset_id);
         b.push(self.asset_kind as u8);
         b.extend_from_slice(&self.amount.to_le_bytes());
         b.extend_from_slice(&(self.recipient.len() as u64).to_le_bytes());
@@ -613,6 +619,7 @@ impl CrossChainAssetProof {
             && self.bridge_deposit.tx_hash != [0; 32]
             && self.amount > 0
             && !self.asset_id.eq(&[0; 32])
+            && !self.representation_asset_id.eq(&[0; 32])
             && !self.recipient.is_empty()
             && !self.bridge_deposit.proof.is_empty()
             && self.bridge_deposit.confirmations >= required_confirmations
@@ -622,6 +629,7 @@ impl CrossChainAssetProof {
     pub fn from_bridge_deposit(
         bridge_deposit: BridgeDepositProof,
         asset_id: Hash,
+        representation_asset_id: Hash,
         asset_kind: CrossChainAssetKind,
         amount: u128,
         recipient: Vec<u8>,
@@ -629,6 +637,7 @@ impl CrossChainAssetProof {
         let mut p = Self {
             bridge_deposit,
             asset_id,
+            representation_asset_id,
             asset_kind,
             amount,
             recipient,
@@ -1258,6 +1267,13 @@ impl TronUsdtDepositProof {
         CrossChainAssetProof::from_bridge_deposit(
             deposit,
             asset_id,
+            AssetDefinition::compute_asset_id(
+                self.chain_id,
+                AssetType::Bridged,
+                expected_usdt_contract,
+                [0; 32],
+                self.bridge_id,
+            ),
             CrossChainAssetKind::Trc20,
             self.amount_checked()?,
             recipient,
@@ -4368,7 +4384,7 @@ mod m148_unified_asset_proof_tests {
             proof: vec![9;32],
         };
         let mut p = CrossChainAssetProof::from_bridge_deposit(
-            deposit, [3;32], CrossChainAssetKind::Trc20, 123, vec![4;20]
+            deposit, [3;32], [4;32], CrossChainAssetKind::Trc20, 123, vec![4;20]
         ).unwrap();
         assert!(p.validate(20));
         p.amount = 124;
@@ -4446,6 +4462,7 @@ mod m149_canonical_asset_registry_tests {
                 proof: vec![1;32],
             },
             asset_id: [3;32],
+            representation_asset_id: [4;32],
             asset_kind: CrossChainAssetKind::Trc20,
             amount: 100,
             recipient: vec![4;20],
