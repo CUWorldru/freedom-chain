@@ -470,6 +470,24 @@ mod tests {
     }
 
     #[test]
+    fn bounded_snapshot_lookup_ignores_higher_snapshot() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: 1, initial_supply: 0, validators: vec![]
+        });
+        store.save_snapshot(&genesis, [0;32]).unwrap();
+        assert_eq!(
+            store.latest_snapshot_at_or_below(0).unwrap().unwrap().height,
+            0
+        );
+        assert_eq!(
+            store.latest_snapshot_at_or_below(10).unwrap().unwrap().height,
+            0
+        );
+    }
+
+    #[test]
     fn rejects_non_genesis_snapshot_without_checkpoint() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
