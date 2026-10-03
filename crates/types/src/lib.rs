@@ -670,7 +670,6 @@ impl CrossChainAssetRepresentation {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CanonicalAssetProfile {
