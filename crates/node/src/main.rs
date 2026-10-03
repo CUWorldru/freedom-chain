@@ -191,8 +191,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                                 libp2p::request_response::Message::Response { response, .. } => {
-                                    if let SyncWireResponse::Snapshot(response) = response {
-                                        println!("SNAPSHOT_RECEIVED height={} request_id={} bytes={}", response.height, hex::encode(response.request_id), response.state_json.len());
+                                    match response {
+                                        SyncWireResponse::Blocks(response) => {
+                                            if pending_sync != Some(response.request_id) || response.blocks.is_empty() { continue; }
+                                            let mut accepted = 0u64;
+                                            for block in response.blocks {
+                                                if block.header.height != state.height + 1 { break; }
+                                                let expected = match proposer_for_height_round(&state, block.header.height, block.header.round) { Some(v) => v, None => break };
+                                                if expected != block.header.proposer { break; }
+                                                if let Err(e) = freedom_network::validate_block_transition(&state, &block) { eprintln!("sync block rejected at {}: {e}", block.header.height); break; }
+                                                let committed = match execute_block(&mut state, &block) { Ok(b) => b, Err(e) => { eprintln!("sync execution rejected at {}: {e}", block.header.height); break; } };
+                                                if let Err(e) = store.put_block(&committed) { eprintln!("sync persistence error: {e}"); break; }
+                                                if committed.header.height % snapshot_interval == 0 { if let Err(e) = store.save_snapshot(&state, block_hash(&committed)) { eprintln!("snapshot persistence error: {e}"); } }
+                                                accepted += 1;
+                                            }
+                                            if accepted > 0 { println!("SYNCED blocks={} height={}", accepted, state.height); pending_sync=None; round=0; timeout_round_sent=None; }
+                                        }
+                                        SyncWireResponse::Snapshot(response) => {
+                                            println!("SNAPSHOT_RECEIVED height={} request_id={} bytes={}", response.height, hex::encode(response.request_id), response.state_json.len());
+                                        }
                                     }
                                 }
                             }
