@@ -755,17 +755,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     &response.epoch_transition_certificate.as_ref().map(|c| c.hash()).unwrap_or([0; 32]),
                                                 ].concat(),
                                             );
+                                            let snapshot_conflict = snapshot_required > 1
+                                                && snapshot_candidates
+                                                    .keys()
+                                                    .any(|candidate| *candidate != snapshot_fingerprint);
                                             let snapshot_entry = snapshot_candidates
                                                 .entry(snapshot_fingerprint)
                                                 .or_insert((0, response.clone()));
                                             snapshot_entry.0 += 1;
                                             let snapshot_candidate_count = snapshot_candidates.len();
-                                            if snapshot_required > 1 && snapshot_candidate_count > 1 {
+                                            if snapshot_conflict {
+                                                record_peer_misbehavior(&mut peer_sync_scores, peer, state.height);
                                                 eprintln!(
-                                                    "SNAPSHOT_CONFLICT peer={} height={} fingerprint={} candidates={}",
+                                                    "SNAPSHOT_CONFLICT peer={} height={} fingerprint={} score={:?} candidates={}",
                                                     peer,
                                                     response.height,
                                                     hex::encode(snapshot_fingerprint),
+                                                    peer_sync_scores.get(&peer),
                                                     snapshot_candidate_count
                                                 );
                                             }
