@@ -43,14 +43,13 @@ struct SyncMisbehaviorEvidence {
 const PEER_MISBEHAVIOR_THRESHOLD: u32 = 3;
 const PEER_SCORE_COOLDOWN_ROUNDS: u64 = 3;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum PeerEvidenceKind {
     SyncConflict,
     SnapshotConflict,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct PeerReputationEvidence {
     peer: libp2p::PeerId,
     height: u64,
@@ -60,6 +59,7 @@ struct PeerReputationEvidence {
     reason: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct PeerReputation {
     score: u32,
     cooldown_until_height: u64,
