@@ -296,6 +296,9 @@ mod tests {
             round: 0,
             proposer: [3; 32],
             block,
+            valid_round: None,
+            valid_precommits: Vec::new(),
+            timeout_certificate: None,
             signature: Vec::new(),
         };
         let bytes = encode_message(&NetworkMessage::Proposal(proposal.clone())).unwrap();
