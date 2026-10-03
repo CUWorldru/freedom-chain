@@ -176,6 +176,62 @@ pub enum AssetType {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub const BRIDGE_MESSAGE_PROTOCOL_VERSION: u16 = 1;
+pub const BRIDGE_MESSAGE_DOMAIN: &[u8] = b"FREEDOM-BRIDGE-MESSAGE-V1";
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeMessage {
+    pub protocol_version: u16,
+    pub source_chain_id: u32,
+    pub destination_chain_id: u32,
+    pub bridge_id: Hash,
+    pub asset_id: Hash,
+    pub source_tx_hash: Hash,
+    pub source_event_index: u64,
+    pub nonce: u64,
+    pub amount: u128,
+    pub recipient: Address,
+    pub message_hash: Hash,
+}
+
+impl BridgeMessage {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(BRIDGE_MESSAGE_DOMAIN);
+        out.extend_from_slice(&self.protocol_version.to_le_bytes());
+        out.extend_from_slice(&self.source_chain_id.to_le_bytes());
+        out.extend_from_slice(&self.destination_chain_id.to_le_bytes());
+        out.extend_from_slice(&self.bridge_id);
+        out.extend_from_slice(&self.asset_id);
+        out.extend_from_slice(&self.source_tx_hash);
+        out.extend_from_slice(&self.source_event_index.to_le_bytes());
+        out.extend_from_slice(&self.nonce.to_le_bytes());
+        out.extend_from_slice(&self.amount.to_le_bytes());
+        out.extend_from_slice(&self.recipient);
+        out
+    }
+
+    pub fn compute_hash(&self) -> Hash {
+        freedom_primitives::hash_bytes(&self.signing_bytes())
+    }
+
+    pub fn validate_hash(&self) -> bool {
+        self.message_hash == self.compute_hash()
+    }
+
+    pub fn replay_key(&self) -> Hash {
+        freedom_primitives::domain_hash(
+            b"FREEDOM-BRIDGE-REPLAY-V1",
+            &[
+                &self.source_chain_id.to_le_bytes(),
+                &self.source_tx_hash,
+                &self.source_event_index.to_le_bytes(),
+                &self.nonce.to_le_bytes(),
+            ],
+        )
+    }
+}
+
 #[repr(u8)]
 pub enum AssetStatus {
     Active = 1,
