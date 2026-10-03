@@ -716,3 +716,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - evidence recording remains responsible for recording bounded evidence, while policy application owns score-based cooldown decisions;
 - eligibility reads the same policy instead of duplicating threshold constants;
 - current policy values remain unchanged: threshold 3, cooldown 3 rounds, decay interval 10 heights, evidence limit 32.
+
+
+## M69 — Reputation Evidence Classification
+
+- sync and snapshot conflicts are explicitly classified by evidence kind;
+- reputation policy assigns a weight to each evidence class;
+- current weights remain neutral at 1 for both classes, preserving existing behavior;
+- future policy changes can increase or decrease the score impact of a specific evidence class without changing the evidence journal format.
