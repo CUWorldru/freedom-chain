@@ -964,3 +964,8 @@ Bitcoin Merkle proofs are now bound to an 80-byte Bitcoin block header. The head
 ## M100 — Bitcoin Proof-of-Work Boundary
 
 Bitcoin block headers now have deterministic PoW validation: compact `nBits` decoding, rejection of zero/negative/invalid targets, SHA-256d block hashing and hash-to-target comparison. The header model also exposes explicit previous-block linkage for subsequent chain validation. This is a pure consensus-side verifier and does not perform RPC or network discovery.
+
+
+## M101 — Bitcoin Header Chain Verification
+
+Bitcoin bridge verification can now validate a contiguous header sequence. Every header must satisfy PoW and each header must reference the exact SHA-256d hash of its predecessor; the requested starting height must also be representable without overflow. This establishes a deterministic header-chain boundary before adding accumulated-chainwork selection.
