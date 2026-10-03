@@ -540,6 +540,11 @@ impl CrossChainAssetRepresentation {
     }
 
     pub fn validate_external_identity(&self) -> bool {
+        if self.representation.bridge_id == [0; 32]
+            || self.representation.source_chain_id == 0
+        {
+            return false;
+        }
         match self.asset_kind {
             CrossChainAssetKind::BitcoinUtxo => {
                 self.representation.asset_type == AssetType::Native
