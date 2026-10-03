@@ -1064,3 +1064,7 @@ Bitcoin UTXO deposits now expose an explicit commitment over transaction hash, o
 ## M118 — Bitcoin UTXO Full Inclusion Boundary
 
 Bitcoin UTXO proofs now carry the raw transaction and cryptographically bind it to the claimed transaction hash using SHA-256d. Deposit validation requires a non-empty Merkle branch and derives the Merkle root from the transaction hash before the existing canonical-tip/finality checks. Full Bitcoin transaction parsing and output-level amount/script extraction remain the next verifier boundary.
+
+## M119 — Bitcoin Raw Transaction Parser + Output Verification
+
+Bitcoin raw transactions are now parsed inside the verifier with legacy and SegWit serialization support. The parser enforces canonical CompactSize encoding, exact transaction consumption, input/output structure, and derives both TXID (without witness data) and WTXID (full serialization). Bitcoin UTXO verification now binds the claimed vout, amount and scriptPubKey to the actual parsed transaction output instead of trusting those fields independently. This completes the transaction-inclusion-to-exact-output boundary; live unspent/spent-state verification remains a separate next boundary.
