@@ -253,6 +253,18 @@ impl BridgeMessage {
         self.message_hash == self.compute_hash()
     }
 
+    pub fn matches_verified_deposit(&self, deposit: &VerifiedDeposit) -> bool {
+        self.protocol_version == BRIDGE_MESSAGE_PROTOCOL_VERSION
+            && self.source_chain_id == deposit.source_chain_id
+            && self.bridge_id == deposit.bridge_id
+            && self.asset_id == deposit.canonical_asset_id
+            && self.source_tx_hash == deposit.tx_hash
+            && self.source_event_index == deposit.event_index
+            && self.amount == deposit.amount
+            && self.recipient.as_slice() == deposit.recipient.as_slice()
+            && self.validate_hash()
+    }
+
     pub fn replay_key(&self) -> Hash {
         freedom_primitives::domain_hash(
             b"FREEDOM-BRIDGE-REPLAY-V1",
@@ -4910,5 +4922,22 @@ mod m152_bridge_message_tests {
             deposit.to_bridge_message(1, 42),
             Err(BridgeAdapterError::InvalidIntent)
         );
+    }
+}
+
+#[cfg(test)]
+mod m152_binding_tests {
+    use super::*;
+
+    #[test]
+    fn bridge_message_is_bound_to_verified_deposit() {
+        let deposit = VerifiedDeposit {
+            canonical_asset_id:[1;32], representation_asset_id:[2;32], bridge_id:[3;32],
+            source_chain_id:1, tx_hash:[4;32], event_index:7, block_or_slot:8,
+            confirmations:20, amount:500, recipient:vec![9;20], replay_key:[10;32],
+            proof_hash:[11;32],
+        };
+        let message = deposit.to_bridge_message(2, 42).unwrap();
+        assert!(message.matches_verified_deposit(&deposit));
     }
 }
