@@ -2741,6 +2741,71 @@ pub fn ethereum_ssz_hash_tree_root_bytes(data:&[u8])->Hash{
     ethereum_ssz_merkleize(&data.chunks(32).map(ethereum_ssz_chunk).collect::<Vec<_>>())
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EthereumValidatorMembershipProof {
+    pub validator_index:u64,
+    pub validator_root:Hash,
+    pub validator_leaf:Hash,
+    pub merkle_branch:Vec<Hash>,
+    pub generalized_index:u64,
+}
+
+impl EthereumValidatorMembershipProof {
+    pub fn verify(&self)->bool{
+        let p=EthereumSszMerkleProof{
+            leaf:self.validator_leaf,
+            generalized_index:self.generalized_index,
+            branch:self.merkle_branch.clone(),
+            root:self.validator_root,
+        };
+        p.verify()
+    }
+    pub fn signing_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-ETH-VALIDATOR-MEMBERSHIP-V1");
+        o.extend_from_slice(&self.validator_index.to_le_bytes());
+        o.extend_from_slice(&self.validator_root);
+        o.extend_from_slice(&self.validator_leaf);
+        o.extend_from_slice(&self.generalized_index.to_le_bytes());
+        for h in &self.merkle_branch{o.extend_from_slice(h);}
+        o
+    }
+    pub fn proof_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EthereumSyncCommitteeProof {
+    pub committee_root:Hash,
+    pub committee_leaf:Hash,
+    pub committee_index:u64,
+    pub generalized_index:u64,
+    pub merkle_branch:Vec<Hash>,
+    pub validator_membership:Option<EthereumValidatorMembershipProof>,
+}
+
+impl EthereumSyncCommitteeProof {
+    pub fn verify(&self)->bool{
+        let p=EthereumSszMerkleProof{
+            leaf:self.committee_leaf,
+            generalized_index:self.generalized_index,
+            branch:self.merkle_branch.clone(),
+            root:self.committee_root,
+        };
+        p.verify() && self.validator_membership.as_ref().map(|v|v.verify()).unwrap_or(true)
+    }
+    pub fn proof_hash(&self)->Hash{
+        let mut b=Vec::new();
+        b.extend_from_slice(b"FREEDOM-ETH-SYNC-COMMITTEE-V1");
+        b.extend_from_slice(&self.committee_root);
+        b.extend_from_slice(&self.committee_leaf);
+        b.extend_from_slice(&self.committee_index.to_le_bytes());
+        b.extend_from_slice(&self.generalized_index.to_le_bytes());
+        for h in &self.merkle_branch{b.extend_from_slice(h);}
+        if let Some(v)=&self.validator_membership{b.extend_from_slice(&v.proof_hash());}
+        freedom_primitives::hash_bytes(&b)
+    }
+}
+
 pub struct EthereumFinalityProof {
     pub finalized_block_number:u64,
     pub finalized_block_hash:Hash,
