@@ -605,6 +605,127 @@ impl BitcoinUtxoProof {
 
 
 pub fn bitcoin_sha256d(data:&[u8])->Hash{use sha2::{Digest,Sha256};let first=Sha256::digest(data);let second=Sha256::digest(first);let mut out=[0u8;32];out.copy_from_slice(&second);out}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitcoinTransactionOutput {
+    pub amount_sat: u64,
+    pub script_pubkey: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitcoinTransaction {
+    pub version: i32,
+    pub segwit: bool,
+    pub inputs: Vec<BitcoinTransactionInput>,
+    pub outputs: Vec<BitcoinTransactionOutput>,
+    pub lock_time: u32,
+    pub txid: Hash,
+    pub wtxid: Hash,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitcoinTransactionInput {
+    pub previous_txid: Hash,
+    pub previous_vout: u32,
+    pub script_sig: Vec<u8>,
+    pub sequence: u32,
+    pub witness: Vec<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BitcoinTransactionParseError {
+    UnexpectedEof,
+    InvalidVarInt,
+    NonCanonicalVarInt,
+    InvalidSegwitMarker,
+    MissingInputs,
+    MissingOutputs,
+    TrailingBytes,
+    LengthOverflow,
+}
+
+impl BitcoinTransaction {
+    pub fn parse(raw: &[u8]) -> Result<Self, BitcoinTransactionParseError> {
+        fn read_u32(raw: &[u8], p: &mut usize) -> Result<u32, BitcoinTransactionParseError> {
+            if raw.len().saturating_sub(*p) < 4 { return Err(BitcoinTransactionParseError::UnexpectedEof); }
+            let mut b=[0u8;4]; b.copy_from_slice(&raw[*p..*p+4]); *p+=4; Ok(u32::from_le_bytes(b))
+        }
+        fn read_u64(raw: &[u8], p: &mut usize) -> Result<u64, BitcoinTransactionParseError> {
+            if raw.len().saturating_sub(*p) < 8 { return Err(BitcoinTransactionParseError::UnexpectedEof); }
+            let mut b=[0u8;8]; b.copy_from_slice(&raw[*p..*p+8]); *p+=8; Ok(u64::from_le_bytes(b))
+        }
+        fn read_bytes(raw: &[u8], p: &mut usize, n: usize) -> Result<Vec<u8>, BitcoinTransactionParseError> {
+            if n > raw.len().saturating_sub(*p) { return Err(BitcoinTransactionParseError::UnexpectedEof); }
+            let out=raw[*p..*p+n].to_vec(); *p+=n; Ok(out)
+        }
+        fn read_varint(raw: &[u8], p: &mut usize) -> Result<u64, BitcoinTransactionParseError> {
+            if *p>=raw.len(){return Err(BitcoinTransactionParseError::UnexpectedEof);}
+            let prefix=raw[*p]; *p+=1;
+            match prefix {
+                0..=252 => Ok(prefix as u64),
+                253 => {
+                    if raw.len().saturating_sub(*p)<2{return Err(BitcoinTransactionParseError::UnexpectedEof);}
+                    let mut b=[0u8;2];b.copy_from_slice(&raw[*p..*p+2]);*p+=2;let v=u16::from_le_bytes(b) as u64;
+                    if v<253{return Err(BitcoinTransactionParseError::NonCanonicalVarInt)} Ok(v)
+                }
+                254 => {
+                    if raw.len().saturating_sub(*p)<4{return Err(BitcoinTransactionParseError::UnexpectedEof);}
+                    let mut b=[0u8;4];b.copy_from_slice(&raw[*p..*p+4]);*p+=4;let v=u32::from_le_bytes(b) as u64;
+                    if v<=0xffff{return Err(BitcoinTransactionParseError::NonCanonicalVarInt)} Ok(v)
+                }
+                255 => {
+                    if raw.len().saturating_sub(*p)<8{return Err(BitcoinTransactionParseError::UnexpectedEof);}
+                    let mut b=[0u8;8];b.copy_from_slice(&raw[*p..*p+8]);*p+=8;let v=u64::from_le_bytes(b);
+                    if v<=0xffff_ffff{return Err(BitcoinTransactionParseError::NonCanonicalVarInt)} Ok(v)
+                }
+            }
+        }
+        fn varint(n:u64)->Vec<u8>{
+            match n {0..=252=>vec![n as u8],253..=0xffff=>{let mut v=vec![253];v.extend_from_slice(&(n as u16).to_le_bytes());v},0x1_0000..=0xffff_ffff=>{let mut v=vec![254];v.extend_from_slice(&(n as u32).to_le_bytes());v},_=>{let mut v=vec![255];v.extend_from_slice(&n.to_le_bytes());v}}
+        }
+        fn serialize_no_witness(tx:&BitcoinTransaction)->Vec<u8>{
+            let mut o=Vec::new();o.extend_from_slice(&tx.version.to_le_bytes());o.extend_from_slice(&varint(tx.inputs.len() as u64));
+            for i in &tx.inputs{o.extend_from_slice(&i.previous_txid);o.extend_from_slice(&i.previous_vout.to_le_bytes());o.extend_from_slice(&varint(i.script_sig.len() as u64));o.extend_from_slice(&i.script_sig);o.extend_from_slice(&i.sequence.to_le_bytes());}
+            o.extend_from_slice(&varint(tx.outputs.len() as u64));for v in &tx.outputs{o.extend_from_slice(&v.amount_sat.to_le_bytes());o.extend_from_slice(&varint(v.script_pubkey.len() as u64));o.extend_from_slice(&v.script_pubkey);}
+            o.extend_from_slice(&tx.lock_time.to_le_bytes());o
+        }
+
+        if raw.len()<4{return Err(BitcoinTransactionParseError::UnexpectedEof);}
+        let mut p=0usize;let mut vb=[0u8;4];vb.copy_from_slice(&raw[..4]);p=4;let version=i32::from_le_bytes(vb);
+        let mut segwit=false;
+        if raw.len().saturating_sub(p)>=2 && raw[p]==0 && raw[p+1]!=0 {
+            if raw[p+1]!=1{return Err(BitcoinTransactionParseError::InvalidSegwitMarker);}
+            segwit=true;p+=2;
+        }
+        let input_count=read_varint(raw,&mut p)? as usize;
+        if input_count==0{return Err(BitcoinTransactionParseError::MissingInputs);}
+        let mut inputs=Vec::with_capacity(input_count);
+        for _ in 0..input_count{
+            let b=read_bytes(raw,&mut p,32)?;let mut previous_txid=[0u8;32];previous_txid.copy_from_slice(&b);
+            let previous_vout=read_u32(raw,&mut p)?;let n=read_varint(raw,&mut p)? as usize;let script_sig=read_bytes(raw,&mut p,n)?;let sequence=read_u32(raw,&mut p)?;
+            inputs.push(BitcoinTransactionInput{previous_txid,previous_vout,script_sig,sequence,witness:Vec::new()});
+        }
+        let output_count=read_varint(raw,&mut p)? as usize;
+        if output_count==0{return Err(BitcoinTransactionParseError::MissingOutputs);}
+        let mut outputs=Vec::with_capacity(output_count);
+        for _ in 0..output_count{let amount_sat=read_u64(raw,&mut p)?;let n=read_varint(raw,&mut p)? as usize;let script_pubkey=read_bytes(raw,&mut p,n)?;outputs.push(BitcoinTransactionOutput{amount_sat,script_pubkey});}
+        if segwit{
+            for i in &mut inputs{
+                let n=read_varint(raw,&mut p)? as usize;let mut witness=Vec::with_capacity(n);
+                for _ in 0..n{let len=read_varint(raw,&mut p)? as usize;witness.push(read_bytes(raw,&mut p,len)?);}
+                i.witness=witness;
+            }
+        }
+        let lock_time=read_u32(raw,&mut p)?;if p!=raw.len(){return Err(BitcoinTransactionParseError::TrailingBytes);}
+        let mut tx=BitcoinTransaction{version,segwit,inputs,outputs,lock_time,txid:[0;32],wtxid:bitcoin_sha256d(raw)};
+        tx.txid=bitcoin_sha256d(&serialize_no_witness(&tx));Ok(tx)
+    }
+
+    pub fn output(&self, vout:u32)->Option<&BitcoinTransactionOutput>{self.outputs.get(vout as usize)}
+}
+
+pub fn bitcoin_parse_transaction(raw:&[u8])->Result<BitcoinTransaction,BitcoinTransactionParseError>{BitcoinTransaction::parse(raw)}
+
 pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
     let mut current=tx_hash;
     for (depth,sibling) in branch.iter().enumerate(){
