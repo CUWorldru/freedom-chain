@@ -410,6 +410,9 @@ impl ChainState {
 
   let accounting = self.bridge_accounting.get(&authorization.canonical_asset_id)
     .cloned().unwrap_or_default();
+  if self.validate_bridge_accounting(authorization.canonical_asset_id).is_err() {
+    return Err(StateError::InvalidBridgeAccounting);
+  }
   let next_minted = accounting.freedom_minted
     .checked_add(authorization.amount)
     .ok_or(StateError::InvalidBridgeAccounting)?;
