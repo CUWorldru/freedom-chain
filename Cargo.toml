@@ -22,6 +22,7 @@ authors = ["CUWorldru"]
 
 [workspace.dependencies]
 blake3 = "1"
+blst = "0.3"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
