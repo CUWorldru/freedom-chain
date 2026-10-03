@@ -167,6 +167,7 @@ impl ChainState {
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
  }
+ pub fn bitcoin_canonical_tip(&self,bridge_id:Hash)->Option<&BitcoinChainCheckpoint>{self.bitcoin_canonical_tips.get(&bridge_id)}
  pub fn bitcoin_bridge_gate(&self,bridge_id:Hash)->Result<(),StateError>{if let Some(journal)=self.bitcoin_reorg_evidence.get(&bridge_id){if let Some(last)=journal.last(){let severity=self.bitcoin_reorg_severity(bridge_id,last)?;if severity!=freedom_types::BitcoinReorgSeverity::Normal{if self.bitcoin_reorg_recovery.get(&bridge_id).map(|r|r.evidence_fingerprint!=last.fingerprint).unwrap_or(true){return Err(StateError::BitcoinReorgDetected);}}}}Ok(())}
  pub fn advance_bitcoin_checkpoint(&mut self,bridge_id:Hash,headers:&[freedom_types::BitcoinBlockHeader])->Result<BitcoinChainCheckpoint,StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
