@@ -757,6 +757,9 @@ impl CrossChainAssetRegistry {
         representation: AssetDefinition,
         asset_kind: CrossChainAssetKind,
     ) -> Result<(), String> {
+        if representation.bridge_id == [0; 32] {
+            return Err("InvalidRepresentationBridge".into());
+        }
         if representation.symbol != self.symbol || representation.decimals != self.decimals {
             return Err("RepresentationMetadataMismatch".into());
         }
