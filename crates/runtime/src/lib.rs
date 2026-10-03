@@ -251,6 +251,8 @@ impl ValidatorProtocol {
         Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new() }
     }
 
+    pub fn reset_round(&mut self) { self.votes.clear(); }
+
     pub fn receive_proposal(&self, state: &ChainState, proposal: &freedom_types::BlockProposal) -> Result<freedom_types::ValidatorVote, String> {
         freedom_network::make_vote(state, self.validator_id, proposal, &self.consensus_key)
     }
