@@ -276,6 +276,39 @@ mod tests {
     }
 
     #[test]
+    fn rejects_zero_height_block_write() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let block = Block {
+            header: BlockHeader {
+                height: 0, round: 0, previous_hash: [0;32], state_root: [0;32], tx_root: [0;32],
+                receipts_root: [0;32], timestamp: 0, epoch: 0, proposer: [0;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        assert!(matches!(store.put_block(&block), Err(StorageError::InvalidMetadata)));
+        assert_eq!(store.latest_height().unwrap(), 0);
+        assert_eq!(store.latest_hash().unwrap(), [0;32]);
+    }
+
+    #[test]
+    fn tip_metadata_matches_persisted_block() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        store.put_block(&block).unwrap();
+        store.validate_tip_metadata().unwrap();
+        store.db.put(META_HASH, [9u8;32]).unwrap();
+        assert!(matches!(store.validate_tip_metadata(), Err(StorageError::InvalidMetadata)));
+    }
+
+    #[test]
     fn rejects_non_genesis_snapshot_without_checkpoint() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
