@@ -18,7 +18,7 @@ pub struct Transaction {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TxKind {
     Transfer = 1, RegisterNode = 2, SubmitContribution = 3, ClaimReward = 4, Purchase = 10,
-    Stake = 5, Unstake = 6, CreateTicket = 7, Burn = 8, Governance = 9,
+    Stake = 5, Unstake = 6, CreateTicket = 7, Burn = 8, Governance = 9, SubmitEvidence = 11,
 }
 impl TxKind { pub fn code(self) -> u8 { self as u8 } }
 impl Transaction {
@@ -248,6 +248,19 @@ pub enum EquivocationKind {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SubmitEvidencePayload {
+    pub evidence: EquivocationEvidence,
+    pub slash_amount: u128,
+}
+impl SubmitEvidencePayload {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = self.evidence.signing_bytes();
+        out.extend_from_slice(&self.evidence.evidence_hash);
+        out.extend_from_slice(&self.slash_amount.to_le_bytes());
+        out
+    }
+}
+
 pub struct EquivocationEvidence {
     pub kind: EquivocationKind,
     pub height: u64,
