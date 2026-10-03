@@ -167,6 +167,23 @@ mod m31_tests {
     }
 
     #[test]
+    fn snapshot_misbehavior_evidence_carries_request_and_fingerprint() {
+        let peer = libp2p::PeerId::random();
+        let fingerprint = [7u8; 32];
+        let evidence = SnapshotMisbehaviorEvidence {
+            peer,
+            height: 42,
+            request_id: [9u8; 32],
+            snapshot_fingerprint: fingerprint,
+            reason: "snapshot commitment disagrees with another fully validated response".to_string(),
+        };
+        assert_eq!(evidence.peer, peer);
+        assert_eq!(evidence.height, 42);
+        assert_eq!(evidence.request_id, [9u8; 32]);
+        assert_eq!(evidence.snapshot_fingerprint, fingerprint);
+    }
+
+    #[test]
     fn snapshot_commitment_fingerprint_changes_when_state_root_changes() {
         let base = hash_bytes(
             &[
