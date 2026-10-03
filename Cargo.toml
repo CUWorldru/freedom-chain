@@ -8,6 +8,7 @@ members = [
   "crates/consensus",
   "crates/runtime",
   "crates/node",
+  "crates/wallet",
 ]
 
 [workspace.package]
