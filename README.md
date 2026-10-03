@@ -1115,3 +1115,14 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - The transition recomputes the complete next UTXO set and therefore the next authenticated root; duplicate, missing-spend and output-collision conditions are rejected.
 - The state layer checks that a transition starts exactly from the currently canonical Bitcoin tip and advances one Bitcoin block.
 - This is a correctness-first reference transition protocol. It does not pretend Bitcoin headers themselves commit to the UTXO set.
+
+
+## M124 — Bitcoin Block-Derived UTXO Transitions
+
+- Derives spent outpoints and created outputs directly from parsed Bitcoin block transactions.
+- Enforces exactly one coinbase transaction in position zero and rejects null-prevout inputs elsewhere.
+- Rejects duplicate transaction IDs and malformed transaction sets.
+- Applies transactions sequentially to the previous UTXO state, so valid intra-block spends are supported.
+- Every spend must consume an currently available UTXO; every created output is inserted into the resulting state.
+- The resulting UTXO Merkle root and leaf count are recomputed from the complete post-block set.
+- This keeps the compact commitment path tied to actual Bitcoin transaction data rather than validator-supplied delta lists.
