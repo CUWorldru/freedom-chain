@@ -365,3 +365,17 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - validator-set refresh uses active stake, so a full validator exit is removed at the next epoch boundary.
 - legacy serialized validators without unbonding_stake deserialize as zero via Serde defaults.
 - M33 tests cover cooldown, maturity release and slashing of pending unbonding stake.
+
+
+## M34 — Validator Lifecycle
+
+- Validator lifecycle is explicit: `Active`, `Unbonding`, `Exited`.
+- Lifecycle is derived from persistent validator stake/unbonding state; it is not an independently mutable flag.
+- Genesis validators are bootstrapped as active until staking is first activated.
+- A validator with pending unbonding cannot add new stake until the pending exit matures.
+- An exited validator cannot silently resurrect through the genesis bootstrap path.
+- Once staking has been activated, epoch refresh includes only validators with positive active stake.
+- Full exits therefore produce an empty active set rather than resurrecting the original genesis validator set.
+- Zero-amount staking is rejected.
+- `staking_activated` is persisted and included in the state commitment.
+- M34 tests cover bootstrap, unbonding lockout, exit persistence and pending-unbonding restake rejection.
