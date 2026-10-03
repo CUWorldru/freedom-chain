@@ -69,28 +69,68 @@ struct PeerReputation {
     evidence: Vec<PeerReputationEvidence>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PeerReputationPolicy {
+    misbehavior_threshold: u32,
+    cooldown_rounds: u64,
+    decay_interval: u64,
+    evidence_limit: usize,
+}
+
+const PEER_REPUTATION_POLICY: PeerReputationPolicy = PeerReputationPolicy {
+    misbehavior_threshold: PEER_MISBEHAVIOR_THRESHOLD,
+    cooldown_rounds: PEER_SCORE_COOLDOWN_ROUNDS,
+    decay_interval: PEER_SCORE_DECAY_INTERVAL,
+    evidence_limit: PEER_EVIDENCE_LIMIT,
+};
+
+fn compact_peer_evidence(reputation: &mut PeerReputation) -> bool {
+    if reputation.evidence.len() <= PEER_REPUTATION_POLICY.evidence_limit {
+        return false;
+    }
+    let excess = reputation.evidence.len() - PEER_REPUTATION_POLICY.evidence_limit;
+    reputation.evidence.drain(0..excess);
+    true
+}
+
 fn record_peer_evidence(
     reputations: &mut BTreeMap<libp2p::PeerId, PeerReputation>,
     evidence: PeerReputationEvidence,
 ) {
-    let entry = reputations.entry(evidence.peer).or_insert(PeerReputation {
+    let peer = evidence.peer;
+    let height = evidence.height;
+    let entry = reputations.entry(peer).or_insert(PeerReputation {
         score: 0,
         cooldown_until_height: 0,
-        last_decay_height: evidence.height,
+        last_decay_height: height,
         evidence: Vec::new(),
     });
     entry.score = entry.score.saturating_add(1);
-    entry.last_decay_height = evidence.height;
+    entry.last_decay_height = height;
     entry.evidence.push(evidence);
-    if entry.evidence.len() > PEER_EVIDENCE_LIMIT {
-        let excess = entry.evidence.len() - PEER_EVIDENCE_LIMIT;
-        entry.evidence.drain(0..excess);
-    }
-    if entry.score >= PEER_MISBEHAVIOR_THRESHOLD {
-        entry.cooldown_until_height = entry.cooldown_until_height.max(
-            entry.evidence.last().map(|e| e.height).unwrap_or(0).saturating_add(PEER_SCORE_COOLDOWN_ROUNDS)
+    compact_peer_evidence(entry);
+    apply_peer_reputation_policy(entry, height);
+}
+
+fn apply_peer_reputation_policy(reputation: &mut PeerReputation, current_height: u64) {
+    if reputation.score >= PEER_REPUTATION_POLICY.misbehavior_threshold {
+        reputation.cooldown_until_height = reputation.cooldown_until_height.max(
+            current_height.saturating_add(PEER_REPUTATION_POLICY.cooldown_rounds)
         );
     }
+}
+
+fn peer_is_eligible(
+    reputations: &BTreeMap<libp2p::PeerId, PeerReputation>,
+    peer: libp2p::PeerId,
+    current_height: u64,
+) -> bool {
+    reputations.get(&peer)
+        .map(|reputation| {
+            current_height >= reputation.cooldown_until_height
+                && reputation.score < PEER_REPUTATION_POLICY.misbehavior_threshold
+        })
+        .unwrap_or(true)
 }
 
 fn decay_peer_reputation(
@@ -100,7 +140,7 @@ fn decay_peer_reputation(
     let mut changed = false;
     for reputation in reputations.values_mut() {
         let elapsed = current_height.saturating_sub(reputation.last_decay_height);
-        let steps = elapsed / PEER_SCORE_DECAY_INTERVAL;
+        let steps = elapsed / PEER_REPUTATION_POLICY.decay_interval;
         if steps > 0 {
             let decay = steps.min(reputation.score as u64) as u32;
             if decay > 0 {
@@ -110,10 +150,7 @@ fn decay_peer_reputation(
             reputation.last_decay_height = reputation.last_decay_height.saturating_add(
                 steps.saturating_mul(PEER_SCORE_DECAY_INTERVAL)
             );
-            if reputation.evidence.len() > PEER_EVIDENCE_LIMIT {
-                let excess = reputation.evidence.len() - PEER_EVIDENCE_LIMIT;
-                reputation.evidence.drain(0..excess);
-            }
+            compact_peer_evidence(reputation);
         }
     }
     changed
