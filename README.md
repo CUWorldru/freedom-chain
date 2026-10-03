@@ -999,3 +999,8 @@ Bitcoin light-client checkpoints are now stored in `ChainState` per bridge, incl
 ## M105 — Bitcoin Checkpoint / Bridge Policy Binding
 
 Bitcoin checkpoints are now explicitly bound to their bridge security policy and adapter descriptor. The bridge ID, Bitcoin adapter kind, confirmations finality model and required confirmation depth must match the registered policy before the checkpoint can be trusted by the bridge layer.
+
+
+## M106 — Bitcoin Reorg Detection
+
+Checkpoint advancement now has an explicit reorg boundary. A candidate header sequence that does not directly continue the trusted checkpoint is reported as `BitcoinReorgDetected` and cannot mutate checkpoint state. Only a fully validated continuation with increased chainwork advances the persisted checkpoint.
