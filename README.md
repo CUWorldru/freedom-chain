@@ -1044,3 +1044,8 @@ Reorg recovery now supports an explicit `BitcoinCanonicalTipProof`. The recovery
 ## M114 — Persistent Bitcoin Canonical Tip
 
 Verified Bitcoin canonical tips are now persisted per bridge as independent trust anchors. A tip can only be stored after the supplied header-chain proof validates against the trusted checkpoint, and it cannot regress in height or accumulated chainwork. The canonical-tip registry is included in the state root and survives restart/snapshot.
+
+
+## M115 — Bitcoin Deposit / Canonical Tip Binding
+
+Bitcoin Merkle deposit proofs can now be validated against the persisted canonical tip. The deposit block must be the first header in a contiguous PoW-validated chain ending exactly at the trusted canonical tip; bridge reorg gates remain active during verification. This prevents deposits from being accepted solely from an isolated Merkle proof or stale branch.
