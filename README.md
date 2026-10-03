@@ -1243,3 +1243,10 @@ This is an inclusion-proof verifier only. Ethereum PoS consensus/finality certif
 Adds `EthereumFinalityProof` for finalized execution-block metadata, state root, validator-set root, checkpoint ancestry and finality evidence. The proof is bound to the common envelope by exact finalized height/hash, state root and proof hash.
 
 The current boundary deliberately does not claim full Ethereum consensus verification: SSZ checkpoint proofs, sync-committee/validator-set validation, BLS aggregate signature verification and fork-choice rules remain explicit follow-up layers.
+
+
+## M138 — Ethereum SSZ Merkle Primitives
+
+Adds SSZ-oriented SHA-256 Merkle primitives and generalized-index proofs. `EthereumSszMerkleProof` verifies a leaf against a trusted SSZ root using the generalized-index branch, while chunking and deterministic power-of-two merkleization provide the base for beacon-state/checkpoint proofs.
+
+Ethereum execution MPT continues to use Keccak-256; SSZ consensus structures use SHA-256 as required by Ethereum's consensus-layer hash tree.
