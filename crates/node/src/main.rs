@@ -366,6 +366,7 @@ mod m31_tests {
             request_id: [1u8; 32],
             fingerprint: [2u8; 32],
             kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
             reason: "sync".to_string(),
         });
         record_peer_evidence(&mut reputations, PeerReputationEvidence {
@@ -374,6 +375,7 @@ mod m31_tests {
             request_id: [3u8; 32],
             fingerprint: [4u8; 32],
             kind: PeerEvidenceKind::SnapshotConflict,
+            severity: PeerEvidenceSeverity::Normal,
             reason: "snapshot".to_string(),
         });
         let reputation = reputations.get(&peer).unwrap();
@@ -396,6 +398,7 @@ mod m31_tests {
                 request_id: [height as u8; 32],
                 fingerprint: [3u8; 32],
                 kind: PeerEvidenceKind::SnapshotConflict,
+            severity: PeerEvidenceSeverity::Normal,
                 reason: "test".to_string(),
             });
         }
@@ -417,6 +420,7 @@ mod m31_tests {
                 request_id: [height as u8; 32],
                 fingerprint: [2u8; 32],
                 kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
                 reason: "test".to_string(),
             });
         }
@@ -438,6 +442,7 @@ mod m31_tests {
                 request_id: [1u8; 32],
                 fingerprint: [2u8; 32],
                 kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
                 reason: "test".to_string(),
             });
         }
@@ -461,6 +466,7 @@ mod m31_tests {
                 request_id: [1u8; 32],
                 fingerprint: [2u8; 32],
                 kind,
+            severity: PeerEvidenceSeverity::Normal,
                 reason: "test".to_string(),
             });
         }
@@ -480,6 +486,7 @@ mod m31_tests {
             request_id: [0u8; 32],
             fingerprint: [0u8; 32],
             kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
             reason: "test".to_string(),
         });
         assert!(peer_is_eligible(&scores, peer, 10));
@@ -490,6 +497,7 @@ mod m31_tests {
                 request_id: [0u8; 32],
                 fingerprint: [0u8; 32],
                 kind: PeerEvidenceKind::SnapshotConflict,
+            severity: PeerEvidenceSeverity::Normal,
                 reason: "test".to_string(),
             });
         }
@@ -923,6 +931,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     request_id: response.request_id,
                                                     fingerprint,
                                                     kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
                                                     reason: "batch disagrees with another valid sync response".to_string(),
                                                 };
                                                 sync_misbehavior.push(SyncMisbehaviorEvidence {
@@ -1093,6 +1102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     request_id: response.request_id,
                                                     fingerprint: snapshot_fingerprint,
                                                     kind: PeerEvidenceKind::SnapshotConflict,
+            severity: PeerEvidenceSeverity::Normal,
                                                     reason: "snapshot commitment disagrees with another fully validated response".to_string(),
                                                 };
                                                 snapshot_misbehavior.push(SnapshotMisbehaviorEvidence {
