@@ -353,22 +353,26 @@ mod m31_tests {
     fn peer_reputation_severity_scales_policy_weight() {
         let peer = libp2p::PeerId::random();
         let mut reputations = BTreeMap::new();
-        for (height, severity) in [
-            (10, PeerEvidenceSeverity::Normal),
-            (11, PeerEvidenceSeverity::Elevated),
-            (12, PeerEvidenceSeverity::Critical),
-        ] {
+        for height in 10..=12 {
             record_peer_evidence(&mut reputations, PeerReputationEvidence {
                 peer,
                 height,
                 request_id: [height as u8; 32],
                 fingerprint: [5u8; 32],
                 kind: PeerEvidenceKind::SyncConflict,
-                severity,
+                severity: PeerEvidenceSeverity::Normal,
                 reason: "severity".to_string(),
             });
         }
         let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(
+            reputation.evidence.iter().map(|e| e.severity).collect::<Vec<_>>(),
+            vec![
+                PeerEvidenceSeverity::Normal,
+                PeerEvidenceSeverity::Elevated,
+                PeerEvidenceSeverity::Critical,
+            ]
+        );
         assert_eq!(
             reputation.score,
             PEER_REPUTATION_POLICY.normal_severity_multiplier
