@@ -89,3 +89,18 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 
 - M3: protocol-issued FDM rewards from verified contribution WU
 - M4: CU Wallet + Billing + first FDM-only CU feature
+
+
+## M8 — FDM Tickets / Draw Engine
+
+- 1 Ticket = 0.1 FDM = 10,000 mFDM
+- tickets are draw-specific and non-transferable
+- ticket purchase consumes FDM and never mints FDM
+- draw types: daily, weekly, monthly, quarterly, annual, special
+- winner count is configurable per draw
+- each ticket payment is allocated 60% prize pool, 30% CU Fund, 10% Annual Reserve
+- allocation is proportional to actual tickets sold; there is no fixed 100,000-ticket assumption
+- draw randomness is derived from finalized chain state and draw-specific seed data
+- winner selection is deterministic and independently verifiable from the protocol seed
+- prize payouts move existing FDM from protocol treasury to winners; no new FDM is minted
+- Ticket allocation is not a burn; true FDM burn remains a separate protocol action
