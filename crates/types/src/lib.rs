@@ -2051,6 +2051,30 @@ impl BitcoinUtxoProof {
             && self.validate_transaction_binding()
             && self.validate_output_binding()
             && self.merkle_index < (1u32 << self.merkle_branch.len().min(31))
+            && self.validate_bitcoin_chain_binding()
+    }
+
+    pub fn validate_bitcoin_chain_binding(&self) -> bool {
+        let Some(header) = self.block_header.as_ref() else {
+            return false;
+        };
+        if header.merkle_root
+            != bitcoin_merkle_root(self.tx_hash, &self.merkle_branch, self.merkle_index)
+        {
+            return false;
+        }
+        if !header.validate_pow() {
+            return false;
+        }
+        self.confirmations > 0
+    }
+
+    pub fn verify_bitcoin_chain(&self) -> Result<BitcoinBlockHeaderVerification, BridgeAdapterError> {
+        if !self.validate_bitcoin_chain_binding() {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        let header = self.block_header.as_ref().ok_or(BridgeAdapterError::InvalidProof)?;
+        BitcoinBlockHeaderVerification::verify(header)
     }
 
     pub fn to_cross_chain_asset_proof(
