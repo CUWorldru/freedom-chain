@@ -11,8 +11,6 @@ Freedom Chain is the proprietary L1 for the CU Freedom economy.
 
 ## M1 — Accounts / signed transfers
 
-M1 introduces:
-
 - account public keys and canonical addresses
 - Ed25519 transaction signatures
 - sequential nonces and replay protection
@@ -20,10 +18,29 @@ M1 introduces:
 - signed Transfer transactions
 - transaction fees credited to protocol treasury
 - state invariants tying supply to balances
-- executable unit test proving a signed transfer succeeds once and replay fails
+
+## M1.1 — Protocol hardening
+
+- stable transaction type IDs
+- domain-separated transaction signing
+- signature-inclusive transaction hashes
+- invalid signature, nonce, balance and overflow tests
+
+## M2 — Contribution / Work Units
+
+M2 establishes the evidence layer for useful network work without minting FDM yet.
+
+- Freedom Nodes can be registered by signed transactions
+- Contributions reference a node and task
+- Work Units (WU) measure verified useful work
+- quality scores use fixed-point integer values 0..=10_000
+- contribution IDs prevent duplicate submission
+- contributions move Submitted -> Verified
+- verification requires a non-empty set of registered validators
+- verified WU is accumulated on the node
+- no reward or FDM mint occurs in M2
 
 ## Roadmap
 
-- M2: contribution registration, verification and WU
-- M3: first protocol-issued FDM
+- M3: protocol-issued FDM rewards from verified contribution WU
 - M4: CU Wallet + Billing + first FDM-only CU feature
