@@ -380,6 +380,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if !protocol.remember_message(precommit.message_id()) { continue; }
                                     if precommit.height != state.height + 1 || precommit.round != round { continue; }
                                     let hash = precommit.block_hash;
+                                    if let Some(existing)=protocol.precommits.get(&precommit.validator_id) {
+                                        if existing.block_hash != precommit.block_hash || existing.round != precommit.round {
+                                            let evidence=freedom_consensus::make_evidence(
+                                                freedom_types::EquivocationKind::DoublePrecommit,
+                                                precommit.height,precommit.round,precommit.validator_id,
+                                                existing.signing_bytes(),precommit.signing_bytes());
+                                            state.record_equivocation(evidence.clone())?;
+                                            let msg=make_evidence_message(evidence,validator_id,&consensus_key);
+                                            publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
+                                            continue;
+                                        }
+                                    }
                                     let ready = protocol.receive_precommit(&state, precommit, hash, state.height + 1, round)?;
                                     if ready {
                                         if let Some(block) = blocks.get(&hash).cloned() {
