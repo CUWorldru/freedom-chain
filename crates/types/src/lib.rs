@@ -2522,6 +2522,63 @@ pub enum CrossChainProofKind {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CrossChainProofError {
+    InvalidEnvelope,
+    UnsupportedProofKind,
+    InvalidProof,
+}
+
+pub trait CrossChainProofAdapter {
+    fn proof_kind(&self) -> CrossChainProofKind;
+    fn verify_envelope(&self, envelope: &CrossChainFinalityEnvelope) -> Result<(), CrossChainProofError>;
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct BitcoinUtxoFinalityAdapter;
+
+impl CrossChainProofAdapter for BitcoinUtxoFinalityAdapter {
+    fn proof_kind(&self) -> CrossChainProofKind { CrossChainProofKind::BitcoinUtxo }
+
+    fn verify_envelope(&self, envelope: &CrossChainFinalityEnvelope) -> Result<(), CrossChainProofError> {
+        if envelope.proof_kind != self.proof_kind() || !envelope.validate_structure() {
+            return Err(CrossChainProofError::InvalidEnvelope);
+        }
+        if envelope.state_root == envelope.previous_state_root {
+            return Err(CrossChainProofError::InvalidProof);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct EvmFinalityAdapter;
+
+impl CrossChainProofAdapter for EvmFinalityAdapter {
+    fn proof_kind(&self) -> CrossChainProofKind { CrossChainProofKind::Ethereum }
+
+    fn verify_envelope(&self, envelope: &CrossChainFinalityEnvelope) -> Result<(), CrossChainProofError> {
+        if envelope.proof_kind != self.proof_kind() || !envelope.validate_structure() {
+            return Err(CrossChainProofError::InvalidEnvelope);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TronFinalityAdapter;
+
+impl CrossChainProofAdapter for TronFinalityAdapter {
+    fn proof_kind(&self) -> CrossChainProofKind { CrossChainProofKind::Tron }
+
+    fn verify_envelope(&self, envelope: &CrossChainFinalityEnvelope) -> Result<(), CrossChainProofError> {
+        if envelope.proof_kind != self.proof_kind() || !envelope.validate_structure() {
+            return Err(CrossChainProofError::InvalidEnvelope);
+        }
+        Ok(())
+    }
+}
+
 pub struct CrossChainFinalityEnvelope {
     pub bridge_id: Hash,
     pub chain_id: u32,
