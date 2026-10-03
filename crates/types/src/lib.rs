@@ -390,6 +390,34 @@ pub struct BridgeAccounting {
     pub external_released: u128,
 }
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoProof {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub tx_hash: Hash,
+    pub vout: u32,
+    pub amount_sat: u64,
+    pub block_height: u64,
+    pub confirmations: u64,
+    pub merkle_branch: Vec<Hash>,
+    pub merkle_index: u32,
+    pub script_pubkey: Vec<u8>,
+}
+impl BitcoinUtxoProof {
+    pub fn event_index(&self)->u64 { self.vout as u64 }
+    pub fn proof_bytes(&self)->Vec<u8> {
+        let mut o=Vec::new(); o.extend_from_slice(b"FREEDOM-BITCOIN-UTXO-PROOF-V1");
+        o.extend_from_slice(&self.bridge_id); o.extend_from_slice(&self.chain_id.to_le_bytes());
+        o.extend_from_slice(&self.tx_hash); o.extend_from_slice(&self.vout.to_le_bytes());
+        o.extend_from_slice(&self.amount_sat.to_le_bytes()); o.extend_from_slice(&self.block_height.to_le_bytes());
+        o.extend_from_slice(&self.confirmations.to_le_bytes()); o.extend_from_slice(&self.merkle_index.to_le_bytes());
+        o.extend_from_slice(&(self.merkle_branch.len() as u64).to_le_bytes());
+        for h in &self.merkle_branch { o.extend_from_slice(h); }
+        o.extend_from_slice(&(self.script_pubkey.len() as u64).to_le_bytes()); o.extend_from_slice(&self.script_pubkey); o
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:Vec<Validator> }
 
@@ -751,4 +779,13 @@ mod m82_adapter_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn major_adapters_are_distinct(){assert!(BitcoinAdapter::new(d(BridgeAdapterKind::Bitcoin,BridgeFinalityModel::Confirmations)).is_ok());assert!(EvmAdapter::new(d(BridgeAdapterKind::Evm,BridgeFinalityModel::BlockFinality)).is_ok());assert!(TronAdapter::new(d(BridgeAdapterKind::Tron,BridgeFinalityModel::BlockFinality)).is_ok());assert!(TonAdapter::new(d(BridgeAdapterKind::Ton,BridgeFinalityModel::BlockFinality)).is_ok());assert!(SolanaAdapter::new(d(BridgeAdapterKind::Solana,BridgeFinalityModel::SlotFinality)).is_ok());}
  #[test] fn bitcoin_requires_confirmations(){let a=BitcoinAdapter::new(d(BridgeAdapterKind::Bitcoin,BridgeFinalityModel::Confirmations)).unwrap();let p=BridgeDepositProof{bridge_id:[9;32],source_chain_id:1,tx_hash:[1;32],event_index:0,block_or_slot:10,confirmations:1,proof:vec![1]};assert_eq!(a.verify_deposit(&p),Err(BridgeAdapterError::InsufficientFinality));}
  #[test] fn withdrawal_intent_is_canonical(){let a=EvmAdapter::new(d(BridgeAdapterKind::Evm,BridgeFinalityModel::BlockFinality)).unwrap();let x=a.build_withdrawal_intent([1;32],[2;32],100,b"0xrecipient".to_vec(),7).unwrap();assert!(x.validate_hash());}
+}
+
+#[cfg(test)]
+mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
+ fn d()->BridgeAdapterDescriptor{BridgeAdapterDescriptor{bridge_id:[9;32],chain_id:8332,kind:BridgeAdapterKind::Bitcoin,finality_model:BridgeFinalityModel::Confirmations,required_confirmations:6,native_asset:true,enabled:true}}
+ fn p(c:u64)->BitcoinUtxoProof{BitcoinUtxoProof{bridge_id:[9;32],chain_id:8332,tx_hash:[1;32],vout:2,amount_sat:50_000,block_height:100,confirmations:c,merkle_branch:vec![[2;32]],merkle_index:0,script_pubkey:vec![0,20,1,2,3]}}
+ #[test] fn bitcoin_utxo_requires_six_confirmations(){let a=BitcoinAdapter::new(d()).unwrap();assert_eq!(a.verify_utxo_deposit(&p(5)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_utxo_deposit(&p(6)).is_ok());}
+ #[test] fn bitcoin_vout_is_replay_event_identity(){assert_eq!(p(6).event_index(),2);}
+ #[test] fn bitcoin_withdrawal_uses_script_bytes(){let a=BitcoinAdapter::new(d()).unwrap();let x=a.build_utxo_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();assert!(x.validate_hash());}
 }
