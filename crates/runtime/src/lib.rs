@@ -22,3 +22,96 @@ working.assert_invariants();
 *s=working;
 Ok(committed)}
 fn format_state_error(e:StateError)->String{format!("{e:?}")}
+
+
+#[derive(Clone, Debug, Default)]
+pub struct Mempool {
+    transactions: std::collections::BTreeMap<Hash, Transaction>,
+}
+
+impl Mempool {
+    pub fn new() -> Self { Self::default() }
+
+    pub fn len(&self) -> usize { self.transactions.len() }
+
+    pub fn is_empty(&self) -> bool { self.transactions.is_empty() }
+
+    pub fn submit(&mut self, state: &ChainState, tx: Transaction) -> Result<Hash, String> {
+        if tx.chain_id != CHAIN_ID { return Err("invalid chain id".into()); }
+        let account = state.accounts.get(&tx.sender).ok_or_else(|| "sender account not found".to_string())?;
+        if tx.nonce < account.nonce { return Err("stale transaction nonce".into()); }
+        if tx.signature.len() != 64 { return Err("invalid signature length".into()); }
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(&tx.signature);
+        if !verify(&account.public_key, &tx.signing_bytes(), &sig) {
+            return Err("invalid transaction signature".into());
+        }
+        let hash = tx.hash();
+        if self.transactions.contains_key(&hash) { return Err("duplicate transaction".into()); }
+        self.transactions.insert(hash, tx);
+        Ok(hash)
+    }
+
+    pub fn remove(&mut self, hash: &Hash) -> Option<Transaction> {
+        self.transactions.remove(hash)
+    }
+
+    pub fn ordered(&self, state: &ChainState, max: usize) -> Vec<Transaction> {
+        let mut candidates: Vec<Transaction> = self.transactions.values().cloned().collect();
+        candidates.sort_by(|a,b| {
+            a.sender.cmp(&b.sender)
+                .then(a.nonce.cmp(&b.nonce))
+                .then(a.hash().cmp(&b.hash()))
+        });
+
+        let mut working = state.clone();
+        let mut selected = Vec::new();
+        for tx in candidates {
+            if selected.len() >= max { break; }
+            if execute_transaction(&mut working, &tx).is_ok() {
+                selected.push(tx);
+            }
+        }
+        selected
+    }
+
+    pub fn remove_committed(&mut self, transactions: &[Transaction]) {
+        for tx in transactions { self.transactions.remove(&tx.hash()); }
+    }
+}
+
+pub fn build_next_block(
+    state: &ChainState,
+    mempool: &Mempool,
+    proposer: freedom_primitives::Address,
+    timestamp: u64,
+    epoch: u64,
+    max_transactions: usize,
+) -> Result<Block, String> {
+    if proposer == [0; 32] { return Err("invalid proposer".into()); }
+    let transactions = mempool.ordered(state, max_transactions);
+    let mut working = state.clone();
+    let mut receipts = Vec::with_capacity(transactions.len());
+    for tx in &transactions {
+        receipts.push(execute_transaction(&mut working, tx)?);
+    }
+    let height = state.height + 1;
+    working.height = height;
+    let tx_root = tx_root(&transactions);
+    let receipts_root = receipts_root(&receipts);
+    let state_root = working.state_root();
+    Ok(Block {
+        header: freedom_types::BlockHeader {
+            height,
+            previous_hash: state.last_block_hash,
+            state_root,
+            tx_root,
+            receipts_root,
+            timestamp,
+            epoch,
+            proposer,
+        },
+        transactions,
+        receipts: Vec::new(),
+    })
+}
