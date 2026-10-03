@@ -1,0 +1,105 @@
+use freedom_types::Block;
+use rocksdb::{Options, DB};
+use std::path::Path;
+
+const BLOCK_PREFIX: &[u8] = b"block:";
+const META_HEIGHT: &[u8] = b"meta:height";
+const META_HASH: &[u8] = b"meta:last_hash";
+
+#[derive(Debug)]
+pub enum StorageError { Rocks(String), Codec(String), MissingBlock(u64), InvalidMetadata }
+
+impl std::fmt::Display for StorageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for StorageError {}
+
+pub struct ChainStore { db: DB }
+
+impl ChainStore {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        Ok(Self { db: DB::open(&opts, path).map_err(|e| StorageError::Rocks(e.to_string()))? })
+    }
+
+    fn height_key(height: u64) -> Vec<u8> {
+        let mut k = BLOCK_PREFIX.to_vec();
+        k.extend_from_slice(&height.to_be_bytes());
+        k
+    }
+
+    pub fn put_block(&self, block: &Block) -> Result<(), StorageError> {
+        let bytes = serde_json::to_vec(block).map_err(|e| StorageError::Codec(e.to_string()))?;
+        self.db.put(Self::height_key(block.header.height), bytes)
+            .map_err(|e| StorageError::Rocks(e.to_string()))?;
+        self.db.put(META_HEIGHT, block.header.height.to_be_bytes())
+            .map_err(|e| StorageError::Rocks(e.to_string()))?;
+        self.db.put(META_HASH, block_hash(block))
+            .map_err(|e| StorageError::Rocks(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get_block(&self, height: u64) -> Result<Option<Block>, StorageError> {
+        let Some(bytes) = self.db.get(Self::height_key(height)).map_err(|e| StorageError::Rocks(e.to_string()))? else { return Ok(None); };
+        serde_json::from_slice(&bytes).map(Some).map_err(|e| StorageError::Codec(e.to_string()))
+    }
+
+    pub fn latest_height(&self) -> Result<u64, StorageError> {
+        match self.db.get(META_HEIGHT).map_err(|e| StorageError::Rocks(e.to_string()))? {
+            Some(b) if b.len() == 8 => { let mut x=[0u8;8]; x.copy_from_slice(&b); Ok(u64::from_be_bytes(x)) }
+            Some(_) => Err(StorageError::InvalidMetadata),
+            None => Ok(0),
+        }
+    }
+
+    pub fn latest_hash(&self) -> Result<[u8;32], StorageError> {
+        match self.db.get(META_HASH).map_err(|e| StorageError::Rocks(e.to_string()))? {
+            Some(b) if b.len() == 32 => { let mut x=[0u8;32]; x.copy_from_slice(&b); Ok(x) }
+            Some(_) => Err(StorageError::InvalidMetadata),
+            None => Ok([0u8;32]),
+        }
+    }
+
+    pub fn range(&self, from: u64, to: u64) -> Result<Vec<Block>, StorageError> {
+        if from > to { return Ok(Vec::new()); }
+        let mut out = Vec::with_capacity((to - from + 1) as usize);
+        for height in from..=to {
+            match self.get_block(height)? {
+                Some(block) => out.push(block),
+                None => return Err(StorageError::MissingBlock(height)),
+            }
+        }
+        Ok(out)
+    }
+}
+
+fn block_hash(block: &Block) -> [u8;32] {
+    freedom_consensus::block_hash(block)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use freedom_types::{Block, BlockHeader};
+    use tempfile::tempdir;
+
+    #[test]
+    fn persists_and_reads_blocks_by_height() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let block = Block {
+            header: BlockHeader {
+                height: 1, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32],
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        store.put_block(&block).unwrap();
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), block_hash(&block));
+        assert_eq!(store.get_block(1).unwrap(), Some(block));
+    }
+}

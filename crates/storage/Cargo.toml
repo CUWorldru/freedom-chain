@@ -1,0 +1,10 @@
+[package]
+name = "freedom-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+freedom-types = { path = "../types" }
+rocksdb.workspace = true
+serde_json.workspace = true
