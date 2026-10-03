@@ -503,10 +503,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let fingerprint = hash_bytes(&serde_json::to_vec(&response.blocks)?);
                                             if sync_required > 1 && !sync_candidates.is_empty() && !sync_candidates.contains_key(&fingerprint) {
                                                 sync_conflicts.insert(peer, response.from_height);
+                                                sync_misbehavior.push(SyncMisbehaviorEvidence {
+                                                    peer,
+                                                    from_height: response.from_height,
+                                                    request_id: response.request_id,
+                                                    batch_fingerprint: fingerprint,
+                                                    reason: "batch disagrees with another valid sync response".to_string(),
+                                                });
                                                 eprintln!(
-                                                    "SYNC_CONFLICT peer={} from={} existing_candidates={}",
+                                                    "SYNC_CONFLICT peer={} from={} fingerprint={} existing_candidates={}",
                                                     peer,
                                                     response.from_height,
+                                                    hex::encode(fingerprint),
                                                     sync_candidates.len()
                                                 );
                                             }
