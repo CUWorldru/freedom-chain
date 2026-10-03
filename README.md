@@ -1,20 +1,20 @@
-# Freedom Chain
+# 321MORE Network
 
-Freedom Chain is the proprietary L1 for the CU Freedom economy.
+321MORE Network is the proprietary L1 for the CU Freedom economy.
 
 ## M0 — Genesis / Localnet foundation
 
-- Genesis FDM supply: 0
+- Genesis 321M supply: 0
 - No premine, founder allocation, investor allocation, or registration airdrop
-- Treasury cannot mint FDM
-- First protocol-issued FDM can only appear through verified protocol contribution work
+- Treasury cannot mint 321M
+- First protocol-issued 321M can only appear through verified protocol contribution work
 
 ## M1 — Accounts / signed transfers
 
 - account public keys and canonical addresses
 - Ed25519 transaction signatures
 - sequential nonces and replay protection
-- integer-only u128 FDM accounting
+- integer-only u128 321M accounting
 - signed Transfer transactions
 - transaction fees credited to protocol treasury
 - state invariants tying supply to balances
@@ -28,7 +28,7 @@ Freedom Chain is the proprietary L1 for the CU Freedom economy.
 
 ## M2 — Contribution / Work Units
 
-M2 establishes the evidence layer for useful network work without minting FDM yet.
+M2 establishes the evidence layer for useful network work without minting 321M yet.
 
 - Freedom Nodes can be registered by signed transactions
 - Contributions reference a node and task
@@ -38,72 +38,72 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - contributions move Submitted -> Verified
 - verification requires a non-empty set of registered validators
 - verified WU is accumulated on the node
-- no reward or FDM mint occurs in M2
+- no reward or 321M mint occurs in M2
 
-## M3 — Protocol-issued FDM rewards
+## M3 — Protocol-issued 321M rewards
 
-- FDM is minted only from verified contribution WU
+- 321M is minted only from verified contribution WU
 - reward is calculated with integer fixed-point quality and verification factors
 - each contribution can be rewarded exactly once
 - epoch issuance has a hard cap; unused capacity does not roll over
 - reward mint increases total and circulating supply together
 - Treasury and CU have no direct mint path
 
-## M4 — CU Wallet / FDM Billing
+## M4 — CU Wallet / 321M Billing
 
-- signed Purchase transactions charge paid CU functionality only in FDM
+- signed Purchase transactions charge paid CU functionality only in 321M
 - first catalog product: `AiBotConnect`
-- purchase price is denominated in mFDM
-- payment moves FDM from buyer to merchant; it does not mint new FDM
+- purchase price is denominated in native units
+- payment moves 321M from buyer to merchant; it does not mint new 321M
 - purchase reference prevents duplicate charging
 - purchase records provide an on-chain billing receipt
-- wallet balance remains authoritative on Freedom Chain
+- wallet balance remains authoritative on 321MORE Network
 
 ## M5 — Freedom Wallet foundation
 
 - wallet abstraction uses the canonical Freedom address format
 - wallet identity is derived from the address and is not a second account type
-- FDM display uses integer mFDM with `100_000 mFDM = 1 FDM`
+- 321M display uses integer native units with `100_000 native units = 1 321M`
 - wallet layer does not mint, burn, or alter balances
 - chain state remains the authoritative source of wallet balances
 
 ## M6 — Wallet read API / transaction history
 
 - wallet snapshot reads the authoritative chain balance
-- balance is exposed in mFDM and human-readable FDM form
+- balance is exposed in native units and human-readable 321M form
 - successful transactions are recorded in the chain ledger
 - wallet history is derived from chain ledger entries, not a separate balance database
-- no wallet API can mint or modify FDM
+- no wallet API can mint or modify 321M
 
 ## M7 — Billing Engine
 
-- catalog price is defined in protocol state and denominated only in mFDM
+- catalog price is defined in protocol state and denominated only in native units
 - billing supports quote, reserve, capture and refund lifecycle
-- reserve moves FDM from available balance to locked balance
-- capture transfers reserved FDM to the merchant
-- refund returns reserved or captured FDM to the buyer
+- reserve moves 321M from available balance to locked balance
+- capture transfers reserved 321M to the merchant
+- refund returns reserved or captured 321M to the buyer
 - billing IDs prevent duplicate reservation
-- billing cannot mint FDM
+- billing cannot mint 321M
 
 ## Roadmap
 
-- M3: protocol-issued FDM rewards from verified contribution WU
-- M4: CU Wallet + Billing + first FDM-only CU feature
+- M3: protocol-issued 321M rewards from verified contribution WU
+- M4: CU Wallet + Billing + first 321M-only CU feature
 
 
-## M8 — FDM Tickets / Draw Engine
+## M8 — 321M Tickets / Draw Engine
 
-- 1 Ticket = 0.1 FDM = 10,000 mFDM
+- 1 Ticket = 0.1 321M = 10,000 native units
 - tickets are draw-specific and non-transferable
-- ticket purchase consumes FDM and never mints FDM
+- ticket purchase consumes 321M and never mints 321M
 - draw types: daily, weekly, monthly, quarterly, annual, special
 - winner count is configurable per draw
 - each ticket payment is allocated 60% prize pool, 30% CU Fund, 10% Annual Reserve
 - allocation is proportional to actual tickets sold; there is no fixed 100,000-ticket assumption
 - draw randomness is derived from finalized chain state and draw-specific seed data
 - winner selection is deterministic and independently verifiable from the protocol seed
-- prize payouts move existing FDM from protocol treasury to winners; no new FDM is minted
-- Ticket allocation is not a burn; true FDM burn remains a separate protocol action
+- prize payouts move existing 321M from protocol treasury to winners; no new 321M is minted
+- Ticket allocation is not a burn; true 321M burn remains a separate protocol action
 
 
 ## M9 — Protocol Events / Draw Proof
@@ -114,7 +114,7 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - prize payouts emit per-winner events
 - the selection proof is `BLAKE3("FREEDOM-DRAW-PROOF-V1" || randomness_seed || ordered_winner_ticket_ids)`
 - Treasury allocation remains explicit: Prize Pool, CU Fund, Annual Reserve
-- draw payouts reduce the protocol-held Prize Pool and do not mint FDM
+- draw payouts reduce the protocol-held Prize Pool and do not mint 321M
 
 
 ## M11 — Transactional block execution / commitments
@@ -177,8 +177,8 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - votes are collected and checked against the M14 quorum rule.
 - once quorum is reached, the block is finalized and committed atomically.
 - the validator round resets and the next deterministic proposer can start the next height.
-- FREEDOM_VALIDATOR_INDEX=0..2 selects the local validator role.
-- FREEDOM_PEERS can provide comma-separated libp2p multiaddrs for peer dialing.
+- NETWORK_321MORE_VALIDATOR_INDEX=0..2 selects the local validator role. The legacy FREEDOM_VALIDATOR_INDEX name remains accepted for compatibility.
+- NETWORK_321MORE_PEERS can provide comma-separated libp2p multiaddrs for peer dialing. The legacy FREEDOM_PEERS name remains accepted for compatibility.
 - M16 is the protocol loop; production still needs persistent peer discovery, timeouts/view-change, durable storage and Byzantine fault handling beyond the local quorum path.
 
 
@@ -207,7 +207,7 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - Sync responses are accepted only for the active request and are replayed sequentially through the same state-transition validation used by consensus.
 - Synced blocks are persisted locally after successful execution.
 - Block headers now commit the consensus round independently from the block epoch.
-- FREEDOM_DB_PATH selects the local RocksDB directory; default is ./data/freedom.
+- NETWORK_321MORE_DB_PATH selects the local RocksDB directory; default is ./data/321more. The legacy FREEDOM_DB_PATH name remains accepted for compatibility.
 - M18 is a verified-chain replay/sync prototype; production still needs a dedicated request/response transport, state snapshots, block availability scoring, pruning/checkpoints and robust peer-level anti-spam controls.
 
 ## M19 — State Snapshots + Fast Startup Checkpoints
@@ -355,11 +355,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 
 ## M33 — Validator Exit / Unbonding
 
-- Unstake no longer returns FDM immediately.
+- Unstake no longer returns 321M immediately.
 - requested stake moves from active validator stake into unbonding_stake.
 - unbonding entries are committed in state and have deterministic IDs and release heights.
 - default unbonding cooldown is 200 blocks.
-- at maturity, unbonded FDM moves from account staked balance back to account balance.
+- at maturity, unbonded 321M moves from account staked balance back to account balance.
 - active validator weight falls immediately, while the validator remains slashable through unbonding stake during cooldown.
 - deterministic equivocation slashing covers both active and unbonding stake.
 - validator-set refresh uses active stake, so a full validator exit is removed at the next epoch boundary.
@@ -791,14 +791,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 
 ## M77 — Universal Asset Registry
 
-- Freedom Chain now has a consensus-visible asset registry inside ChainState;
+- 321MORE Network now has a consensus-visible asset registry inside ChainState;
 - every asset has a cryptographic asset_id derived from source chain, asset type, canonical contract/native identifier, issuer, and bridge;
 - symbols are metadata only, so assets such as USDT on different chains remain distinct even when their symbols match;
-- FRC is registered as the native Freedom Chain asset at genesis;
+- 321M is registered as the native 321MORE Network asset at genesis;
 - external assets are represented as Bridged assets without assuming an EVM contract model;
 - asset identity is validated before registration and duplicate asset IDs are rejected;
 - the asset registry is included in the deterministic state root and therefore inherits existing block/snapshot state-root validation;
-- the registry field uses serde defaulting for backward-compatible state decoding while new genesis state always contains FRC.
+- the registry field uses serde defaulting for backward-compatible state decoding while new genesis state always contains 321M.
 
 
 ## M78 — Bridge Message Domain Separation
@@ -815,7 +815,7 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - every processed message is indexed by the canonical replay key derived from source chain, source transaction, source event/output index, and nonce;
 - an exact replay of an already processed message is rejected as DuplicateBridgeMessage;
 - a conflicting payload that reuses an existing replay identity is rejected rather than silently overwriting the original message;
-- bridge messages must target Freedom Chain, use the supported protocol version, have a non-zero amount and a valid message hash;
+- bridge messages must target 321MORE Network, use the supported protocol version, have a non-zero amount and a valid message hash;
 - the referenced asset must exist, be Active, be Bridged, and match both the source chain and bridge ID carried by the message;
 - replay records are included in the deterministic state root, so replay protection survives snapshots and consensus state recovery;
 - the replay index uses serde defaulting so older serialized ChainState values can deserialize with an empty replay set;
@@ -1086,7 +1086,7 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 
 ## M121 — Compact Bitcoin UTXO Accumulator Boundary
 
-- Adds a domain-separated Freedom Chain UTXO accumulator commitment.
+- Adds a domain-separated 321MORE Network UTXO accumulator commitment.
 - Adds compact Merkle-style membership proofs for an exact (txid, vout, amount, scriptPubKey) leaf.
 - The accumulator is bound to the canonical Bitcoin tip height, block hash and chainwork.
 - State can validate an accumulator membership proof against its persisted Bitcoin canonical tip.
@@ -1103,7 +1103,7 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - Validator IDs must be unique and authorized by the attestation itself.
 - Attestations are monotonic by sequence per bridge to prevent replay/rollback.
 - The attestation is persisted in ChainState and can be queried after registration.
-- M122 still does not claim that the accumulator root is a Bitcoin consensus commitment; it authenticates the root as a Freedom Chain bridge commitment.
+- M122 still does not claim that the accumulator root is a Bitcoin consensus commitment; it authenticates the root as a 321MORE Network bridge commitment.
 
 
 ## M123 — Bitcoin UTXO Accumulator State Transitions
