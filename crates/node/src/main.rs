@@ -1,6 +1,6 @@
 use freedom_consensus::{block_hash, proposer_for_height_round};
 use freedom_network::{
-    build_swarm, decode_message, make_proposal, make_sync_request, make_timeout, publish,
+    build_swarm, decode_message, make_proposal, make_sync_request, make_timeout, make_validator_set_vote, publish,
     NetworkMessage, SyncResponse, SyncWireRequest, SyncWireResponse,
 };
 use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_SUPPLY, Hash};
@@ -149,6 +149,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
     let mut pending_sync = None::<Hash>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
+    let mut valset_votes: BTreeMap<Hash, freedom_types::ValidatorSetVote> = BTreeMap::new();
+    let mut valset_certificate_broadcasted: Option<Hash> = None;
 
     if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
         let mempool = Mempool::new();
@@ -162,6 +164,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         tokio::select! {
             _ = timer.tick() => {
+                if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 {
+                    let new_set_hash = freedom_consensus::validator_set_hash(&state.pending_validator_set);
+                    if let Ok(vote) = make_validator_set_vote(&state, validator_id, state.epoch.saturating_add(1), new_set_hash, &consensus_key) {
+                        valset_votes.insert(vote.validator_id, vote.clone());
+                        publish(&mut swarm, &NetworkMessage::ValidatorSetVote(vote))?;
+                    }
+                }
                 if timeout_round_sent != Some(round) {
                     let timeout = make_timeout(state.height + 1, round, validator_id, &consensus_key);
                     publish(&mut swarm, &NetworkMessage::Timeout(timeout))?;
