@@ -196,6 +196,22 @@ pub fn make_vote(state: &ChainState, validator_id: Hash, proposal: &BlockProposa
 pub fn evidence_topic() -> IdentTopic { IdentTopic::new(EVIDENCE_TOPIC) }
 pub fn validator_set_vote_topic() -> IdentTopic { IdentTopic::new(VALSET_VOTE_TOPIC) }
 pub fn validator_set_certificate_topic() -> IdentTopic { IdentTopic::new(VALSET_CERT_TOPIC) }
+pub fn publish_validator_set_vote(
+    topic: &IdentTopic,
+    vote: &freedom_types::ValidatorSetVote,
+) -> Result<Vec<u8>, String> {
+    let msg = NetworkMessage::ValidatorSetVote(vote.clone());
+    serde_json::to_vec(&msg).map_err(|e| format!("encode validator set vote: {e}"))
+}
+
+pub fn publish_validator_set_certificate(
+    topic: &IdentTopic,
+    certificate: &freedom_types::ValidatorSetCertificate,
+) -> Result<Vec<u8>, String> {
+    let msg = NetworkMessage::ValidatorSetCertificate(certificate.clone());
+    serde_json::to_vec(&msg).map_err(|e| format!("encode validator set certificate: {e}"))
+}
+
 
 pub fn timeout_topic() -> IdentTopic { IdentTopic::new(TIMEOUT_TOPIC) }
 pub fn sync_topic() -> IdentTopic { IdentTopic::new(SYNC_TOPIC) }
