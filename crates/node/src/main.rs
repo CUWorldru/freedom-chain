@@ -35,6 +35,23 @@ fn send_snapshot_request(
     request_id
 }
 
+fn build_local_proposal(
+    state: &freedom_state::ChainState,
+    owner: freedom_primitives::Address,
+    consensus_key: &ed25519_dalek::SigningKey,
+    round: u64,
+) -> Result<(freedom_types::BlockProposal, freedom_types::Block), Box<dyn std::error::Error>> {
+    let mempool = Mempool::new();
+    let epoch = if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 {
+        state.epoch.saturating_add(1)
+    } else {
+        state.epoch
+    };
+    let block = build_next_block(state, &mempool, owner, 1, epoch, round, 100)?;
+    let proposal = make_proposal(block.clone(), round, consensus_key, None, Vec::new(), None);
+    Ok((proposal, block))
+}
+
 fn send_sync_request(
     swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
     peer: libp2p::PeerId,
@@ -188,9 +205,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut valset_certificate_broadcasted: Option<Hash> = None;
 
     if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
-        let mempool = Mempool::new();
-        let block = build_next_block(&state, &mempool, owner, 1, if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 { state.epoch.saturating_add(1) } else { state.epoch }, round, 100)?;
-        let proposal = make_proposal(block.clone(), round, &consensus_key, None, Vec::new(), None);
+        let (proposal, block) = build_local_proposal(&state, owner, &consensus_key, round)?;
         blocks.insert(proposal.block_hash, block);
         println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
         publish(&mut swarm, &NetworkMessage::Proposal(proposal))?;
@@ -558,9 +573,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             timeout_round_sent = None;
                                             let next_height = state.height + 1;
                                             if proposer_for_height_round(&state, next_height, round) == Some(owner) {
-                                                let mempool = Mempool::new();
-                                                let next_block = build_next_block(&state, &mempool, owner, 1, if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 { state.epoch.saturating_add(1) } else { state.epoch }, round, 100)?;
-                                                let next_proposal = make_proposal(next_block.clone(), round, &consensus_key, None, Vec::new(), None);
+                                                let (next_proposal, next_block) = build_local_proposal(&state, owner, &consensus_key, round)?;
                                                 blocks.insert(next_proposal.block_hash, next_block);
                                                 println!("proposing height={} round={} hash={}", next_height, round, hex::encode(next_proposal.block_hash));
                                                 publish(&mut swarm, &NetworkMessage::Proposal(next_proposal))?;
