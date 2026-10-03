@@ -273,6 +273,7 @@ pub struct ValidatorProtocol {
     pub locked_round: Option<u64>,
     pub locked_block_hash: Option<Hash>,
     pub locked_block: Option<Block>,
+    pub proposals: std::collections::BTreeMap<(Hash,u64,u64), freedom_types::BlockProposal>,
     pub seen_messages: std::collections::BTreeSet<Hash>,
     pub seen_message_order: std::collections::VecDeque<Hash>,
     pub max_seen_messages: usize,
@@ -280,7 +281,7 @@ pub struct ValidatorProtocol {
 
 impl ValidatorProtocol {
     pub fn new(validator_id: Hash, consensus_key: ed25519_dalek::SigningKey) -> Self {
-        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), precommits: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new(), locked_round: None, locked_block_hash: None, locked_block: None, seen_messages: std::collections::BTreeSet::new(), seen_message_order: std::collections::VecDeque::new(), max_seen_messages: 4096 }
+        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), precommits: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new(), locked_round: None, locked_block_hash: None, locked_block: None, proposals: std::collections::BTreeMap::new(), seen_messages: std::collections::BTreeSet::new(), seen_message_order: std::collections::VecDeque::new(), max_seen_messages: 4096 }
     }
 
     pub fn remember_message(&mut self, id: Hash) -> bool {
@@ -293,7 +294,7 @@ impl ValidatorProtocol {
         true
     }
 
-    pub fn reset_round(&mut self) { self.votes.clear(); self.precommits.clear(); self.timeouts.clear(); }
+    pub fn reset_round(&mut self) { self.votes.clear(); self.precommits.clear(); self.timeouts.clear(); self.proposals.retain(|(_,_,r),_| *r==self.locked_round.unwrap_or(0)); }
 
     pub fn reset_height(&mut self) {
         self.reset_round();
@@ -302,11 +303,19 @@ impl ValidatorProtocol {
         self.locked_block = None;
     }
 
-    pub fn receive_proposal(&self, state: &ChainState, proposal: &freedom_types::BlockProposal) -> Result<freedom_types::ValidatorVote, String> {
+    pub fn receive_proposal(&mut self, state: &ChainState, proposal: &freedom_types::BlockProposal) -> Result<freedom_types::ValidatorVote, String> {
         if let Some(locked) = self.locked_block_hash {
             if locked != proposal.block_hash {
                 return Err("proposal conflicts with local lock".into());
             }
+        }
+        let key=(proposal.proposer,proposal.height,proposal.round);
+        if let Some(existing)=self.proposals.get(&key) {
+            if existing.block_hash != proposal.block_hash {
+                return Err("validator proposal equivocation detected".into());
+            }
+        } else {
+            self.proposals.insert(key, proposal.clone());
         }
         freedom_network::make_vote(state, self.validator_id, proposal, &self.consensus_key)
     }
