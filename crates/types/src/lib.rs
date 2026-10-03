@@ -2510,6 +2510,66 @@ impl BitcoinUtxoSmtUpdateProof {
 
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoBlockCommitment {
+    pub block_height: u64,
+    pub block_hash: Hash,
+    pub previous_root: Hash,
+    pub next_root: Hash,
+    pub update_proof: BitcoinUtxoSmtUpdateProof,
+}
+
+impl BitcoinUtxoBlockCommitment {
+    pub fn build(
+        previous: &BitcoinUtxoSmtSnapshot,
+        block: &BitcoinSpendScanBlock,
+    ) -> Result<Self,String> {
+        block.verify_structure()?;
+        let mut entries=previous.entries.clone();
+        let mut map=std::collections::BTreeMap::<(Hash,u32),BitcoinUtxoStateEntry>::new();
+        for e in entries.drain(..) {
+            if map.insert((e.tx_hash,e.vout),e).is_some(){return Err("duplicate previous outpoint".into());}
+        }
+        for raw in &block.raw_transactions {
+            let tx=BitcoinTransaction::parse(raw).map_err(|_|"invalid Bitcoin transaction".to_string())?;
+            let coinbase=tx.inputs.len()==1 && tx.inputs[0].previous_txid==[0;32];
+            if !coinbase {
+                for input in &tx.inputs {
+                    if map.remove(&(input.previous_txid,input.previous_vout)).is_none(){
+                        return Err("block spends unavailable UTXO".into());
+                    }
+                }
+            }
+            for (vout,out) in tx.outputs.iter().enumerate() {
+                let e=BitcoinUtxoStateEntry{
+                    tx_hash:tx.txid,vout:vout as u32,amount_sat:out.value,script_pubkey:out.script_pubkey.clone()
+                };
+                if map.insert((e.tx_hash,e.vout),e).is_some(){return Err("output collision".into());}
+            }
+        }
+        if map.is_empty(){return Err("resulting UTXO set is empty".into());}
+        let next=BitcoinUtxoSmtSnapshot{entries:map.into_values().collect()};
+        let proof=BitcoinUtxoSmtUpdateProof::build(previous,&next)?;
+        Ok(Self{
+            block_height:block.height,
+            block_hash:block.header.block_hash(),
+            previous_root:proof.previous_root,
+            next_root:proof.next_root,
+            update_proof:proof,
+        })
+    }
+
+    pub fn verify(&self)->bool {
+        self.block_height>0
+            && self.block_hash != [0;32]
+            && self.previous_root != [0;32]
+            && self.next_root != [0;32]
+            && self.update_proof.previous_root==self.previous_root
+            && self.update_proof.next_root==self.next_root
+            && self.update_proof.verify()
+    }
+}
+
 pub struct BitcoinUtxoCommitmentAttestation {
     pub bridge_id: Hash,
     pub chain_id: u32,
