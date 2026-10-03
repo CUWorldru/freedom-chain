@@ -279,7 +279,13 @@ impl ValidatorProtocol {
         freedom_network::make_vote(state, self.validator_id, proposal, &self.consensus_key)
     }
 
-    pub fn receive_timeout(&mut self, state: &ChainState, timeout: freedom_types::ValidatorTimeout, height: u64, round: u64) -> Result<bool, String> { freedom_consensus::validate_timeout(state, &timeout, height, round)?; self.timeouts.insert(timeout.validator_id, timeout); Ok(freedom_consensus::stake_quorum_reached(state, self.timeouts.keys())) }
+    pub fn receive_timeout(&mut self, state: &ChainState, timeout: freedom_types::ValidatorTimeout, height: u64, round: u64) -> Result<bool, String> { freedom_consensus::validate_timeout(state, &timeout, height, round)?;
+if let Some(existing)=self.timeouts.get(&timeout.validator_id){
+ if existing.signing_bytes()!=timeout.signing_bytes(){return Err("validator timeout equivocation detected".into());}
+ return Ok(freedom_consensus::stake_quorum_reached(state, self.timeouts.keys()));
+}
+self.timeouts.insert(timeout.validator_id, timeout);
+Ok(freedom_consensus::stake_quorum_reached(state, self.timeouts.keys())) }
 
     pub fn receive_vote(&mut self, state: &ChainState, vote: freedom_types::ValidatorVote, expected_block_hash: Hash, height: u64, round: u64) -> Result<bool, String> {
         freedom_consensus::validate_vote(state, &vote, expected_block_hash, height, round)?;
