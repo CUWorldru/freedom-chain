@@ -1,0 +1,10 @@
+[package]
+name = "freedom-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+freedom-primitives = { path = "../primitives" }
+freedom-runtime = { path = "../runtime" }
+freedom-types = { path = "../types" }
