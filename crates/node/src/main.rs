@@ -1,7 +1,11 @@
 use freedom_consensus::{block_hash, proposer_for_height_round};
-use freedom_network::{build_swarm, decode_message, make_proposal, make_timeout, publish, NetworkMessage};
+use freedom_network::{
+    build_swarm, decode_message, make_proposal, make_sync_request, make_timeout, publish,
+    NetworkMessage, SyncRequest, SyncResponse,
+};
 use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_SUPPLY, Hash};
-use freedom_runtime::{build_next_block, initialize, Mempool, ValidatorProtocol};
+use freedom_runtime::{build_next_block, execute_block, initialize, Mempool, ValidatorProtocol};
+use freedom_storage::ChainStore;
 use freedom_types::{Genesis, Validator};
 use libp2p::{Multiaddr, SwarmEvent};
 use libp2p::futures::StreamExt;
@@ -9,6 +13,23 @@ use std::collections::BTreeMap;
 use tokio::time::{interval, Duration};
 
 const ROUND_TIMEOUT_SECS: u64 = 5;
+const SYNC_INTERVAL_SECS: u64 = 10;
+
+fn request_id(validator_id: Hash, from_height: u64) -> Hash {
+    hash_bytes(&[b"FREEDOM-SYNC-V1", &validator_id, &from_height.to_le_bytes()].concat())
+}
+
+fn send_sync_request(
+    swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
+    validator_id: Hash,
+    height: u64,
+) -> Result<Hash, Box<dyn std::error::Error>> {
+    let from = height.saturating_add(1);
+    let id = request_id(validator_id, from);
+    publish(swarm, &make_sync_request(id, from))?;
+    println!("sync_request from={} request_id={}", from, hex::encode(id));
+    Ok(id)
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,31 +54,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let owner = state.validators.get(&validator_id).ok_or("validator not found")?.owner;
     let mut protocol = ValidatorProtocol::new(validator_id, consensus_key.clone());
     let mut blocks: BTreeMap<Hash, freedom_types::Block> = BTreeMap::new();
-    let mut round = 0u64;
-    let mut timeout_round_sent = None::<u64>;
-    let mut timer = interval(Duration::from_secs(ROUND_TIMEOUT_SECS));
+
+    let db_path = std::env::var("FREEDOM_DB_PATH").unwrap_or_else(|_| "./data/freedom".to_string());
+    let store = ChainStore::open(&db_path)?;
+    let stored_height = store.latest_height()?;
+    if stored_height > 0 {
+        for block in store.range(1, stored_height)? {
+            if block.header.height != state.height + 1 {
+                return Err(format!("stored chain height gap at {}", block.header.height).into());
+            }
+            if block.header.previous_hash != state.last_block_hash {
+                return Err(format!("stored chain previous hash mismatch at {}", block.header.height).into());
+            }
+            let expected = proposer_for_height_round(&state, block.header.height, block.header.round)
+                .ok_or("no proposer for stored block")?;
+            if expected != block.header.proposer {
+                return Err(format!("stored block proposer mismatch at {}", block.header.height).into());
+            }
+            let committed = execute_block(&mut state, &block)?;
+            if block_hash(&committed) != block_hash(&block) {
+                return Err(format!("stored block hash mismatch at {}", block.header.height).into());
+            }
+        }
+        if state.last_block_hash != store.latest_hash()? {
+            return Err("stored latest hash metadata mismatch".into());
+        }
+        println!("restored height={} hash={}", state.height, hex::encode(state.last_block_hash));
+    }
 
     let mut swarm = build_swarm()?;
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse::<Multiaddr>()?)?;
 
     if let Ok(peers) = std::env::var("FREEDOM_PEERS") {
         for raw in peers.split(',').filter(|s| !s.trim().is_empty()) {
-            let addr: Multiaddr = raw.trim().parse()?;
-            swarm.dial(addr)?;
+            swarm.dial(raw.trim().parse::<Multiaddr>()?)?;
         }
     }
 
-    println!("Freedom Chain M17 validator={validator_index}");
+    println!("Freedom Chain M18 validator={validator_index}");
     println!("peer_id={}", swarm.local_peer_id());
     println!("validators={}", state.validators.len());
-    println!("round_timeout={}s", ROUND_TIMEOUT_SECS);
+    println!("height={}", state.height);
+    println!("db={}", db_path);
 
-    if proposer_for_height_round(&state, 1, round) == Some(owner) {
+    let mut round = 0u64;
+    let mut timeout_round_sent = None::<u64>;
+    let mut timer = interval(Duration::from_secs(ROUND_TIMEOUT_SECS));
+    let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
+    let mut pending_sync = None::<Hash>;
+
+    if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
         let mempool = Mempool::new();
         let block = build_next_block(&state, &mempool, owner, 1, round, 100)?;
         let proposal = make_proposal(block.clone(), round, &consensus_key);
         blocks.insert(proposal.block_hash, block);
-        println!("proposing height=1 round={} hash={}", round, hex::encode(proposal.block_hash));
+        println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
         publish(&mut swarm, &NetworkMessage::Proposal(proposal))?;
     }
 
@@ -71,12 +122,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("timeout height={} round={}", state.height + 1, round);
                 }
             }
+            _ = sync_timer.tick() => {
+                pending_sync = Some(send_sync_request(&mut swarm, validator_id, state.height)?);
+            }
             event = swarm.select_next_some() => {
                 match event {
                     SwarmEvent::NewListenAddr { address, .. } => println!("listening={address}"),
                     SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                         println!("peer_connected={peer_id}");
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
+                        pending_sync = Some(send_sync_request(&mut swarm, validator_id, state.height)?);
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => println!("peer_disconnected={peer_id}"),
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
@@ -88,6 +143,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Gossipsub(event)) => {
                         if let libp2p::gossipsub::Event::Message { message, .. } = event {
                             match decode_message(&message.data) {
+                                Ok(NetworkMessage::SyncRequest(req)) => {
+                                    if req.from_height == 0 || req.from_height > req.to_height {
+                                        continue;
+                                    }
+                                    let latest = state.height;
+                                    let to = req.to_height.min(latest).min(req.from_height.saturating_add(31));
+                                    if req.from_height <= to {
+                                        match store.range(req.from_height, to) {
+                                            Ok(blocks) => {
+                                                let response = NetworkMessage::SyncResponse(SyncResponse {
+                                                    request_id: req.request_id,
+                                                    from_height: req.from_height,
+                                                    blocks,
+                                                });
+                                                let _ = publish(&mut swarm, &response);
+                                            }
+                                            Err(e) => eprintln!("sync read error: {e}"),
+                                        }
+                                    }
+                                }
+                                Ok(NetworkMessage::SyncResponse(response)) => {
+                                    if pending_sync != Some(response.request_id) || response.blocks.is_empty() {
+                                        continue;
+                                    }
+                                    let mut accepted = 0u64;
+                                    for block in response.blocks {
+                                        if block.header.height != state.height + 1 { break; }
+                                        if block.header.round != block.header.epoch { break; }
+                                        let expected = match proposer_for_height_round(&state, block.header.height, block.header.round) {
+                                            Some(v) => v,
+                                            None => break,
+                                        };
+                                        if expected != block.header.proposer { break; }
+                                        if let Err(e) = freedom_network::validate_block_transition(&state, &block) {
+                                            eprintln!("sync block rejected at {}: {e}", block.header.height);
+                                            break;
+                                        }
+                                        let committed = match execute_block(&mut state, &block) {
+                                            Ok(b) => b,
+                                            Err(e) => { eprintln!("sync execution rejected at {}: {e}", block.header.height); break; }
+                                        };
+                                        if let Err(e) = store.put_block(&committed) {
+                                            eprintln!("sync persistence error: {e}");
+                                            break;
+                                        }
+                                        accepted += 1;
+                                    }
+                                    if accepted > 0 {
+                                        println!("SYNCED blocks={} height={}", accepted, state.height);
+                                        pending_sync = None;
+                                        round = 0;
+                                        timeout_round_sent = None;
+                                    }
+                                }
                                 Ok(NetworkMessage::Proposal(proposal)) => {
                                     if proposal.height != state.height + 1 || proposal.round != round { continue; }
                                     if let Err(e) = freedom_network::validate_proposal(&state, &proposal) {
@@ -106,6 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if ready {
                                         if let Some(block) = blocks.get(&hash).cloned() {
                                             let committed = protocol.finalize_if_quorum(&mut state, &block, round)?;
+                                            store.put_block(&committed)?;
                                             println!("FINALIZED height={} round={} hash={}", committed.header.height, round, hex::encode(block_hash(&committed)));
                                             protocol.reset_round();
                                             blocks.clear();
@@ -114,7 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let next_height = state.height + 1;
                                             if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                                 let mempool = Mempool::new();
-                                                let next_block = build_next_block(&state, &mempool, owner, next_height, round, 100)?;
+                                                let next_block = build_next_block(&state, &mempool, owner, 1, round, 100)?;
                                                 let next_proposal = make_proposal(next_block.clone(), round, &consensus_key);
                                                 blocks.insert(next_proposal.block_hash, next_block);
                                                 println!("proposing height={} round={} hash={}", next_height, round, hex::encode(next_proposal.block_hash));
@@ -133,7 +243,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         println!("VIEW_CHANGE height={} new_round={}", state.height + 1, round);
                                         if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
                                             let mempool = Mempool::new();
-                                            let block = build_next_block(&state, &mempool, owner, state.height + 1, round, 100)?;
+                                            let block = build_next_block(&state, &mempool, owner, 1, round, 100)?;
                                             let proposal = make_proposal(block.clone(), round, &consensus_key);
                                             blocks.insert(proposal.block_hash, block);
                                             println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
