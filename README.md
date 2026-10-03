@@ -456,3 +456,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Block transition validation now enforces epoch-transition certificate rules through consensus validation.
 - Snapshot activation continues to require checkpoint hash/state-root consistency and a valid finality certificate against the snapshot validator set.
 - Epoch-transition certificates are bound to both the snapshot state and its checkpoint block.
+
+
+## M42 — Snapshot Checkpoint Finality
+
+- Finality certificate quorum validation is stake-weighted for precommits.
+- Added checkpoint-bound finality validation: certificate block hash, height and round must exactly match the checkpoint block.
+- Snapshot activation uses the checkpoint-bound validator instead of validating a certificate in isolation.
+- Stored snapshots with finality certificates revalidate the certificate against their persisted checkpoint block before being returned.
