@@ -11,7 +11,7 @@ members = [
   "crates/wallet",
   "crates/network",
   "crates/storage",
-  "crates/bridge",
+
 ]
 
 [workspace.package]
