@@ -91,6 +91,30 @@ mod m31_tests {
         assert_eq!(msg.signature.len(),64);
         assert_ne!(msg.message_id(),[0u8;32]);
     }
+
+    #[test]
+    fn recovered_state_builds_the_next_contiguous_proposal() {
+        let validators: Vec<Validator> = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            Validator {
+                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                owner: address_from_public_key(&key),
+                consensus_key: key,
+                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            }
+        }).collect();
+        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
+        let state = initialize(&genesis).unwrap();
+        let owner = state.active_validator_set.values().next().unwrap().owner;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let (proposal, block) = build_local_proposal(&state, owner, &key, 0).unwrap();
+
+        assert_eq!(proposal.height, state.height + 1);
+        assert_eq!(proposal.block_hash, block_hash(&block));
+        assert_eq!(block.header.previous_hash, state.last_block_hash);
+        assert_eq!(block.header.proposer, owner);
+        assert_eq!(proposer_for_height_round(&state, block.header.height, 0), Some(owner));
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
