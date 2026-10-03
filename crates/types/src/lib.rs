@@ -732,6 +732,25 @@ impl DepositVerifier {
             replay_key,
             proof_hash: proof.proof_hash,
         })
+
+    }
+
+    pub fn verify_with_replay(
+        proof: &CrossChainAssetProof,
+        registry: &CrossChainAssetRegistry,
+        policy: &BridgeSecurityPolicy,
+        existing: Option<&DepositReplayRecord>,
+    ) -> Result<DepositReplayRecord, DepositVerificationError> {
+        let verified = Self::verify(proof, registry, policy)?;
+        if let Some(record) = existing {
+            if record.replay_key == verified.replay_key
+                && record.status != DepositReplayStatus::Rejected
+            {
+                return Err(DepositVerificationError::InvalidProof);
+            }
+        }
+        Ok(DepositReplayRecord::from_verified(&verified))
+
     }
 }
 
