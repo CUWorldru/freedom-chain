@@ -157,3 +157,13 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - quorum uses floor(2N/3) + 1; with 3 validators this requires all 3 votes.
 - block finalization checks quorum before executing and committing the block.
 - M14 is still a local quorum simulation; network transport and timeout/view-change logic are future work.
+
+
+## M15 — libp2p validator networking
+
+- freedom-network adds an authenticated libp2p transport using TCP + Noise + Yamux.
+- Gossipsub carries separate proposal and validator-vote topics.
+- Identify and Ping provide peer identity and liveness signals.
+- Network messages serialize BlockProposal and signed ValidatorVote.
+- The node binary now starts a real libp2p listener and exposes its PeerId.
+- Consensus finalization remains governed by M14 quorum validation; M15 provides transport, not yet automatic peer discovery or view-change logic.
