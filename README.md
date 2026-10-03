@@ -1174,3 +1174,12 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - Adds automatic compact update-proof construction by diffing previous and next snapshots.
 - Only changed UTXO keys become update steps; unchanged state is represented by Merkle siblings.
 - The resulting proof can be independently verified from previous root to next root without shipping the complete UTXO snapshot.
+
+
+## M130 — End-to-End Bitcoin UTXO Commitment Pipeline
+
+- Adds BitcoinUtxoBlockCommitment as the end-to-end artifact for one canonical Bitcoin block.
+- The builder validates the block structure, applies every transaction sequentially to the previous UTXO snapshot, creates the next snapshot, and automatically builds the compact SMT update proof.
+- The commitment binds block height and block hash to previous and next UTXO roots.
+- State APIs now validate and build the commitment only from the canonical Bitcoin successor block.
+- This closes the reference pipeline from Bitcoin block data to an authenticated compact UTXO state transition.
