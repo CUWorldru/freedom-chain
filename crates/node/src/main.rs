@@ -124,7 +124,11 @@ fn compact_peer_evidence(reputation: &mut PeerReputation) -> bool {
     true
 }
 
-fn classify_peer_evidence(reputation: &PeerReputation, kind: &PeerEvidenceKind) -> PeerEvidenceSeverity {
+fn classify_peer_evidence(
+    reputation: &PeerReputation,
+    kind: &PeerEvidenceKind,
+    confirming_peers: usize,
+) -> PeerEvidenceSeverity {
     let recent = reputation.evidence.iter().rev().take(PEER_REPUTATION_POLICY.evidence_limit);
     let mut same_kind_recent = 0usize;
     let mut recent_total = 0usize;
@@ -137,7 +141,15 @@ fn classify_peer_evidence(reputation: &PeerReputation, kind: &PeerEvidenceKind) 
             break;
         }
     }
-    match same_kind_recent.saturating_add(1) {
+    let repetition = same_kind_recent.saturating_add(1);
+    let confirmation = confirming_peers.max(1);
+    if confirmation >= 3 {
+        return PeerEvidenceSeverity::Critical;
+    }
+    if confirmation == 2 {
+        return PeerEvidenceSeverity::Elevated;
+    }
+    match repetition {
         1 | 2 => PeerEvidenceSeverity::Normal,
         3 => PeerEvidenceSeverity::Elevated,
         _ => PeerEvidenceSeverity::Critical,
@@ -156,7 +168,7 @@ fn record_peer_evidence(
         last_decay_height: height,
         evidence: Vec::new(),
     });
-    evidence.severity = classify_peer_evidence(entry, &evidence.kind);
+    evidence.severity = classify_peer_evidence(entry, &evidence.kind, 1);
     entry.score = entry.score.saturating_add(peer_evidence_weight(
         &evidence.kind,
         evidence.severity,
