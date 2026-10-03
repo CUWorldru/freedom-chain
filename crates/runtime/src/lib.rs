@@ -1,3 +1,4 @@
+pub mod bridge_config;
 use freedom_consensus::{block_hash,receipts_root,tx_root,validate_genesis,ConsensusConfig};
 use freedom_crypto::verify;
 use freedom_primitives::{CHAIN_ID,Hash};
