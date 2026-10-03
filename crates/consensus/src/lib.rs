@@ -121,3 +121,8 @@ pub fn validate_timeout_quorum(state:&ChainState,height:u64,round:u64,timeouts:&
  if seen.len()<quorum_threshold(state.validators.len()){return Err("timeout quorum not reached".into())}
  Ok(())
 }
+
+
+pub fn validate_finality_certificate(state:&ChainState, cert:&freedom_types::FinalityCertificate)->Result<(),String>{
+    validate_quorum(state, cert.block_hash, cert.height, cert.round, &cert.votes)
+}
