@@ -735,6 +735,99 @@ impl DepositVerifier {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum DepositReplayStatus {
+    Pending = 1,
+    Accepted = 2,
+    Consumed = 3,
+    Rejected = 4,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DepositReplayRecord {
+    pub replay_key: Hash,
+    pub bridge_id: Hash,
+    pub canonical_asset_id: Hash,
+    pub representation_asset_id: Hash,
+    pub source_chain_id: u32,
+    pub tx_hash: Hash,
+    pub event_index: u64,
+    pub amount: u128,
+    pub status: DepositReplayStatus,
+    pub record_hash: Hash,
+}
+
+impl DepositReplayRecord {
+    pub fn compute_hash(&self) -> Hash {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"FREEDOM-DEPOSIT-REPLAY-RECORD-V1");
+        b.extend_from_slice(&self.replay_key);
+        b.extend_from_slice(&self.bridge_id);
+        b.extend_from_slice(&self.canonical_asset_id);
+        b.extend_from_slice(&self.representation_asset_id);
+        b.extend_from_slice(&self.source_chain_id.to_le_bytes());
+        b.extend_from_slice(&self.tx_hash);
+        b.extend_from_slice(&self.event_index.to_le_bytes());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.push(self.status as u8);
+        freedom_primitives::hash_bytes(&b)
+    }
+
+    pub fn from_verified(deposit: &VerifiedDeposit) -> Self {
+        let mut r = Self {
+            replay_key: deposit.replay_key,
+            bridge_id: deposit.bridge_id,
+            canonical_asset_id: deposit.canonical_asset_id,
+            representation_asset_id: deposit.representation_asset_id,
+            source_chain_id: deposit.source_chain_id,
+            tx_hash: deposit.tx_hash,
+            event_index: deposit.event_index,
+            amount: deposit.amount,
+            status: DepositReplayStatus::Pending,
+            record_hash: [0; 32],
+        };
+        r.record_hash = r.compute_hash();
+        r
+    }
+
+    pub fn validate(&self) -> bool {
+        self.replay_key != [0; 32]
+            && self.bridge_id != [0; 32]
+            && self.canonical_asset_id != [0; 32]
+            && self.representation_asset_id != [0; 32]
+            && self.source_chain_id != 0
+            && self.tx_hash != [0; 32]
+            && self.amount > 0
+            && self.record_hash == self.compute_hash()
+    }
+
+    pub fn can_accept(&self) -> bool {
+        self.validate() && self.status == DepositReplayStatus::Pending
+    }
+
+    pub fn accept(&mut self) -> bool {
+        if !self.can_accept() { return false; }
+        self.status = DepositReplayStatus::Accepted;
+        self.record_hash = self.compute_hash();
+        true
+    }
+
+    pub fn consume(&mut self) -> bool {
+        if !self.validate() || self.status != DepositReplayStatus::Accepted { return false; }
+        self.status = DepositReplayStatus::Consumed;
+        self.record_hash = self.compute_hash();
+        true
+    }
+
+    pub fn reject(&mut self) -> bool {
+        if !self.validate() || self.status == DepositReplayStatus::Consumed { return false; }
+        self.status = DepositReplayStatus::Rejected;
+        self.record_hash = self.compute_hash();
+        true
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeNonceKey {
     pub bridge_id: Hash,
@@ -4667,5 +4760,41 @@ mod m150_deposit_verifier_tests {
             DepositVerifier::verify(&p, &registry, &policy()),
             Err(DepositVerificationError::InvalidRegistry)
         );
+    }
+}
+
+#[cfg(test)]
+mod m151_deposit_replay_tests {
+    use super::*;
+
+    #[test]
+    fn replay_record_moves_only_forward_and_consumed_is_terminal() {
+        let verified = VerifiedDeposit {
+            canonical_asset_id:[1;32], representation_asset_id:[2;32], bridge_id:[3;32],
+            source_chain_id:1, tx_hash:[4;32], event_index:5, block_or_slot:6,
+            confirmations:20, amount:100, recipient:vec![7;20], replay_key:[8;32],
+            proof_hash:[9;32],
+        };
+        let mut r = DepositReplayRecord::from_verified(&verified);
+        assert!(r.can_accept());
+        assert!(r.accept());
+        assert!(!r.can_accept());
+        assert!(r.consume());
+        assert!(!r.consume());
+        assert!(!r.reject());
+        assert!(r.validate());
+    }
+
+    #[test]
+    fn replay_record_detects_tampering() {
+        let verified = VerifiedDeposit {
+            canonical_asset_id:[1;32], representation_asset_id:[2;32], bridge_id:[3;32],
+            source_chain_id:1, tx_hash:[4;32], event_index:5, block_or_slot:6,
+            confirmations:20, amount:100, recipient:vec![7;20], replay_key:[8;32],
+            proof_hash:[9;32],
+        };
+        let mut r = DepositReplayRecord::from_verified(&verified);
+        r.amount = 101;
+        assert!(!r.validate());
     }
 }
