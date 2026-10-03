@@ -237,3 +237,32 @@ pub fn finalize_block_with_quorum(
     let committed = execute_block(state, block)?;
     Ok(committed)
 }
+
+
+#[derive(Clone)]
+pub struct ValidatorProtocol {
+    pub validator_id: Hash,
+    pub consensus_key: ed25519_dalek::SigningKey,
+    pub votes: std::collections::BTreeMap<Hash, freedom_types::ValidatorVote>,
+}
+
+impl ValidatorProtocol {
+    pub fn new(validator_id: Hash, consensus_key: ed25519_dalek::SigningKey) -> Self {
+        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new() }
+    }
+
+    pub fn receive_proposal(&self, state: &ChainState, proposal: &freedom_types::BlockProposal) -> Result<freedom_types::ValidatorVote, String> {
+        freedom_network::make_vote(state, self.validator_id, proposal, &self.consensus_key)
+    }
+
+    pub fn receive_vote(&mut self, state: &ChainState, vote: freedom_types::ValidatorVote, expected_block_hash: Hash, height: u64) -> Result<bool, String> {
+        freedom_consensus::validate_vote(state, &vote, expected_block_hash, height)?;
+        self.votes.insert(vote.validator_id, vote);
+        Ok(self.votes.len() >= freedom_consensus::quorum_threshold(state.validators.len()))
+    }
+
+    pub fn finalize_if_quorum(&self, state: &mut ChainState, block: &Block) -> Result<Block, String> {
+        let votes: Vec<_> = self.votes.values().cloned().collect();
+        finalize_block_with_quorum(state, block, &votes)
+    }
+}
