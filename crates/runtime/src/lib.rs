@@ -266,6 +266,11 @@ impl ValidatorProtocol {
     }
 
     pub fn receive_proposal(&self, state: &ChainState, proposal: &freedom_types::BlockProposal) -> Result<freedom_types::ValidatorVote, String> {
+        if let Some(locked) = self.locked_block_hash {
+            if locked != proposal.block_hash {
+                return Err("proposal conflicts with local lock".into());
+            }
+        }
         freedom_network::make_vote(state, self.validator_id, proposal, &self.consensus_key)
     }
 
@@ -334,5 +339,27 @@ impl ValidatorProtocol {
         let precommits: Vec<_> = self.precommits.values().cloned().collect();
         freedom_consensus::validate_precommit_quorum(state, block_hash(block), block.header.height, round, &precommits)?;
         execute_block(state, block)
+    }
+}
+
+
+#[cfg(test)]
+mod m22_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::ValidatorPrecommit;
+
+    #[test]
+    fn precommit_signing_domain_is_distinct() {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let mut p = ValidatorPrecommit {
+            block_hash: hash_bytes(b"block"),
+            height: 10,
+            round: 2,
+            validator_id: hash_bytes(b"validator"),
+            signature: Vec::new(),
+        };
+        p.signature = freedom_crypto::sign(&key, &p.signing_bytes()).to_vec();
+        assert!(freedom_crypto::verify(&key.verifying_key().to_bytes(), &p.signing_bytes(), &p.signature.try_into().unwrap()));
     }
 }
