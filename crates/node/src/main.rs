@@ -223,6 +223,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             state_root: snapshot.state_root,
                                                             checkpoint,
                                                             certificate,
+                                                            epoch_transition_certificate: snapshot.epoch_transition_certificate.clone(),
                                                             state_json,
                                                         });
                                                         let _ = swarm.behaviour_mut().sync.send_response(channel, response);
@@ -260,11 +261,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 eprintln!("SNAPSHOT_REJECTED checkpoint commitment mismatch at {}", response.height);
                                                 continue;
                                             }
-                                            if let Err(e) = freedom_consensus::validate_finality_certificate(&state, &response.certificate) {
+                                            let snapshot_state: freedom_state::ChainState = match serde_json::from_slice(&response.state_json) {
+                                                Ok(s) => s,
+                                                Err(e) => { eprintln!("SNAPSHOT_REJECTED invalid state encoding: {e}"); continue; }
+                                            };
+                                            if let Err(e) = freedom_consensus::validate_finality_certificate(&snapshot_state, &response.certificate) {
                                                 eprintln!("SNAPSHOT_REJECTED invalid finality certificate: {e}");
                                                 continue;
                                             }
-                                            let snapshot_state: freedom_state::ChainState = match serde_json::from_slice(&response.state_json) {
+                                            if let Some(cert) = &response.epoch_transition_certificate {
+                                                if cert.to_epoch != snapshot_state.epoch
+                                                    || cert.new_set_hash != freedom_consensus::validator_set_hash(&snapshot_state.active_validator_set)
+                                                    || snapshot_state.validator_set_certificate.as_ref().map(|c| c.hash()) != Some(cert.hash()) {
+                                                    eprintln!("SNAPSHOT_REJECTED invalid epoch transition certificate");
+                                                    continue;
+                                                }
+                                            }
+                                            let snapshot_state: freedom_state::ChainState = snapshot_state;
                                                 Ok(s) => s,
                                                 Err(e) => { eprintln!("SNAPSHOT_REJECTED invalid state encoding: {e}"); continue; }
                                             };
