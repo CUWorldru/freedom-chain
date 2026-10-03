@@ -689,3 +689,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - updates are written atomically as a single RocksDB key;
 - missing reputation data safely starts from an empty reputation map;
 - reputation remains local operational evidence and is not part of consensus state or validator stake.
+
+
+## M66 — Peer Reputation Decay & Recovery
+
+- reputation score now decays by one point per 10 chain heights without new evidence;
+- decay runs from the node sync timer and persists the updated reputation;
+- historical evidence is retained for audit and is not deleted by decay;
+- an already-issued cooldown is never shortened by decay;
+- peer eligibility requires both an expired cooldown and a score below the misbehavior threshold;
+- sustained clean operation can therefore restore a peer's sync/snapshot eligibility without a permanent blacklist.
