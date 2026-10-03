@@ -491,6 +491,82 @@ pub struct BridgeDepositProof {
     pub proof: Vec<u8>,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CrossChainAssetKind {
+    BitcoinUtxo = 1,
+    Erc20 = 2,
+    Trc20 = 3,
+    TonJetton = 4,
+    SolanaSpl = 5,
+    Other = 255,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrossChainAssetProof {
+    pub bridge_deposit: BridgeDepositProof,
+    pub asset_id: Hash,
+    pub asset_kind: CrossChainAssetKind,
+    pub amount: u128,
+    pub recipient: Vec<u8>,
+    pub proof_hash: Hash,
+}
+
+impl CrossChainAssetProof {
+    pub fn compute_hash(&self) -> Hash {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"FREEDOM-CROSS-CHAIN-ASSET-PROOF-V1");
+        b.extend_from_slice(&self.bridge_deposit.bridge_id);
+        b.extend_from_slice(&self.bridge_deposit.source_chain_id.to_le_bytes());
+        b.extend_from_slice(&self.bridge_deposit.tx_hash);
+        b.extend_from_slice(&self.bridge_deposit.event_index.to_le_bytes());
+        b.extend_from_slice(&self.bridge_deposit.block_or_slot.to_le_bytes());
+        b.extend_from_slice(&self.bridge_deposit.confirmations.to_le_bytes());
+        b.extend_from_slice(&self.asset_id);
+        b.push(self.asset_kind as u8);
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&(self.recipient.len() as u64).to_le_bytes());
+        b.extend_from_slice(&self.recipient);
+        b.extend_from_slice(&(self.bridge_deposit.proof.len() as u64).to_le_bytes());
+        b.extend_from_slice(&self.bridge_deposit.proof);
+        freedom_primitives::hash_bytes(&b)
+    }
+
+    pub fn validate(&self, required_confirmations: u64) -> bool {
+        self.bridge_deposit.bridge_id != [0; 32]
+            && self.bridge_deposit.source_chain_id != 0
+            && self.bridge_deposit.tx_hash != [0; 32]
+            && self.amount > 0
+            && !self.asset_id.eq(&[0; 32])
+            && !self.recipient.is_empty()
+            && !self.bridge_deposit.proof.is_empty()
+            && self.bridge_deposit.confirmations >= required_confirmations
+            && self.proof_hash == self.compute_hash()
+    }
+
+    pub fn from_bridge_deposit(
+        bridge_deposit: BridgeDepositProof,
+        asset_id: Hash,
+        asset_kind: CrossChainAssetKind,
+        amount: u128,
+        recipient: Vec<u8>,
+    ) -> Result<Self, BridgeAdapterError> {
+        let mut p = Self {
+            bridge_deposit,
+            asset_id,
+            asset_kind,
+            amount,
+            recipient,
+            proof_hash: [0; 32],
+        };
+        p.proof_hash = p.compute_hash();
+        if !p.validate(p.bridge_deposit.confirmations) {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        Ok(p)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeNonceKey {
     pub bridge_id: Hash,
