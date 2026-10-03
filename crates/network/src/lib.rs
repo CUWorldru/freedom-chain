@@ -15,12 +15,22 @@ pub const NETWORK_PROTOCOL: &str = "/freedom/1";
 pub const PROPOSAL_TOPIC: &str = "freedom/1/proposals";
 pub const VOTE_TOPIC: &str = "freedom/1/votes";
 pub const TIMEOUT_TOPIC: &str = "freedom/1/timeouts";
+pub const SYNC_TOPIC: &str = "freedom/1/sync";
+pub const MAX_SYNC_BLOCKS: u64 = 32;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncRequest { pub request_id: Hash, pub from_height: u64, pub to_height: u64 }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncResponse { pub request_id: Hash, pub from_height: u64, pub blocks: Vec<freedom_types::Block> }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NetworkMessage {
     Proposal(BlockProposal),
     Vote(ValidatorVote),
     Timeout(ValidatorTimeout),
+    SyncRequest(SyncRequest),
+    SyncResponse(SyncResponse),
 }
 
 #[derive(NetworkBehaviour)]
@@ -128,6 +138,7 @@ pub fn make_vote(state: &ChainState, validator_id: Hash, proposal: &BlockProposa
 }
 
 pub fn timeout_topic() -> IdentTopic { IdentTopic::new(TIMEOUT_TOPIC) }
+pub fn sync_topic() -> IdentTopic { IdentTopic::new(SYNC_TOPIC) }
 
 pub fn make_timeout(height:u64,round:u64,validator_id:Hash,consensus_key:&ed25519_dalek::SigningKey)->ValidatorTimeout{let mut t=ValidatorTimeout{height,round,validator_id,signature:Vec::new()};t.signature=sign(consensus_key,&t.signing_bytes()).to_vec();t}
 
@@ -159,6 +170,7 @@ pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Erro
             gossipsub.subscribe(&proposal_topic())?;
             gossipsub.subscribe(&vote_topic())?;
             gossipsub.subscribe(&IdentTopic::new(TIMEOUT_TOPIC))?;
+            gossipsub.subscribe(&sync_topic())?;
             Ok(FreedomBehaviour {
                 gossipsub,
                 identify: identify::Behaviour::new(
@@ -193,6 +205,7 @@ pub fn publish(
         NetworkMessage::Proposal(_) => (proposal_topic(), encode_message(message)?),
         NetworkMessage::Vote(_) => (vote_topic(), encode_message(message)?),
         NetworkMessage::Timeout(_) => (timeout_topic(), encode_message(message)?),
+        NetworkMessage::SyncRequest(_) | NetworkMessage::SyncResponse(_) => (sync_topic(), encode_message(message)?),
     };
     Ok(swarm.behaviour_mut().gossipsub.publish(topic, bytes)?)
 }
@@ -230,4 +243,12 @@ mod tests {
         let swarm = build_swarm().unwrap();
         assert!(!local_peer_id(&swarm).to_bytes().is_empty());
     }
+}
+
+pub fn make_sync_request(request_id: Hash, from_height: u64) -> NetworkMessage {
+    NetworkMessage::SyncRequest(SyncRequest {
+        request_id,
+        from_height,
+        to_height: from_height.saturating_add(MAX_SYNC_BLOCKS.saturating_sub(1)),
+    })
 }
