@@ -242,6 +242,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             checkpoint,
                                                             certificate,
                                                             epoch_transition_certificate: snapshot.epoch_transition_certificate.clone(),
+                                                            chain_id: freedom_primitives::CHAIN_ID,
                                                             state_json,
                                                         });
                                                         let _ = swarm.behaviour_mut().sync.send_response(channel, response);
@@ -270,6 +271,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         SyncWireResponse::Snapshot(response) => {
                                             if response.height <= state.height { continue; }
+                                            if response.chain_id != freedom_primitives::CHAIN_ID {
+                                                eprintln!("SNAPSHOT_REJECTED chain id mismatch");
+                                                continue;
+                                            }
                                             if response.block_hash != freedom_consensus::block_hash(&response.checkpoint)
                                                 || response.checkpoint.header.height != response.height
                                                 || response.checkpoint.header.state_root != response.state_root
