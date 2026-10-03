@@ -492,6 +492,18 @@ pub struct BridgeDepositProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeNonceKey {
+    pub bridge_id: Hash,
+    pub asset_id: Hash,
+    pub direction: BridgeDirection,
+}
+impl BridgeNonceKey {
+    pub fn key_hash(&self)->Hash{
+        let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BRIDGE-NONCE-KEY-V1");o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.asset_id);o.push(self.direction as u8);freedom_primitives::hash_bytes(&o)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeWithdrawalIntent {
     pub withdrawal_id: Hash,
     pub bridge_id: Hash,
