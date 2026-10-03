@@ -638,15 +638,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         SyncWireResponse::Snapshot(response) => {
-                                            if pending_snapshot.map(|(expected_peer, expected_outbound_id, expected_request_id, target_height)| {
-                                                expected_peer == peer
-                                                    && expected_outbound_id == outbound_id
-                                                    && expected_request_id == response.request_id
-                                                    && response.height <= target_height
-                                            }) != Some(true) {
+                                            let snapshot_pending_index = pending_snapshot.iter().position(|(expected_peer, expected_outbound_id, expected_request_id, target_height)| {
+                                                *expected_peer == peer
+                                                    && *expected_outbound_id == outbound_id
+                                                    && *expected_request_id == response.request_id
+                                                    && response.height <= *target_height
+                                            });
+                                            if snapshot_pending_index.is_none() {
                                                 eprintln!("SNAPSHOT_REJECTED unsolicited, stale, wrong-peer, or wrong-request response at {}", response.height);
                                                 continue;
                                             }
+                                            pending_snapshot.remove(snapshot_pending_index.unwrap());
                                             if response.height <= state.height || freedom_network::validate_snapshot_response(&response).is_err() { continue; }
                                             if response.chain_id != freedom_primitives::CHAIN_ID {
                                                 eprintln!("SNAPSHOT_REJECTED chain id mismatch");
@@ -718,7 +720,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 eprintln!("SNAPSHOT_REJECTED state commitment mismatch at {}", response.height);
                                                 continue;
                                             }
+
+                                            let snapshot_fingerprint = hash_bytes(
+                                                &[
+                                                    &response.height.to_le_bytes(),
+                                                    &response.block_hash,
+                                                    &response.state_root,
+                                                    &hash_bytes(&serde_json::to_vec(&response.certificate)?),
+                                                    &freedom_consensus::validator_set_hash(&response.finality_validator_set),
+                                                    &response.epoch_transition_certificate.as_ref().map(|c| c.hash()).unwrap_or([0; 32]),
+                                                ].concat(),
+                                            );
+                                            let snapshot_entry = snapshot_candidates
+                                                .entry(snapshot_fingerprint)
+                                                .or_insert((0, response.clone()));
+                                            snapshot_entry.0 += 1;
+                                            if snapshot_required > 1 && snapshot_candidates.len() > 1 {
+                                                eprintln!(
+                                                    "SNAPSHOT_CONFLICT peer={} height={} fingerprint={} candidates={}",
+                                                    peer,
+                                                    response.height,
+                                                    hex::encode(snapshot_fingerprint),
+                                                    snapshot_candidates.len()
+                                                );
+                                            }
+                                            if snapshot_entry.0 < snapshot_required {
+                                                continue;
+                                            }
+                                            let verified_snapshot = snapshot_entry.1.clone();
+
                                             if let Err(e) = store.put_block_and_snapshot(
+                                                &verified_snapshot.checkpoint,
+                                                &snapshot_state,
+                                                verified_snapshot.certificate.clone(),
+                                                verified_snapshot.finality_validator_set.clone(),
+                                            ) {
                                                 &response.checkpoint,
                                                 &snapshot_state,
                                                 response.certificate.clone(),
@@ -728,8 +764,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 continue;
                                             }
                                             state = snapshot_state;
-                                            pending_sync = None;
-                                            pending_snapshot = None;
+                                            pending_sync.clear();
+                                            snapshot_candidates.clear();
+                                            snapshot_required = 1;
+                                            pending_snapshot.clear();
                                             round = 0;
                                             timeout_round_sent = None;
                                             protocol.reset_round();
