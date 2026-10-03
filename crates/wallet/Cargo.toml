@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 freedom-primitives = { path = "../primitives" }
 freedom-crypto = { path = "../crypto" }
+freedom-state = { path = "../state" }
