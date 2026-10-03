@@ -290,7 +290,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             if let Some(cert) = &response.epoch_transition_certificate {
                                                 if cert.to_epoch != snapshot_state.epoch
                                                     || cert.new_set_hash != freedom_consensus::validator_set_hash(&snapshot_state.active_validator_set)
-                                                    || snapshot_state.validator_set_certificate.as_ref().map(|c| c.hash()) != Some(cert.hash()) {
+                                                    || snapshot_state.validator_set_certificate.as_ref().map(|c| c.hash()) != Some(cert.hash())
+                                                    || response.checkpoint.header.epoch != cert.to_epoch
+                                                    || response.checkpoint.header.epoch_transition_certificate.as_ref().map(|c| c.hash()) != Some(cert.hash()) {
                                                     eprintln!("SNAPSHOT_REJECTED invalid epoch transition certificate");
                                                     continue;
                                                 }
