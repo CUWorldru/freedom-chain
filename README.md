@@ -979,3 +979,8 @@ Bitcoin header chains now expose deterministic per-header work `floor(2^256 / (t
 ## M102 — Bitcoin Accumulated Chainwork
 
 Bitcoin header chains now expose deterministic per-header work and accumulated chainwork. Work is calculated as `2^256 / (target + 1)` using arbitrary-precision arithmetic, then represented as a fixed 256-bit big-endian value. Competing valid chains can be compared by accumulated work rather than height alone.
+
+
+## M102 — Bitcoin Accumulated Chainwork
+
+Bitcoin header chains now expose deterministic per-header work `floor(2^256 / (target + 1))`, accumulated chainwork and chainwork comparison. Big-integer arithmetic avoids fixed-width overflow during accumulation. Invalid PoW or broken header linkage prevents a chain from producing usable work.
