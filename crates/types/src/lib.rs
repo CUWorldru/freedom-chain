@@ -1227,6 +1227,13 @@ mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
 }
 
 #[cfg(test)]
+mod m101_bitcoin_header_chain_tests {
+ use super::*;
+ #[test] fn linked_headers_are_accepted(){let a=BitcoinBlockHeader{version:1,prev_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.prev_block_hash=a.block_hash();assert!(bitcoin_validate_header_chain(100,&[a,b]).is_ok());}
+ #[test] fn broken_link_is_rejected(){let a=BitcoinBlockHeader{version:1,prev_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.prev_block_hash=[9;32];assert_eq!(bitcoin_validate_header_chain(100,&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
+}
+
+#[cfg(test)]
 mod m100_bitcoin_pow_tests {
  use super::*;
  #[test] fn bits_to_target_rejects_negative_and_zero(){assert!(bitcoin_target_from_bits(0).is_none());assert!(bitcoin_target_from_bits(0x01800001).is_none());}
