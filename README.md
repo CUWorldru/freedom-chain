@@ -323,3 +323,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Deduplication is bounded to avoid unbounded memory growth.
 - Added a runtime test covering duplicate rejection and bounded eviction.
 - Message IDs are derived from the existing signed canonical message bytes; no second signing format was introduced.
+
+
+## M30 — Equivocation Evidence Propagation
+
+- Added signed EvidenceMessage with a dedicated evidence signing domain and message ID.
+- Added freedom/1/evidence gossip transport.
+- Peers validate evidence sender identity against the active validator set before recording it.
+- Evidence messages use the existing bounded anti-replay layer.
+- Network round-trip coverage was added for evidence messages.
+- Evidence receipt records evidence in state; monetary slashing remains exclusively behind the existing SubmitEvidence transaction path.
+- Automatic publication from every locally detected equivocation remains a follow-up hardening step.
