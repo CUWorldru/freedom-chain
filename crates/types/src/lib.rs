@@ -1923,3 +1923,102 @@ mod m120_bitcoin_utxo_tests {
         assert_eq!(block.merkle_root_from_transactions().unwrap(), tx.txid);
     }
 }
+
+
+/// M121 compact UTXO accumulator commitment.
+///
+/// This commitment is NOT part of Bitcoin consensus. A bridge may only use it
+/// when the commitment itself is authenticated by an external/bridge-controlled
+/// commitment source. It is deliberately domain-separated from Bitcoin hashes.
+pub const BITCOIN_UTXO_ACCUMULATOR_DOMAIN: &[u8] = b"FREEDOM-BITCOIN-UTXO-ACCUMULATOR-V1";
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoAccumulator {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub bitcoin_tip_height: u64,
+    pub bitcoin_tip_hash: Hash,
+    pub bitcoin_tip_chainwork: [u8; 32],
+    pub root: Hash,
+}
+
+impl BitcoinUtxoAccumulator {
+    pub fn compute_root(utxos: &[(Hash, u32, u64, Vec<u8>)]) -> Hash {
+        let mut leaves: Vec<Hash> = utxos.iter().map(|(txid, vout, amount, script)| {
+            let mut b=Vec::new();
+            b.extend_from_slice(BITCOIN_UTXO_ACCUMULATOR_DOMAIN);
+            b.extend_from_slice(txid);
+            b.extend_from_slice(&vout.to_le_bytes());
+            b.extend_from_slice(&amount.to_le_bytes());
+            b.extend_from_slice(&(script.len() as u64).to_le_bytes());
+            b.extend_from_slice(script);
+            bitcoin_sha256d(&b)
+        }).collect();
+        leaves.sort();
+        let mut root=freedom_primitives::hash_bytes(&[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, b"ROOT"].concat());
+        for leaf in leaves {
+            root=freedom_primitives::hash_bytes(&[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, &root, &leaf].concat());
+        }
+        root
+    }
+
+    pub fn validate(&self, canonical_tip: &BitcoinChainCheckpoint) -> bool {
+        self.bridge_id != [0;32]
+            && self.chain_id != 0
+            && self.bitcoin_tip_height == canonical_tip.height
+            && self.bitcoin_tip_hash == canonical_tip.block_hash
+            && self.bitcoin_tip_chainwork == canonical_tip.chainwork
+            && self.root != [0;32]
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoAccumulatorProof {
+    pub accumulator: BitcoinUtxoAccumulator,
+    pub tx_hash: Hash,
+    pub vout: u32,
+    pub amount_sat: u64,
+    pub script_pubkey: Vec<u8>,
+    pub leaf_index: u64,
+    pub siblings: Vec<Hash>,
+    pub exists: bool,
+}
+
+impl BitcoinUtxoAccumulatorProof {
+    pub fn leaf_hash(&self) -> Hash {
+        let mut b=Vec::new();
+        b.extend_from_slice(BITCOIN_UTXO_ACCUMULATOR_DOMAIN);
+        b.extend_from_slice(&self.tx_hash);
+        b.extend_from_slice(&self.vout.to_le_bytes());
+        b.extend_from_slice(&self.amount_sat.to_le_bytes());
+        b.extend_from_slice(&(self.script_pubkey.len() as u64).to_le_bytes());
+        b.extend_from_slice(&self.script_pubkey);
+        bitcoin_sha256d(&b)
+    }
+
+    pub fn verify_membership(&self, canonical_tip: &BitcoinChainCheckpoint) -> bool {
+        if !self.exists || !self.accumulator.validate(canonical_tip) || self.siblings.len() > 64 {
+            return false;
+        }
+        let mut current=self.leaf_hash();
+        let mut index=self.leaf_index;
+        for sibling in &self.siblings {
+            current=if index & 1 == 0 {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, &current, sibling].concat())
+            } else {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, sibling, &current].concat())
+            };
+            index >>= 1;
+        }
+        current==self.accumulator.root
+    }
+
+    pub fn verify_exact_output(&self, tx:&BitcoinUtxoProof, canonical_tip:&BitcoinChainCheckpoint)->bool {
+        tx.validate_output_binding()
+            && tx.tx_hash==self.tx_hash
+            && tx.vout==self.vout
+            && tx.amount_sat==self.amount_sat
+            && tx.script_pubkey==self.script_pubkey
+            && self.verify_membership(canonical_tip)
+    }
+}
