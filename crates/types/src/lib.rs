@@ -96,6 +96,13 @@ pub struct Validator {
     pub validator_id: Hash, pub owner: Address, pub consensus_key: [u8;32], pub stake:u128,
     pub blocks_proposed:u64, pub blocks_finalized:u64, pub missed_votes:u64,
 }
+pub struct ValidatorSetEntry {
+    pub validator_id: Hash,
+    pub owner: Address,
+    pub consensus_key: [u8;32],
+    pub stake: u128,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:Vec<Validator> }
 
