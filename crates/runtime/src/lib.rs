@@ -146,6 +146,12 @@ pub fn verify_bridge_deposit_with_adapter(
 
     match external {
         freedom_types::ExternalBridgeDepositProof::BitcoinUtxo(p) => {
+            if !freedom_types::expected_asset_kind_for_mainnet(
+                p.chain_id,
+                freedom_types::CrossChainAssetKind::BitcoinUtxo,
+            ) {
+                return Err("UnsupportedBitcoinNetwork".into());
+            }
             if registry.find_representation_by_external_identity(
                 p.chain_id,
                 freedom_types::CrossChainAssetKind::BitcoinUtxo,
@@ -156,6 +162,12 @@ pub fn verify_bridge_deposit_with_adapter(
             }
         }
         freedom_types::ExternalBridgeDepositProof::EvmTransfer(p) => {
+            if !freedom_types::expected_asset_kind_for_mainnet(
+                p.chain_id,
+                freedom_types::CrossChainAssetKind::Erc20,
+            ) {
+                return Err("UnsupportedEvmNetwork".into());
+            }
             if registry.find_representation_by_external_identity(
                 p.chain_id,
                 freedom_types::CrossChainAssetKind::Erc20,
@@ -166,6 +178,12 @@ pub fn verify_bridge_deposit_with_adapter(
             }
         }
         freedom_types::ExternalBridgeDepositProof::TronUsdt(p) => {
+            if !freedom_types::expected_asset_kind_for_mainnet(
+                p.chain_id,
+                freedom_types::CrossChainAssetKind::Trc20,
+            ) {
+                return Err("UnsupportedTronNetwork".into());
+            }
             if registry.find_representation_by_external_identity(
                 p.chain_id,
                 freedom_types::CrossChainAssetKind::Trc20,
