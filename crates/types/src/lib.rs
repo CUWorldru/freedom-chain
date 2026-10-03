@@ -4598,6 +4598,50 @@ mod m150_deposit_verifier_tests {
     }
 
     #[test]
+    fn verifier_rejects_wrong_bridge_before_asset_processing() {
+        let p = CrossChainAssetProof {
+            bridge_deposit: BridgeDepositProof {
+                bridge_id: [8;32], source_chain_id: 1, tx_hash: [2;32],
+                event_index: 3, block_or_slot: 4, confirmations: 20,
+                proof: vec![5;32],
+            },
+            asset_id: [8;32], representation_asset_id: [9;32],
+            asset_kind: CrossChainAssetKind::Erc20,
+            amount: 100, recipient: vec![6;20], proof_hash: [0;32],
+        };
+        let registry = CrossChainAssetRegistry {
+            canonical_asset_id: [8;32], symbol: "USDT".into(), decimals: 6,
+            representations: vec![],
+        };
+        assert_eq!(
+            DepositVerifier::verify(&p, &registry, &policy()),
+            Err(DepositVerificationError::BridgeMismatch)
+        );
+    }
+
+    #[test]
+    fn verifier_rejects_amount_above_bridge_limit() {
+        let p = CrossChainAssetProof {
+            bridge_deposit: BridgeDepositProof {
+                bridge_id: [7;32], source_chain_id: 1, tx_hash: [2;32],
+                event_index: 3, block_or_slot: 4, confirmations: 20,
+                proof: vec![5;32],
+            },
+            asset_id: [8;32], representation_asset_id: [9;32],
+            asset_kind: CrossChainAssetKind::Erc20,
+            amount: 1_000_001, recipient: vec![6;20], proof_hash: [0;32],
+        };
+        let registry = CrossChainAssetRegistry {
+            canonical_asset_id: [8;32], symbol: "USDT".into(), decimals: 6,
+            representations: vec![],
+        };
+        assert_eq!(
+            DepositVerifier::verify(&p, &registry, &policy()),
+            Err(DepositVerificationError::DepositLimitExceeded)
+        );
+    }
+
+    #[test]
     fn verifier_rejects_insufficient_finality_before_deposit_acceptance() {
         let mut p = CrossChainAssetProof {
             bridge_deposit: BridgeDepositProof {
