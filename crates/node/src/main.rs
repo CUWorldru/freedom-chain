@@ -118,6 +118,15 @@ mod m31_tests {
     }
 
     #[test]
+    fn sync_conflict_is_detected_by_batch_fingerprint() {
+        let a = vec![1u8, 2, 3];
+        let b = vec![1u8, 2, 4];
+        let ha = hash_bytes(&a);
+        let hb = hash_bytes(&b);
+        assert_ne!(ha, hb);
+    }
+
+    #[test]
     fn recovered_state_builds_the_next_contiguous_proposal() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
