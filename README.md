@@ -573,3 +573,10 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - stale or replayed responses for a different height are discarded before execution;
 - the network boundary explicitly requires the first response block to equal `from_height`;
 - the pending sync height is cleared together with the request ID after successful application.
+
+
+## M53 — Snapshot Checkpoint Commitment Hardening
+
+- snapshot responses now have their checkpoint block hash verified at the network boundary;
+- snapshot certificate round must match the checkpoint round before the payload reaches node activation logic;
+- the node retains its deeper certificate, validator-set, epoch-transition, state-root and atomic-persistence checks as a second validation layer.
