@@ -2005,6 +2005,68 @@ impl BitcoinMerkleVerification {
     }
 }
 
+pub type BitcoinChainWork = [u64; 5];
+
+fn bitcoin_chainwork_add(work: &mut BitcoinChainWork, target: Hash) -> bool {
+    let mut carry = 0u128;
+    let mut add = [0u64; 5];
+    let mut borrow = 0i128;
+    let mut denominator = [0u64; 5];
+    for i in 0..4 {
+        denominator[i] = u64::from_le_bytes(target[i * 8..i * 8 + 8].try_into().unwrap());
+    }
+    let mut value = denominator;
+    let mut one = 1u64;
+    for i in 0..5 {
+        let (v, c) = value[i].overflowing_add(one);
+        value[i] = v;
+        one = u64::from(c);
+    }
+    if one != 0 {
+        return false;
+    }
+    // Long division of 2^256 by (target + 1), yielding a 257-bit quotient.
+    let mut rem = [0u64; 5];
+    for bit in (0..=256).rev() {
+        let word = bit / 64;
+        let offset = bit % 64;
+        if word < 5 {
+            rem[word] |= 1u64 << offset;
+        }
+        let mut ge = true;
+        for j in (0..5).rev() {
+            if rem[j] != value[j] {
+                ge = rem[j] > value[j];
+                break;
+            }
+        }
+        if ge {
+            let mut b = 0u64;
+            for j in 0..5 {
+                let (v, under) = rem[j].overflowing_sub(value[j] + b);
+                b = u64::from(under);
+                rem[j] = v;
+            }
+            if bit < 320 {
+                let qword = bit / 64;
+                let qoff = bit % 64;
+                if qword < 5 {
+                    add[qword] |= 1u64 << qoff;
+                }
+            }
+        }
+    }
+    for i in 0..5 {
+        let sum = u128::from(work[i]) + u128::from(add[i]) + carry;
+        work[i] = sum as u64;
+        carry = sum >> 64;
+    }
+    if carry != 0 {
+        borrow = 1;
+    }
+    borrow == 0
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitcoinDifficultyWindow {
     pub start_height: u64,
@@ -2121,6 +2183,7 @@ pub struct BitcoinChainContext {
     pub tip_hash: Hash,
     pub headers: Vec<BitcoinBlockHeader>,
     pub difficulty_windows: Vec<BitcoinDifficultyWindow>,
+    pub expected_chainwork: BitcoinChainWork,
 }
 
 impl BitcoinChainContext {
@@ -2188,6 +2251,18 @@ impl BitcoinChainContext {
         }
 
         if previous_hash != self.tip_hash {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        let mut chainwork = [0u64; 5];
+        for header in &self.headers {
+            let target = BitcoinBlockHeader::target_from_bits(header.bits)
+                .ok_or(BridgeAdapterError::InvalidProof)?;
+            if !bitcoin_chainwork_add(&mut chainwork, target) {
+                return Err(BridgeAdapterError::InvalidProof);
+            }
+        }
+        if chainwork != self.expected_chainwork {
             return Err(BridgeAdapterError::InvalidProof);
         }
 
