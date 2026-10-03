@@ -40,6 +40,37 @@ struct SyncMisbehaviorEvidence {
     reason: String,
 }
 
+const PEER_MISBEHAVIOR_THRESHOLD: u32 = 3;
+const PEER_SCORE_COOLDOWN_ROUNDS: u64 = 3;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PeerSyncScore {
+    score: u32,
+    cooldown_until_height: u64,
+}
+
+fn record_peer_misbehavior(
+    scores: &mut BTreeMap<libp2p::PeerId, PeerSyncScore>,
+    peer: libp2p::PeerId,
+    current_height: u64,
+) {
+    let entry = scores.entry(peer).or_insert(PeerSyncScore { score: 0, cooldown_until_height: 0 });
+    entry.score = entry.score.saturating_add(1);
+    if entry.score >= PEER_MISBEHAVIOR_THRESHOLD {
+        entry.cooldown_until_height = current_height.saturating_add(PEER_SCORE_COOLDOWN_ROUNDS);
+    }
+}
+
+fn peer_is_sync_eligible(
+    scores: &BTreeMap<libp2p::PeerId, PeerSyncScore>,
+    peer: libp2p::PeerId,
+    current_height: u64,
+) -> bool {
+    scores.get(&peer)
+        .map(|score| current_height >= score.cooldown_until_height)
+        .unwrap_or(true)
+}
+
 fn send_snapshot_request(
     swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
     peer: libp2p::PeerId,
@@ -368,6 +399,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_round_peers = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_conflicts = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_misbehavior = Vec::<SyncMisbehaviorEvidence>::new();
+    let mut peer_sync_scores = BTreeMap::<libp2p::PeerId, PeerSyncScore>::new();
     let mut pending_snapshot = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut sync_peer_cursor = 0usize;
