@@ -2206,6 +2206,58 @@ impl BitcoinUtxoCompactTransitionProof {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoMerkleMultiproof {
+    pub leaf_count: u64,
+    pub leaves: Vec<BitcoinUtxoTransitionWitness>,
+    pub auxiliary_nodes: Vec<Hash>,
+}
+
+impl BitcoinUtxoMerkleMultiproof {
+    pub fn verify(&self, root: Hash) -> bool {
+        if self.leaf_count == 0 || self.leaves.is_empty() || self.leaves.len() > 1_000_000 {
+            return false;
+        }
+        let mut seen=std::collections::BTreeSet::new();
+        for leaf in &self.leaves {
+            if !seen.insert(leaf.leaf_index) || !leaf.verify(root,self.leaf_count) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoCompactTransitionBoundary {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub previous_root: Hash,
+    pub previous_leaf_count: u64,
+    pub previous_state_multiproof: BitcoinUtxoMerkleMultiproof,
+    pub spent_outpoints: Vec<(Hash,u32)>,
+    pub created_entries: Vec<BitcoinUtxoStateEntry>,
+    pub next_root: Hash,
+    pub next_leaf_count: u64,
+}
+
+impl BitcoinUtxoCompactTransitionBoundary {
+    pub fn validate(&self) -> bool {
+        if self.bridge_id == [0;32] || self.chain_id == 0
+            || self.previous_root == [0;32] || self.next_root == [0;32]
+            || self.previous_leaf_count == 0 || self.next_leaf_count == 0
+            || self.spent_outpoints.len() != self.created_entries.len()
+            || !self.previous_state_multiproof.verify(self.previous_root) {
+            return false;
+        }
+        let mut spent=std::collections::BTreeSet::new();
+        for x in &self.spent_outpoints {
+            if !spent.insert(*x) { return false; }
+        }
+        true
+    }
+}
+
 pub struct BitcoinUtxoCommitmentAttestation {
     pub bridge_id: Hash,
     pub chain_id: u32,
