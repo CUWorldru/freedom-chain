@@ -1851,6 +1851,96 @@ pub struct BridgeAccounting {
 
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitcoinBlockHeader {
+    pub version: i32,
+    pub previous_block_hash: Hash,
+    pub merkle_root: Hash,
+    pub timestamp: u32,
+    pub bits: u32,
+    pub nonce: u32,
+}
+
+impl BitcoinBlockHeader {
+    pub fn serialize(&self) -> [u8; 80] {
+        let mut out = [0u8; 80];
+        out[0..4].copy_from_slice(&self.version.to_le_bytes());
+        out[4..36].copy_from_slice(&self.previous_block_hash);
+        out[36..68].copy_from_slice(&self.merkle_root);
+        out[68..72].copy_from_slice(&self.timestamp.to_le_bytes());
+        out[72..76].copy_from_slice(&self.bits.to_le_bytes());
+        out[76..80].copy_from_slice(&self.nonce.to_le_bytes());
+        out
+    }
+
+    pub fn block_hash(&self) -> Hash {
+        bitcoin_sha256d(&self.serialize())
+    }
+
+    pub fn target_from_bits(bits: u32) -> Option<Hash> {
+        let exponent = (bits >> 24) as usize;
+        let mantissa = bits & 0x007f_ffff;
+        if mantissa == 0 || (bits & 0x0080_0000) != 0 {
+            return None;
+        }
+        let mut target = [0u8; 32];
+        if exponent <= 3 {
+            let value = mantissa >> (8 * (3 - exponent));
+            target[..4].copy_from_slice(&(value as u32).to_le_bytes());
+            return Some(target);
+        }
+        let offset = exponent - 3;
+        if offset + 3 > 32 {
+            return None;
+        }
+        let value = mantissa.to_le_bytes();
+        target[offset..offset + 3].copy_from_slice(&value[..3]);
+        Some(target)
+    }
+
+    pub fn validate_pow(&self) -> bool {
+        let Some(target) = Self::target_from_bits(self.bits) else {
+            return false;
+        };
+        bitcoin_hash_leq_target(&self.block_hash(), &target)
+    }
+}
+
+pub struct BitcoinBlockHeaderVerification {
+    pub block_hash: Hash,
+    pub target: Hash,
+}
+
+impl BitcoinBlockHeaderVerification {
+    pub fn verify(header: &BitcoinBlockHeader) -> Result<Self, BridgeAdapterError> {
+        if header.timestamp == 0 {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        let Some(target) = BitcoinBlockHeader::target_from_bits(header.bits) else {
+            return Err(BridgeAdapterError::InvalidProof);
+        };
+        if !bitcoin_hash_leq_target(&header.block_hash(), &target) {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        Ok(Self {
+            block_hash: header.block_hash(),
+            target,
+        })
+    }
+}
+
+fn bitcoin_hash_leq_target(hash: &Hash, target: &Hash) -> bool {
+    for i in (0..32).rev() {
+        if hash[i] < target[i] {
+            return true;
+        }
+        if hash[i] > target[i] {
+            return false;
+        }
+    }
+    true
+}
+
 pub struct BitcoinMerkleVerification {
     pub tx_hash: Hash,
     pub merkle_root: Hash,
