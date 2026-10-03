@@ -223,3 +223,15 @@ Implemented:
 - `FREEDOM_DB_PATH` remains configurable.
 
 Current limitation: snapshot transfer between peers is not yet implemented. Network sync is still block-based; dedicated request/response snapshot transport and fast-state activation are planned for the next networking milestone.
+
+## M20 — Dedicated Request/Response Sync
+
+Implemented:
+- Added a dedicated `/freedom/1/sync/1` libp2p request/response protocol using the maintained JSON codec.
+- Validator block-sync requests now target a specific connected peer instead of relying only on Gossipsub broadcast.
+- Direct sync responses are replayed through the same proposer, transition, execution and persistence checks as normal chain data.
+- Snapshot request/response messages are available over the same direct transport; snapshot activation remains gated until a finalized checkpoint/finality proof is attached.
+- Kept the existing Gossipsub sync path as a compatibility fallback during the migration.
+- Fixed proposal construction so `BlockProposal.round` is explicitly committed to the proposal metadata.
+
+Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON codec for serde-compatible request/response types. 
