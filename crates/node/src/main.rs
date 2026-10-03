@@ -305,6 +305,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pending_sync = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
     let mut pending_snapshot = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
+    let mut sync_peer_cursor = 0usize;
     let mut valset_votes: BTreeMap<Hash, freedom_types::ValidatorSetVote> = BTreeMap::new();
     let mut valset_certificate_broadcasted: Option<Hash> = None;
 
@@ -333,7 +334,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = sync_timer.tick() => {
-                if let Some(peer) = connected_peers.first().copied() {
+                if !connected_peers.is_empty() && pending_sync.is_none() {
+                    sync_peer_cursor %= connected_peers.len();
+                    let peer = connected_peers[sync_peer_cursor];
+                    sync_peer_cursor = (sync_peer_cursor + 1) % connected_peers.len();
                     let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
                     pending_sync = Some((peer, sync_outbound_id, sync_id, state.height.saturating_add(1)));
                 }
@@ -344,13 +348,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                         println!("peer_connected={peer_id}");
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
-                        if !connected_peers.contains(&peer_id) { connected_peers.push(peer_id); }
+                        if !connected_peers.contains(&peer_id) {
+                            connected_peers.push(peer_id);
+                        }
+                        if !connected_peers.is_empty() {
+                            sync_peer_cursor %= connected_peers.len();
+                        }
                         let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer_id, validator_id, state.height);
                         pending_sync = Some((peer_id, sync_outbound_id, sync_id, state.height.saturating_add(1)));
                         let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
                         pending_snapshot = Some((peer_id, snapshot_outbound_id, snapshot_request_id, u64::MAX));
                     }
-                    SwarmEvent::ConnectionClosed { peer_id, .. } => { connected_peers.retain(|p| *p != peer_id); println!("peer_disconnected={peer_id}"); },
+                    SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                        connected_peers.retain(|p| *p != peer_id);
+                        if !connected_peers.is_empty() {
+                            sync_peer_cursor %= connected_peers.len();
+                        } else {
+                            sync_peer_cursor = 0;
+                        }
+                        if pending_sync.map(|(pending_peer, ..)| pending_peer == peer_id).unwrap_or(false) {
+                            pending_sync = None;
+                        }
+                        if pending_snapshot.map(|(pending_peer, ..)| pending_peer == peer_id).unwrap_or(false) {
+                            pending_snapshot = None;
+                        }
+                        println!("peer_disconnected={peer_id}");
+                    },
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
                         for addr in info.listen_addrs {
                             let _ = swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
