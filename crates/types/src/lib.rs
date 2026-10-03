@@ -2599,29 +2599,31 @@ fn ethereum_compact_path(bytes:&[u8])->Result<(bool,Vec<u8>),String>{
 
 fn ethereum_mpt_verify(root:Hash,key_nibbles:&[u8],nodes:&[Vec<u8>],expected_value:&[u8])->Result<(),String>{
     if nodes.is_empty(){return Err("empty MPT proof".into());}
-    let mut expected_ref=root;let mut depth=0usize;
+    let mut expected_hash=Some(root);let mut expected_raw:Option<Vec<u8>>=None;let mut depth=0usize;
     for raw in nodes {
-        if ethereum_keccak256(raw)!=expected_ref {
-            return Err("MPT node hash mismatch".into());
-        }
+        if let Some(h)=expected_hash.take(){if ethereum_keccak256(raw)!=h{return Err("MPT node hash mismatch".into());}}
+        else if expected_raw.as_deref()!=Some(raw.as_slice()){return Err("MPT embedded node mismatch".into());}
         let items=ethereum_rlp_decode_list(raw)?;
         match items.len() {
             17=>{
                 if depth>key_nibbles.len(){return Err("MPT depth overflow".into());}
                 if depth==key_nibbles.len(){if items[16]!=expected_value{return Err("MPT value mismatch".into());}return Ok(());}
                 let idx=key_nibbles[depth] as usize;
-                if idx>15{return Err("invalid nibble".into());}
                 if items[idx].is_empty(){return Err("missing MPT child".into());}
-                expected_ref=if items[idx].len()==32{items[idx].try_into().unwrap()}else{ethereum_keccak256(ethereum_rlp_encode_bytes(items[idx]))};
+                let child=items[idx];
+                if child.len()==32{let mut h=[0u8;32];h.copy_from_slice(child);expected_hash=Some(h);expected_raw=None;}
+                else {expected_hash=None;expected_raw=Some(child.to_vec());}
                 depth+=1;
             },
             2=>{
                 let (leaf,path)=ethereum_compact_path(items[0])?;
-                if key_nibbles.len()<depth+path.len() || key_nibbles[depth..depth+path.len()]!=path[..]{return Err("MPT path mismatch".into());}
+                if key_nibbles.len()<depth+path.len()||key_nibbles[depth..depth+path.len()]!=path[..]{return Err("MPT path mismatch".into());}
                 depth+=path.len();
                 if leaf {if depth!=key_nibbles.len()||items[1]!=expected_value{return Err("MPT leaf mismatch".into());}return Ok(());}
-                if depth>=key_nibbles.len(){return Err("MPT extension overflow".into());}
-                expected_ref=if items[1].len()==32{items[1].try_into().unwrap()}else{ethereum_keccak256(ethereum_rlp_encode_bytes(items[1]))};
+                if items[1].is_empty(){return Err("empty extension child".into());}
+                let child=items[1];
+                if child.len()==32{let mut h=[0u8;32];h.copy_from_slice(child);expected_hash=Some(h);expected_raw=None;}
+                else {expected_hash=None;expected_raw=Some(child.to_vec());}
             },
             _=>return Err("invalid MPT node arity".into()),
         }
