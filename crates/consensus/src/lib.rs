@@ -245,7 +245,6 @@ pub fn validate_precommit_quorum(
     round: u64,
     precommits: &[freedom_types::ValidatorPrecommit],
 ) -> Result<(), String> {
-    let threshold = quorum_threshold(state.validators.len());
     let mut seen = std::collections::BTreeSet::new();
     for precommit in precommits {
         validate_precommit(state, precommit, block_hash, height, round)?;
@@ -253,8 +252,8 @@ pub fn validate_precommit_quorum(
             return Err("duplicate validator precommit".into());
         }
     }
-    if seen.len() < threshold {
-        return Err(format!("precommit quorum not reached: {}/{}", seen.len(), threshold));
+    if !stake_quorum_reached(state, &seen) {
+        return Err("precommit stake quorum not reached".into());
     }
     Ok(())
 }
@@ -301,6 +300,24 @@ pub fn validate_finality_certificate(
     validate_precommit_quorum(state, cert.block_hash, cert.height, cert.round, &cert.precommits)
 }
 
+
+pub fn validate_finality_certificate_for_block(
+    state: &ChainState,
+    block: &freedom_types::Block,
+    cert: &freedom_types::FinalityCertificate,
+) -> Result<(), String> {
+    let expected_hash = block_hash(block);
+    if cert.block_hash != expected_hash {
+        return Err("finality certificate block hash mismatch".into());
+    }
+    if cert.height != block.header.height {
+        return Err("finality certificate height mismatch".into());
+    }
+    if cert.round != block.header.round {
+        return Err("finality certificate round mismatch".into());
+    }
+    validate_finality_certificate(state, cert)
+}
 
 pub fn validate_timeout_certificate(
     state: &ChainState,
