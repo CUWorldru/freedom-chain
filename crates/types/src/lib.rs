@@ -1260,20 +1260,15 @@ impl TronUsdtDepositProof {
         &self,
         required_confirmations: u64,
         expected_usdt_contract: &[u8],
-        asset_id: Hash,
+        canonical_asset_id: Hash,
+        representation_asset_id: Hash,
     ) -> Result<CrossChainAssetProof, BridgeAdapterError> {
         let deposit = self.to_bridge_deposit(required_confirmations, expected_usdt_contract)?;
         let recipient = self.recipient().map_err(|_| BridgeAdapterError::InvalidProof)?.to_vec();
         CrossChainAssetProof::from_bridge_deposit(
             deposit,
-            asset_id,
-            AssetDefinition::compute_asset_id(
-                self.chain_id,
-                AssetType::Bridged,
-                expected_usdt_contract,
-                [0; 32],
-                self.bridge_id,
-            ),
+            canonical_asset_id,
+            representation_asset_id,
             CrossChainAssetKind::Trc20,
             self.amount_checked()?,
             recipient,
