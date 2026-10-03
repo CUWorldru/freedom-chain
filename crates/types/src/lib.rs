@@ -350,6 +350,38 @@ impl BridgeSecurityPolicy {
 pub struct BridgeRateLimitUsage { pub period:u64, pub used:u128 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgePauseAuthorization {
+    pub bridge_id: Hash,
+    pub paused: bool,
+    pub nonce: u64,
+    pub validator_id: Hash,
+    pub signature: Vec<u8>,
+}
+impl BridgePauseAuthorization {
+    pub fn signing_bytes(&self)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BRIDGE-PAUSE-V1");o.extend_from_slice(&self.bridge_id);o.push(self.paused as u8);o.extend_from_slice(&self.nonce.to_le_bytes());o.extend_from_slice(&self.validator_id);o}
+    pub fn authorization_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+    pub fn structurally_valid(&self)->bool{self.bridge_id!=[0;32]&&self.validator_id!=[0;32]&&self.signature.len()==64}
+    pub fn validator_identity_matches(&self,key:&[u8;32])->bool{freedom_primitives::hash_bytes(key)==self.validator_id}
+    pub fn verify_authenticated(&self,key:&[u8;32])->bool{
+        if !self.structurally_valid()||!self.validator_identity_matches(key){return false}
+        let mut sig=[0u8;64];sig.copy_from_slice(&self.signature);
+        freedom_crypto::verify(key,&self.authorization_hash(),&sig)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgePauseAuthorizationSet {
+    pub bridge_id: Hash,
+    pub nonce: u64,
+    pub authorizations: Vec<BridgePauseAuthorization>,
+}
+impl BridgePauseAuthorizationSet {
+    pub fn authenticated_count(&self,keys:&BTreeMap<Hash,[u8;32]>)->u16{
+        self.authorizations.iter().filter_map(|a|keys.get(&a.validator_id).map(|k|(a,k))).filter(|(a,k)|a.bridge_id==self.bridge_id&&a.nonce==self.nonce&&a.verify_authenticated(k)).map(|(a,_)|a.validator_id).collect::<BTreeSet<Hash>>().len() as u16
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeApproval {
     pub bridge_id: Hash,
     pub request_id: Hash,
