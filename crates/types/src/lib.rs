@@ -2137,6 +2137,75 @@ impl BitcoinUtxoAccumulatorTransition {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoTransitionWitness {
+    pub tx_hash: Hash,
+    pub vout: u32,
+    pub amount_sat: u64,
+    pub script_pubkey: Vec<u8>,
+    pub leaf_index: u64,
+    pub siblings: Vec<Hash>,
+}
+
+impl BitcoinUtxoTransitionWitness {
+    pub fn leaf_hash(&self) -> Hash {
+        BitcoinUtxoAccumulator::leaf_hash(
+            &self.tx_hash, self.vout, self.amount_sat, &self.script_pubkey
+        )
+    }
+
+    pub fn verify(&self, root: Hash, leaf_count: u64) -> bool {
+        if leaf_count == 0 || self.leaf_index >= leaf_count || self.siblings.len() > 64 {
+            return false;
+        }
+        let mut current=self.leaf_hash();
+        let mut index=self.leaf_index;
+        for sibling in &self.siblings {
+            current=if index & 1 == 0 {
+                BitcoinUtxoAccumulator::merkle_parent(&current,sibling)
+            } else {
+                BitcoinUtxoAccumulator::merkle_parent(sibling,&current)
+            };
+            index >>= 1;
+        }
+        current==root && index==0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoCompactTransitionProof {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub previous_root: Hash,
+    pub previous_leaf_count: u64,
+    pub spent_witnesses: Vec<BitcoinUtxoTransitionWitness>,
+    pub created_entries: Vec<BitcoinUtxoStateEntry>,
+    pub next_root: Hash,
+    pub next_leaf_count: u64,
+}
+
+impl BitcoinUtxoCompactTransitionProof {
+    pub fn verify_spent_membership(&self) -> bool {
+        let mut seen=std::collections::BTreeSet::new();
+        for w in &self.spent_witnesses {
+            if !seen.insert((w.tx_hash,w.vout)) || !w.verify(self.previous_root,self.previous_leaf_count) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn validate_metadata(&self) -> bool {
+        self.bridge_id != [0;32]
+            && self.chain_id != 0
+            && self.previous_root != [0;32]
+            && self.next_root != [0;32]
+            && self.previous_leaf_count > 0
+            && self.next_leaf_count > 0
+            && !self.created_entries.is_empty()
+    }
+}
+
 pub struct BitcoinUtxoCommitmentAttestation {
     pub bridge_id: Hash,
     pub chain_id: u32,
