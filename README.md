@@ -845,3 +845,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - bridge withdrawals, lifecycle status, and accounting are included in the deterministic state root and survive serde-defaulted state migration;
 - M81 is the protocol accounting/state-machine foundation only: it does not yet broadcast real Bitcoin/EVM/TRON/TON/Solana transactions or hold private bridge signing keys;
 - network-specific adapters will be implemented separately, with Bitcoin using a UTXO model and EVM/TRON/TON/Solana using their respective transaction/finality models.
+
+
+## M82 — Universal Bridge Adapter Layer
+
+- added a chain-agnostic `BridgeAdapter` interface separating bridge protocol state from external-network mechanics;
+- added dedicated adapters for Bitcoin, EVM-compatible networks including Ethereum, TRON, TON, and Solana;
+- Bitcoin uses confirmation-based finality, EVM/TRON/TON use block-finality semantics, and Solana uses slot-finality semantics;
+- deposit verification binds bridge ID, source chain ID, transaction hash, proof bytes, and required finality depth before a deposit can be trusted by the bridge layer;
+- withdrawal intents use a canonical domain-separated hash and opaque recipient bytes, so network-specific address formats do not leak into consensus assumptions;
+- adapters are deliberately limited to verification and intent construction at this milestone: no RPC clients, private keys, external transaction broadcasting, or automatic minting are embedded in validator processes;
+- the architecture is extensible through additional adapter kinds without changing the bidirectional accounting state machine.
