@@ -856,3 +856,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - withdrawal intents use a canonical domain-separated hash and opaque recipient bytes, so network-specific address formats do not leak into consensus assumptions;
 - adapters are deliberately limited to verification and intent construction at this milestone: no RPC clients, private keys, external transaction broadcasting, or automatic minting are embedded in validator processes;
 - the architecture is extensible through additional adapter kinds without changing the bidirectional accounting state machine.
+
+
+## M83 — Bitcoin UTXO Adapter
+
+- added a Bitcoin-specific UTXO deposit model with transaction hash, vout, satoshi amount, block height, confirmation depth, Merkle branch/index, and scriptPubKey;
+- Bitcoin deposit identity uses `tx_hash + vout`, matching the UTXO/output model and feeding the existing bridge replay identity through the event index;
+- deposits require the configured bridge ID, Bitcoin chain ID, non-zero amount, scriptPubKey, Merkle proof, and required confirmation depth;
+- Bitcoin withdrawals use an opaque recipient script/bytes representation and produce a canonical Freedom withdrawal intent without embedding private keys or transaction signing in consensus;
+- the adapter is currently a verification/intent layer: it does not yet connect to Bitcoin RPC, select UTXOs, construct signed transactions, broadcast transactions, or verify a live Merkle proof cryptographically;
+- the same bridge protocol remains reusable for EVM, TRON, TON, Solana, and future adapters.
