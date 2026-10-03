@@ -276,6 +276,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 eprintln!("SNAPSHOT_REJECTED chain id mismatch");
                                                 continue;
                                             }
+                                            if response.height == 0 {
+                                                eprintln!("SNAPSHOT_REJECTED genesis is not a remote finalized checkpoint");
+                                                continue;
+                                            }
+
                                             if response.block_hash != freedom_consensus::block_hash(&response.checkpoint)
                                                 || response.checkpoint.header.height != response.height
                                                 || response.checkpoint.header.state_root != response.state_root
