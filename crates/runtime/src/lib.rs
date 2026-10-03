@@ -177,8 +177,8 @@ pub fn verify_external_bridge_deposit(
         freedom_types::ExternalBridgeDepositProof::EvmTransfer(p) =>
             p.to_cross_chain_asset_proof(
                 policy.min_external_confirmations,
-                resolved.canonical_asset_id,
-                resolved.representation_asset_id,
+                resolved.canonical_asset_id(),
+                resolved.representation_asset_id(),
             ).map_err(|e| format!("EvmDeposit:{e:?}"))?,
         freedom_types::ExternalBridgeDepositProof::TronUsdt(p) =>
             p.to_cross_chain_asset_proof(
@@ -197,7 +197,7 @@ pub fn verify_external_bridge_deposit(
     let representation = registry
         .representations
         .iter()
-         .find(|r| r.representation.asset_id == resolved.representation_asset_id())
+        .find(|r| r.representation.asset_id == resolved.representation_asset_id())
         .ok_or_else(|| "ExternalAssetRepresentationNotRegistered".to_string())?;
     if !representation.matches_proof(&proof) {
         return Err("BridgeCanonicalRepresentationMismatch".into());
