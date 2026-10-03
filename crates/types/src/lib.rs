@@ -2855,7 +2855,7 @@ impl EthereumEndToEndProof {
         if !self.finality.verify_chain_anchor(self.envelope.finalized_hash,self.finality.state_root){return false;}
         if !self.committee.verify(){return false;}
         if !self.signature.verify(){return false;}
-        if self.signature.signing_root!=self.finality.finalized_block_hash{return false;}
+        if self.signature.signing_root!=self.finality.proof_hash(){return false;}
         if !self.receipt.verify_receipt_mpt(){return false;}
         if !self.receipt.verify_binding(&self.envelope){return false;}
         if self.receipt.block_hash!=self.finality.finalized_block_hash
