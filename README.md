@@ -615,3 +615,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - disconnecting a pending sync/snapshot peer clears that stale request anchor;
 - peer rotation remains fail-closed because every response is still bound to its exact peer and transport request ID;
 - regression coverage verifies deterministic peer rotation and empty-peer handling.
+
+
+## M58 — Multi-Peer Sync Verification
+
+- periodic sync requests are sent to up to two connected peers for the same starting height;
+- returned block batches are fingerprinted and compared before state/persistence changes;
+- when two peers are available, a batch is accepted only after two matching responses;
+- when only one peer is available, the node retains a single-peer bootstrap path;
+- disconnects clear outstanding candidates tied to the lost sync round;
+- the old unauthenticated gossipsub sync request/response path is no longer accepted; synchronization uses the authenticated request-response transport with M56 peer/request binding.
