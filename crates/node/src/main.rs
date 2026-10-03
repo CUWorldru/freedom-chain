@@ -25,14 +25,14 @@ fn send_snapshot_request(
     peer: libp2p::PeerId,
     validator_id: Hash,
     height: u64,
-) -> Hash {
+) -> (Hash, libp2p::request_response::OutboundRequestId) {
     let request_id = hash_bytes(&[b"FREEDOM-SNAPSHOT-V1", &validator_id, &height.to_le_bytes()].concat());
-    swarm.behaviour_mut().sync.send_request(
+    let outbound_id = swarm.behaviour_mut().sync.send_request(
         &peer,
         SyncWireRequest::Snapshot(freedom_network::SnapshotSyncRequest { request_id, height }),
     );
-    println!("snapshot_request peer={} height={} request_id={}", peer, height, hex::encode(request_id));
-    request_id
+    println!("snapshot_request peer={} height={} request_id={} outbound_id={:?}", peer, height, hex::encode(request_id), outbound_id);
+    (request_id, outbound_id)
 }
 
 fn build_local_proposal(
@@ -57,16 +57,16 @@ fn send_sync_request(
     peer: libp2p::PeerId,
     validator_id: Hash,
     height: u64,
-) -> Hash {
+) -> (Hash, libp2p::request_response::OutboundRequestId) {
     let from = height.saturating_add(1);
     let id = request_id(validator_id, from);
-    swarm.behaviour_mut().sync.send_request(&peer, SyncWireRequest::Blocks(freedom_network::SyncRequest {
+    let outbound_id = swarm.behaviour_mut().sync.send_request(&peer, SyncWireRequest::Blocks(freedom_network::SyncRequest {
         request_id: id,
         from_height: from,
         to_height: from.saturating_add(freedom_network::MAX_SYNC_BLOCKS.saturating_sub(1)),
     }));
-    println!("sync_request peer={} from={} request_id={}", peer, from, hex::encode(id));
-    id
+    println!("sync_request peer={} from={} request_id={} outbound_id={:?}", peer, from, hex::encode(id), outbound_id);
+    (id, outbound_id)
 }
 
 #[tokio::main]
@@ -302,9 +302,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut timeout_round_sent = None::<u64>;
     let mut timer = interval(Duration::from_secs(ROUND_TIMEOUT_SECS));
     let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
-    let mut pending_sync = None::<Hash>;
-    let mut pending_sync_from = None::<u64>;
-    let mut pending_snapshot = None::<(Hash, u64)>;
+    let mut pending_sync = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
+    let mut pending_snapshot = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut valset_votes: BTreeMap<Hash, freedom_types::ValidatorSetVote> = BTreeMap::new();
     let mut valset_certificate_broadcasted: Option<Hash> = None;
@@ -335,8 +334,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ = sync_timer.tick() => {
                 if let Some(peer) = connected_peers.first().copied() {
-                    pending_sync = Some(send_sync_request(&mut swarm, peer, validator_id, state.height));
-                    pending_sync_from = Some(state.height.saturating_add(1));
+                    let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
+                    pending_sync = Some((peer, sync_outbound_id, sync_id, state.height.saturating_add(1)));
                 }
             }
             event = swarm.select_next_some() => {
@@ -346,10 +345,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("peer_connected={peer_id}");
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
                         if !connected_peers.contains(&peer_id) { connected_peers.push(peer_id); }
-                        pending_sync = Some(send_sync_request(&mut swarm, peer_id, validator_id, state.height));
-                        pending_sync_from = Some(state.height.saturating_add(1));
-                        let snapshot_request_id = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
-                        pending_snapshot = Some((snapshot_request_id, u64::MAX));
+                        let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer_id, validator_id, state.height);
+                        pending_sync = Some((peer_id, sync_outbound_id, sync_id, state.height.saturating_add(1)));
+                        let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
+                        pending_snapshot = Some((peer_id, snapshot_outbound_id, snapshot_request_id, u64::MAX));
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => { connected_peers.retain(|p| *p != peer_id); println!("peer_disconnected={peer_id}"); },
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
@@ -359,7 +358,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
                     }
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Sync(event)) => {
-                        if let libp2p::request_response::Event::Message { message, .. } = event {
+                        if let libp2p::request_response::Event::Message { peer, message } = event {
                             match message {
                                 libp2p::request_response::Message::Request { request, channel, .. } => {
                                     match request {
@@ -397,7 +396,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     }
                                 }
-                                libp2p::request_response::Message::Response { response, .. } => {
+                                libp2p::request_response::Message::Response { request_id: outbound_id, response } => {
                                     match response {
                                         SyncWireResponse::Blocks(response) => {
                                             if pending_sync != Some(response.request_id)
