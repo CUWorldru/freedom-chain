@@ -1436,6 +1436,57 @@ pub struct BitcoinUtxoProof {
     pub raw_transaction: Vec<u8>,
 }
 impl BitcoinUtxoProof {
+    pub fn validate(&self, required_confirmations: u64) -> bool {
+        self.bridge_id != [0; 32]
+            && self.chain_id != 0
+            && self.tx_hash != [0; 32]
+            && self.vout < u32::MAX
+            && self.amount_sat > 0
+            && self.block_height > 0
+            && self.confirmations >= required_confirmations
+            && !self.merkle_branch.is_empty()
+            && self.validate_transaction_binding()
+            && self.validate_output_binding()
+            && self.merkle_index < (1u32 << self.merkle_branch.len().min(31))
+    }
+
+    pub fn to_cross_chain_asset_proof(
+        &self,
+        required_confirmations: u64,
+        canonical_asset_id: Hash,
+        representation_asset_id: Hash,
+        recipient: Vec<u8>,
+    ) -> Result<CrossChainAssetProof, BridgeAdapterError> {
+        if !self.validate(required_confirmations) {
+            return if self.confirmations < required_confirmations {
+                Err(BridgeAdapterError::InsufficientFinality)
+            } else {
+                Err(BridgeAdapterError::InvalidProof)
+            };
+        }
+        if recipient.is_empty() {
+            return Err(BridgeAdapterError::InvalidIntent);
+        }
+        let deposit = BridgeDepositProof {
+            bridge_id: self.bridge_id,
+            source_chain_id: self.chain_id,
+            tx_hash: self.tx_hash,
+            event_index: self.event_index(),
+            block_or_slot: self.block_height,
+            confirmations: self.confirmations,
+            proof: self.proof_bytes(),
+        };
+        CrossChainAssetProof::from_bridge_deposit(
+            deposit,
+            canonical_asset_id,
+            representation_asset_id,
+            CrossChainAssetKind::BitcoinUtxo,
+            self.amount_sat as u128,
+            recipient,
+        )
+    }
+
+impl BitcoinUtxoProof {
     pub fn computed_tx_hash(&self)->Option<Hash>{if self.raw_transaction.is_empty(){return None;}Some(bitcoin_sha256d(&self.raw_transaction))}
     pub fn validate_transaction_binding(&self)->bool{self.computed_tx_hash()==Some(self.tx_hash)}
     pub fn validate_output_binding(&self)->bool{
@@ -1755,6 +1806,53 @@ pub struct EvmTransferProof {
     pub event_signature: Hash,
     pub proof: Vec<u8>,
 }
+impl EvmTransferProof {
+    pub fn validate(&self, required_confirmations: u64) -> bool {
+        self.bridge_id != [0; 32]
+            && self.chain_id != 0
+            && self.tx_hash != [0; 32]
+            && self.block_number > 0
+            && self.confirmations >= required_confirmations
+            && self.token_contract.len() == 20
+            && self.from.len() == 20
+            && self.to.len() == 20
+            && self.amount > 0
+            && self.event_signature != [0; 32]
+            && !self.proof.is_empty()
+    }
+
+    pub fn to_cross_chain_asset_proof(
+        &self,
+        required_confirmations: u64,
+        canonical_asset_id: Hash,
+        representation_asset_id: Hash,
+    ) -> Result<CrossChainAssetProof, BridgeAdapterError> {
+        if !self.validate(required_confirmations) {
+            return if self.confirmations < required_confirmations {
+                Err(BridgeAdapterError::InsufficientFinality)
+            } else {
+                Err(BridgeAdapterError::InvalidProof)
+            };
+        }
+        let deposit = BridgeDepositProof {
+            bridge_id: self.bridge_id,
+            source_chain_id: self.chain_id,
+            tx_hash: self.tx_hash,
+            event_index: self.event_index(),
+            block_or_slot: self.block_number,
+            confirmations: self.confirmations,
+            proof: self.proof_bytes(),
+        };
+        CrossChainAssetProof::from_bridge_deposit(
+            deposit,
+            canonical_asset_id,
+            representation_asset_id,
+            CrossChainAssetKind::Erc20,
+            self.amount,
+            self.to.clone(),
+        )
+    }
+
 impl EvmTransferProof {
     pub fn event_index(&self)->u64 { self.log_index as u64 }
     pub fn proof_bytes(&self)->Vec<u8>{
