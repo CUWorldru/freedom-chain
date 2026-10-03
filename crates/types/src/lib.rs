@@ -1108,6 +1108,36 @@ mod m82_adapter_type_tests {
 }
 
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExternalDepositProof {
+    pub bridge_id: Hash,
+    pub source_chain_id: u32,
+    pub tx_hash: Hash,
+    pub event_index: u64,
+    pub block_or_slot: u64,
+    pub confirmations: u64,
+    pub commitment: Hash,
+    pub proof: Vec<u8>,
+}
+impl ExternalDepositProof {
+    pub fn signing_bytes(&self)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-EXTERNAL-DEPOSIT-PROOF-V1");o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.source_chain_id.to_le_bytes());o.extend_from_slice(&self.tx_hash);o.extend_from_slice(&self.event_index.to_le_bytes());o.extend_from_slice(&self.block_or_slot.to_le_bytes());o.extend_from_slice(&self.confirmations.to_le_bytes());o.extend_from_slice(&self.commitment);o.extend_from_slice(&(self.proof.len() as u64).to_le_bytes());o.extend_from_slice(&self.proof);o}
+    pub fn proof_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExternalProofError { InvalidBinding, InvalidCommitment, InvalidProof, InsufficientFinality }
+pub trait ExternalProofVerifier {
+    fn verify(&self, proof:&ExternalDepositProof, descriptor:&BridgeAdapterDescriptor)->Result<(),ExternalProofError>;
+}
+pub struct CommitmentProofVerifier;
+impl ExternalProofVerifier for CommitmentProofVerifier {
+    fn verify(&self,p:&ExternalDepositProof,d:&BridgeAdapterDescriptor)->Result<(),ExternalProofError>{
+        if p.bridge_id!=d.bridge_id||p.source_chain_id!=d.chain_id||p.tx_hash==[0;32]||p.proof.is_empty(){return Err(ExternalProofError::InvalidBinding);}
+        if p.confirmations<d.required_confirmations{return Err(ExternalProofError::InsufficientFinality);}
+        if p.commitment==[0;32]||p.proof_hash()==[0;32]{return Err(ExternalProofError::InvalidCommitment);}
+        Ok(())
+    }
+}
+
 pub mod bridge_adapter {
  use super::*;
  #[derive(Clone,Debug,PartialEq,Eq)] pub enum BridgeAdapterError { InvalidDescriptor,InvalidProof,InsufficientFinality,InvalidIntent }
@@ -1121,6 +1151,13 @@ pub mod bridge_adapter {
  adapter!(SolanaAdapter,BridgeAdapterKind::Solana,BridgeFinalityModel::SlotFinality);
 }
 
+
+#[cfg(test)]
+mod m97_external_proof_tests {
+ use super::*;
+ #[test] fn proof_binds_security_domain(){let p=ExternalDepositProof{bridge_id:[1;32],source_chain_id:2,tx_hash:[3;32],event_index:4,block_or_slot:5,confirmations:6,commitment:[7;32],proof:vec![8]};let mut q=p.clone();q.event_index=9;assert_ne!(p.proof_hash(),q.proof_hash());}
+ #[test] fn verifier_rejects_wrong_bridge_and_finality(){let d=BridgeAdapterDescriptor{bridge_id:[1;32],chain_id:2,kind:BridgeAdapterKind::Evm,finality_model:BridgeFinalityModel::BlockFinality,required_confirmations:6,native_asset:false,enabled:true};let mut p=ExternalDepositProof{bridge_id:[1;32],source_chain_id:2,tx_hash:[3;32],event_index:4,block_or_slot:5,confirmations:5,commitment:[7;32],proof:vec![8]};assert_eq!(CommitmentProofVerifier.verify(&p,&d),Err(ExternalProofError::InsufficientFinality));p.bridge_id=[9;32];p.confirmations=6;assert_eq!(CommitmentProofVerifier.verify(&p,&d),Err(ExternalProofError::InvalidBinding));}
+}
 
 #[cfg(test)]
 mod m82_adapter_tests { use super::*; use super::bridge_adapter::*;
