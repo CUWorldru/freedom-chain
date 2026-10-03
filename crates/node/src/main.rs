@@ -181,10 +181,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         SyncWireRequest::Snapshot(req) => {
-                                            if let Ok(Some(snapshot)) = store.latest_snapshot() {
-                                                if let Ok(state_json) = serde_json::to_vec(&snapshot.state) {
-                                                    let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse { request_id: req.request_id, height: snapshot.height, block_hash: snapshot.block_hash, state_root: snapshot.state_root, state_json });
-                                                    let _ = swarm.behaviour_mut().sync.send_response(channel, response);
+                                            if let Ok(Some(snapshot)) = if req.height == 0 { store.latest_snapshot() } else { store.load_snapshot(req.height) } {
+                                                if let (Some(certificate), Ok(Some(checkpoint))) = (snapshot.certificate.clone(), store.get_block(snapshot.height)) {
+                                                    if let Ok(state_json) = serde_json::to_vec(&snapshot.state) {
+                                                        let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse {
+                                                            request_id: req.request_id,
+                                                            height: snapshot.height,
+                                                            block_hash: snapshot.block_hash,
+                                                            state_root: snapshot.state_root,
+                                                            checkpoint,
+                                                            certificate,
+                                                            state_json,
+                                                        });
+                                                        let _ = swarm.behaviour_mut().sync.send_response(channel, response);
+                                                    }
                                                 }
                                             }
                                         }
@@ -208,7 +218,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             if accepted > 0 { println!("SYNCED blocks={} height={}", accepted, state.height); pending_sync=None; round=0; timeout_round_sent=None; }
                                         }
                                         SyncWireResponse::Snapshot(response) => {
-                                            println!("SNAPSHOT_RECEIVED height={} request_id={} bytes={}", response.height, hex::encode(response.request_id), response.state_json.len());
+                                            if response.height <= state.height { continue; }
+                                            if response.block_hash != freedom_consensus::block_hash(&response.checkpoint)
+                                                || response.checkpoint.header.height != response.height
+                                                || response.checkpoint.header.state_root != response.state_root
+                                                || response.certificate.block_hash != response.block_hash
+                                                || response.certificate.height != response.height
+                                                || response.certificate.round != response.checkpoint.header.round {
+                                                eprintln!("SNAPSHOT_REJECTED checkpoint commitment mismatch at {}", response.height);
+                                                continue;
+                                            }
+                                            if let Err(e) = freedom_consensus::validate_finality_certificate(&state, &response.certificate) {
+                                                eprintln!("SNAPSHOT_REJECTED invalid finality certificate: {e}");
+                                                continue;
+                                            }
+                                            let snapshot_state: freedom_state::ChainState = match serde_json::from_slice(&response.state_json) {
+                                                Ok(s) => s,
+                                                Err(e) => { eprintln!("SNAPSHOT_REJECTED invalid state encoding: {e}"); continue; }
+                                            };
+                                            if snapshot_state.height != response.height
+                                                || snapshot_state.last_block_hash != response.block_hash
+                                                || snapshot_state.state_root() != response.state_root {
+                                                eprintln!("SNAPSHOT_REJECTED state commitment mismatch at {}", response.height);
+                                                continue;
+                                            }
+                                            state = snapshot_state;
+                                            if let Err(e) = store.put_block(&response.checkpoint) {
+                                                eprintln!("snapshot checkpoint persistence error: {e}");
+                                                continue;
+                                            }
+                                            if let Err(e) = store.save_snapshot_with_certificate(&state, response.block_hash, response.certificate.clone()) {
+                                                eprintln!("snapshot persistence error: {e}");
+                                                continue;
+                                            }
+                                            pending_sync = None;
+                                            round = 0;
+                                            timeout_round_sent = None;
+                                            protocol.reset_round();
+                                            blocks.clear();
+                                            println!("SNAPSHOT_ACTIVATED height={} hash={} bytes={}", response.height, hex::encode(response.block_hash), response.state_json.len());
                                         }
                                     }
                                 }
@@ -291,7 +339,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let committed = protocol.finalize_if_quorum(&mut state, &block, round)?;
                                             store.put_block(&committed)?;
                                             if committed.header.height % snapshot_interval == 0 {
-                                                store.save_snapshot(&state, block_hash(&committed))?;
+                                                let certificate = freedom_types::FinalityCertificate {
+                                                    block_hash: freedom_consensus::block_hash(&committed),
+                                                    height: committed.header.height,
+                                                    round,
+                                                    votes: protocol.votes.values().cloned().collect(),
+                                                };
+                                                store.save_snapshot_with_certificate(&state, freedom_consensus::block_hash(&committed), certificate)?;
                                             }
                                             println!("FINALIZED height={} round={} hash={}", committed.header.height, round, hex::encode(block_hash(&committed)));
                                             protocol.reset_round();
@@ -301,7 +355,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let next_height = state.height + 1;
                                             if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                                 let mempool = Mempool::new();
-                                                let next_block = build_next_block(&state, &mempool, owner, 1, round, 100)?;
+                                                let next_block = build_next_block(&state, &mempool, owner, 1, 0, round, 100)?;
                                                 let next_proposal = make_proposal(next_block.clone(), round, &consensus_key);
                                                 blocks.insert(next_proposal.block_hash, next_block);
                                                 println!("proposing height={} round={} hash={}", next_height, round, hex::encode(next_proposal.block_hash));
@@ -320,7 +374,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         println!("VIEW_CHANGE height={} new_round={}", state.height + 1, round);
                                         if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
                                             let mempool = Mempool::new();
-                                            let block = build_next_block(&state, &mempool, owner, 1, round, 100)?;
+                                            let block = build_next_block(&state, &mempool, owner, 1, 0, round, 100)?;
                                             let proposal = make_proposal(block.clone(), round, &consensus_key);
                                             blocks.insert(proposal.block_hash, block);
                                             println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
