@@ -374,6 +374,22 @@ impl BridgeApproval {
     }
 }
 
+
+impl BridgeApproval {
+    pub fn signing_message(&self)->Hash { self.approval_hash() }
+    pub fn verify_signature(&self, public_key:&[u8;32])->bool {
+        if self.signature.len()!=64 || !self.structurally_valid() { return false; }
+        let mut sig=[0u8;64]; sig.copy_from_slice(&self.signature);
+        freedom_crypto::verify(public_key, &self.signing_message(), &sig)
+    }
+    pub fn validator_identity_matches(&self, public_key:&[u8;32])->bool {
+        freedom_primitives::hash_bytes(public_key)==self.validator_id
+    }
+    pub fn verify_authenticated(&self, public_key:&[u8;32])->bool {
+        self.validator_identity_matches(public_key) && self.verify_signature(public_key)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeApprovalSet {
     pub request_id: Hash,
@@ -381,6 +397,20 @@ pub struct BridgeApprovalSet {
     pub threshold_signatures: u16,
 }
 impl BridgeApprovalSet {
+    pub fn authenticated_approvals(&self, bridge_id:Hash, withdrawal_id:Hash, intent_hash:Hash, validator_keys:&std::collections::BTreeMap<Hash,[u8;32]>)->u16{
+        let mut ids=std::collections::BTreeSet::new();
+        for a in &self.approvals {
+            if a.bridge_id==bridge_id&&a.withdrawal_id==withdrawal_id&&a.request_id==self.request_id&&a.intent_hash==intent_hash&&a.structurally_valid(){
+                if let Some(key)=validator_keys.get(&a.validator_id) {
+                    if a.verify_authenticated(key) { ids.insert(a.validator_id); }
+                }
+            }
+        }
+        ids.len() as u16
+    }
+    pub fn quorum_reached_authenticated(&self,policy:&BridgeSecurityPolicy,bridge_id:Hash,withdrawal_id:Hash,intent_hash:Hash,validator_keys:&std::collections::BTreeMap<Hash,[u8;32]>)->bool{
+        policy.quorum_reached(self.authenticated_approvals(bridge_id,withdrawal_id,intent_hash,validator_keys))
+    }
     pub fn unique_valid_approvals(&self, bridge_id:Hash, withdrawal_id:Hash, intent_hash:Hash)->u16{
         let mut ids=std::collections::BTreeSet::new();
         for a in &self.approvals {
@@ -1096,4 +1126,19 @@ mod m87_solana_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn spl_transfer_requires_slot_finality(){let a=SolanaAdapter::new(d()).unwrap();assert_eq!(a.verify_spl_transfer(&p(31)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_spl_transfer(&p(32)).is_ok());}
  #[test] fn instruction_index_is_replay_identity(){assert_eq!(p(32).replay_event_index(),6);}
  #[test] fn spl_withdrawal_requires_32_byte_recipient(){let a=SolanaAdapter::new(d()).unwrap();assert!(a.build_spl_withdrawal_intent([1;32],[2;32],10,vec![3;32],1).is_ok());assert_eq!(a.build_spl_withdrawal_intent([1;32],[2;32],10,vec![3;31],1),Err(BridgeAdapterError::InvalidIntent));}
+}
+
+#[cfg(test)]
+mod m90_bridge_signature_tests {
+ use super::*;
+ use ed25519_dalek::{Signer,SigningKey};
+ use std::collections::BTreeMap;
+ fn approval(key:&SigningKey)->BridgeApproval{
+  let public=key.verifying_key().to_bytes();
+  let mut a=BridgeApproval{bridge_id:[1;32],request_id:[2;32],withdrawal_id:[3;32],validator_id:freedom_primitives::hash_bytes(&public),nonce:4,amount:100,destination_chain_id:1,asset_id:[5;32],intent_hash:[6;32],signature:Vec::new()};
+  a.signature=key.sign(&a.signing_message()).to_bytes().to_vec(); a
+ }
+ #[test] fn authenticated_approval_requires_matching_validator_identity(){let k=SigningKey::from_bytes(&[7;32]);let a=approval(&k);assert!(a.verify_authenticated(&k.verifying_key().to_bytes()));let other=SigningKey::from_bytes(&[8;32]);assert!(!a.verify_authenticated(&other.verifying_key().to_bytes()));}
+ #[test] fn tampered_approval_signature_fails(){let k=SigningKey::from_bytes(&[7;32]);let mut a=approval(&k);a.amount+=1;assert!(!a.verify_authenticated(&k.verifying_key().to_bytes()));}
+ #[test] fn quorum_counts_only_authenticated_signers(){let k1=SigningKey::from_bytes(&[1;32]);let k2=SigningKey::from_bytes(&[2;32]);let k3=SigningKey::from_bytes(&[3;32]);let a1=approval(&k1);let a2=approval(&k2);let mut bad=approval(&k3);bad.signature[0]^=1;let mut keys=BTreeMap::new();for k in [&k1,&k2,&k3]{let p=k.verifying_key().to_bytes();keys.insert(freedom_primitives::hash_bytes(&p),p);}let set=BridgeApprovalSet{request_id:[2;32],approvals:vec![a1,a2,bad],threshold_signatures:0};assert_eq!(set.authenticated_approvals([1;32],[3;32],[6;32],&keys),2);}
 }
