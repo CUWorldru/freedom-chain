@@ -103,6 +103,7 @@ pub fn build_next_block(
     Ok(Block {
         header: freedom_types::BlockHeader {
             height,
+            round: epoch,
             previous_hash: state.last_block_hash,
             state_root,
             tx_root,

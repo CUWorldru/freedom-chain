@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BlockHeader {
-    pub height: u64, pub previous_hash: Hash, pub state_root: Hash, pub tx_root: Hash,
+    pub height: u64, pub round: u64, pub previous_hash: Hash, pub state_root: Hash, pub tx_root: Hash,
     pub receipts_root: Hash, pub timestamp: u64, pub epoch: u64, pub proposer: Address,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

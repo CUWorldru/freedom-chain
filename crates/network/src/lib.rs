@@ -219,7 +219,7 @@ mod tests {
     fn network_messages_round_trip() {
         let block = freedom_types::Block {
             header: freedom_types::BlockHeader {
-                height: 7, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                height: 7, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
                 receipts_root: [3;32], timestamp: 7, epoch: 7, proposer: [3;32],
             },
             transactions: vec![],
