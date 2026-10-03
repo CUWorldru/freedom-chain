@@ -580,3 +580,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - snapshot responses now have their checkpoint block hash verified at the network boundary;
 - snapshot certificate round must match the checkpoint round before the payload reaches node activation logic;
 - the node retains its deeper certificate, validator-set, epoch-transition, state-root and atomic-persistence checks as a second validation layer.
+
+
+## M54 — Snapshot Trust Anchor
+
+- remote snapshot responses are accepted only when they match an explicitly tracked pending snapshot request ID and target height;
+- unsolicited, stale, or replayed snapshot responses are rejected before any certificate or state processing;
+- successful snapshot activation clears the pending snapshot request together with normal sync state;
+- the node does not treat a cryptographically valid but unsolicited snapshot as a new trust anchor.
