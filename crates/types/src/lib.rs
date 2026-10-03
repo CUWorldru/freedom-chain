@@ -1862,3 +1862,64 @@ impl BitcoinUtxoSpendStateProof {
         self.verify_against_canonical_tip(canonical_tip).is_ok()
     }
 }
+
+
+#[cfg(test)]
+mod m120_bitcoin_utxo_tests {
+    use super::*;
+
+    fn tx_raw(prev: Hash, prev_vout: u32) -> Vec<u8> {
+        let mut o=Vec::new();
+        o.extend_from_slice(&1i32.to_le_bytes());
+        o.push(1);
+        o.extend_from_slice(&prev);
+        o.extend_from_slice(&prev_vout.to_le_bytes());
+        o.push(0);
+        o.extend_from_slice(&0xffff_ffffu32.to_le_bytes());
+        o.push(1);
+        o.extend_from_slice(&1u64.to_le_bytes());
+        o.push(1);
+        o.push(0x51);
+        o.extend_from_slice(&0u32.to_le_bytes());
+        o
+    }
+
+    #[test]
+    fn m120_detects_spend_of_target_outpoint() {
+        let target=[7u8;32];
+        let block=BitcoinSpendScanBlock {
+            height: 2,
+            header: BitcoinBlockHeader {
+                version: 1,
+                prev_block_hash: [0;32],
+                merkle_root: [0;32],
+                time: 0,
+                bits: 0,
+                nonce: 0,
+            },
+            raw_transactions: vec![tx_raw(target, 3)],
+        };
+        assert!(block.spends_outpoint(target,3).unwrap());
+        assert!(!block.spends_outpoint(target,4).unwrap());
+    }
+
+    #[test]
+    fn m120_merkle_root_matches_single_transaction() {
+        let target=[9u8;32];
+        let raw=tx_raw(target,0);
+        let tx=BitcoinTransaction::parse(&raw).unwrap();
+        let block=BitcoinSpendScanBlock {
+            height: 2,
+            header: BitcoinBlockHeader {
+                version: 1,
+                prev_block_hash: [0;32],
+                merkle_root: tx.txid,
+                time: 0,
+                bits: 0,
+                nonce: 0,
+            },
+            raw_transactions: vec![raw],
+        };
+        assert_eq!(block.merkle_root_from_transactions().unwrap(), tx.txid);
+    }
+}
