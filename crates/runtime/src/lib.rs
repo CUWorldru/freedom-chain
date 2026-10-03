@@ -112,7 +112,7 @@ pub fn build_next_block(
             proposer,
         },
         transactions,
-        receipts: Vec::new(),
+        receipts,
     })
 }
 
