@@ -244,18 +244,21 @@ pub struct ValidatorProtocol {
     pub validator_id: Hash,
     pub consensus_key: ed25519_dalek::SigningKey,
     pub votes: std::collections::BTreeMap<Hash, freedom_types::ValidatorVote>,
+    pub timeouts: std::collections::BTreeMap<Hash, freedom_types::ValidatorTimeout>,
 }
 
 impl ValidatorProtocol {
     pub fn new(validator_id: Hash, consensus_key: ed25519_dalek::SigningKey) -> Self {
-        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new() }
+        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new() }
     }
 
-    pub fn reset_round(&mut self) { self.votes.clear(); }
+    pub fn reset_round(&mut self) { self.votes.clear(); self.timeouts.clear(); }
 
     pub fn receive_proposal(&self, state: &ChainState, proposal: &freedom_types::BlockProposal) -> Result<freedom_types::ValidatorVote, String> {
         freedom_network::make_vote(state, self.validator_id, proposal, &self.consensus_key)
     }
+
+    pub fn receive_timeout(&mut self, state: &ChainState, timeout: freedom_types::ValidatorTimeout, height: u64, round: u64) -> Result<bool, String> { freedom_consensus::validate_timeout(state, &timeout, height, round)?; self.timeouts.insert(timeout.validator_id, timeout); Ok(self.timeouts.len() >= freedom_consensus::quorum_threshold(state.validators.len())) }
 
     pub fn receive_vote(&mut self, state: &ChainState, vote: freedom_types::ValidatorVote, expected_block_hash: Hash, height: u64) -> Result<bool, String> {
         freedom_consensus::validate_vote(state, &vote, expected_block_hash, height)?;
