@@ -265,6 +265,18 @@ impl BridgeMessage {
             && self.validate_hash()
     }
 
+    pub fn authorization_ready(
+        &self,
+        approvals: &BridgeMessageApprovalSet,
+        policy: &BridgeSecurityPolicy,
+        validator_keys: &std::collections::BTreeMap<Hash, [u8; 32]>,
+    ) -> bool {
+        self.validate_hash()
+            && approvals.message_hash == self.message_hash
+            && approvals.bridge_id == self.bridge_id
+            && approvals.authorized(policy, validator_keys)
+    }
+
     pub fn replay_key(&self) -> Hash {
         freedom_primitives::domain_hash(
             b"FREEDOM-BRIDGE-REPLAY-V1",
@@ -570,10 +582,6 @@ impl BridgeMessageApprovalSet {
             .map(|(a, _)| a.validator_id)
             .collect::<std::collections::BTreeSet<Hash>>()
             .len() as u16
-    }
-
-    pub fn quorum_reached(&self, policy: &BridgeSecurityPolicy) -> bool {
-        policy.quorum_reached(self.authenticated_count(&std::collections::BTreeMap::new()))
     }
 
     pub fn quorum_reached_authenticated(
