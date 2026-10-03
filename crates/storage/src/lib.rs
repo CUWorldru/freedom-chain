@@ -85,7 +85,7 @@ impl ChainStore {
     }
 
     pub fn save_snapshot(&self, state: &ChainState, block_hash: [u8;32]) -> Result<(), StorageError> {
-        self.save_snapshot_with_certificate_opt(state, block_hash, None)
+        self.save_snapshot_with_certificate_opt(state, block_hash, None, state.active_validator_set.clone())
     }
 
     pub fn save_snapshot_with_certificate(
@@ -94,7 +94,19 @@ impl ChainStore {
         block_hash: [u8;32],
         certificate: freedom_types::FinalityCertificate,
     ) -> Result<(), StorageError> {
-        self.save_snapshot_with_certificate_opt(state, block_hash, Some(certificate))
+        self.save_snapshot_with_certificate_and_validator_set(
+            state, block_hash, certificate, state.active_validator_set.clone()
+        )
+    }
+
+    pub fn save_snapshot_with_certificate_and_validator_set(
+        &self,
+        state: &ChainState,
+        block_hash: [u8;32],
+        certificate: freedom_types::FinalityCertificate,
+        finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
+    ) -> Result<(), StorageError> {
+        self.save_snapshot_with_certificate_opt(state, block_hash, Some(certificate), finality_validator_set)
     }
 
     fn save_snapshot_with_certificate_opt(
@@ -102,6 +114,7 @@ impl ChainStore {
         state: &ChainState,
         block_hash: [u8;32],
         certificate: Option<freedom_types::FinalityCertificate>,
+        finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
     ) -> Result<(), StorageError> {
         let snapshot = StateSnapshot {
             chain_id: CHAIN_ID,
@@ -110,7 +123,7 @@ impl ChainStore {
             state_root: state.state_root(),
             state: state.clone(),
             certificate,
-            finality_validator_set: state.active_validator_set.clone(),
+            finality_validator_set,
             epoch_transition_certificate: state.validator_set_certificate.clone(),
         };
         let bytes = serde_json::to_vec(&snapshot).map_err(|e| StorageError::Codec(e.to_string()))?;
