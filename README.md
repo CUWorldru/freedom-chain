@@ -484,3 +484,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - At an epoch transition, the finality validator set must hash to the transition certificate's previous_set_hash; after the transition, the snapshot active set may be the new set.
 - Remote snapshot activation applies the same checkpoint/finality binding and rejects genesis as a remote finalized checkpoint.
 - This closes the boundary between a valid state snapshot and a merely self-consistent state dump.
+
+
+## M43 — Sync Transport Hardening
+
+- Block sync requests are bounded to the protocol maximum and cannot start from genesis.
+- Block sync responses must contain a non-empty, contiguous sequence of at most MAX_SYNC_BLOCKS blocks.
+- Remote snapshot requests cannot target genesis.
+- Snapshot state payloads are bounded to 8 MiB before deserialization.
+- Snapshot responses are checked for checkpoint height/state-root and finality-certificate identity before deeper cryptographic validation.
+- These checks run at the node/network boundary before state activation or block execution.
