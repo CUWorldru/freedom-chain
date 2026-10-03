@@ -779,3 +779,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - event IDs are domain-separated hashes of peer, height, request ID, fingerprint, and evidence kind;
 - repeated processing of an event remains rejected even after its detailed journal record has been compacted out;
 - the new field is backward-compatible with persisted reputation data, and startup rebuilds the index from legacy evidence before continuing.
+
+
+## M76 — Reputation Persistence Migration Safety
+
+- persisted reputation data from before M75 remains deserializable because the dedup index defaults to an empty set;
+- startup reconstructs dedup IDs from the retained legacy evidence journal before the node processes network input;
+- a regression test verifies that a legacy record cannot be counted again after migration;
+- reputation remains local node security state and is not promoted into consensus state merely to solve persistence concerns.
