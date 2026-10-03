@@ -254,11 +254,24 @@ pub struct ValidatorProtocol {
     pub locked_round: Option<u64>,
     pub locked_block_hash: Option<Hash>,
     pub locked_block: Option<Block>,
+    pub seen_messages: std::collections::BTreeSet<Hash>,
+    pub seen_message_order: std::collections::VecDeque<Hash>,
+    pub max_seen_messages: usize,
 }
 
 impl ValidatorProtocol {
     pub fn new(validator_id: Hash, consensus_key: ed25519_dalek::SigningKey) -> Self {
-        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), precommits: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new(), locked_round: None, locked_block_hash: None, locked_block: None }
+        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), precommits: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new(), locked_round: None, locked_block_hash: None, locked_block: None, seen_messages: std::collections::BTreeSet::new(), seen_message_order: std::collections::VecDeque::new(), max_seen_messages: 4096 }
+    }
+
+    pub fn remember_message(&mut self, id: Hash) -> bool {
+        if self.seen_messages.contains(&id) { return false; }
+        self.seen_messages.insert(id);
+        self.seen_message_order.push_back(id);
+        while self.seen_message_order.len() > self.max_seen_messages {
+            if let Some(old) = self.seen_message_order.pop_front() { self.seen_messages.remove(&old); }
+        }
+        true
     }
 
     pub fn reset_round(&mut self) { self.votes.clear(); self.precommits.clear(); self.timeouts.clear(); }
