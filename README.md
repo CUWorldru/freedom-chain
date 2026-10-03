@@ -75,6 +75,16 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - wallet history is derived from chain ledger entries, not a separate balance database
 - no wallet API can mint or modify FDM
 
+## M7 — Billing Engine
+
+- catalog price is defined in protocol state and denominated only in mFDM
+- billing supports quote, reserve, capture and refund lifecycle
+- reserve moves FDM from available balance to locked balance
+- capture transfers reserved FDM to the merchant
+- refund returns reserved or captured FDM to the buyer
+- billing IDs prevent duplicate reservation
+- billing cannot mint FDM
+
 ## Roadmap
 
 - M3: protocol-issued FDM rewards from verified contribution WU
