@@ -426,3 +426,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Runtime can collect validated votes and produce a `ValidatorSetCertificate` only after stake-weighted quorum.
 - Added wire encoding helpers for publishing votes/certificates through the network layer.
 - The protocol now has the authenticated network primitives required for automatic epoch certificate collection; node event-loop wiring and automatic certificate broadcast remain the next integration step.
+
+
+## M39 — Node Event-Loop Integration
+
+- The node automatically emits a signed `ValidatorSetVote` when the next block is an epoch transition.
+- Incoming validator-set votes are deduplicated, cryptographically validated and accumulated by validator id.
+- Once stake-weighted quorum is reached, the node constructs and gossips a `ValidatorSetCertificate`.
+- Incoming certificates are validated before being committed to the local state used by block production.
+- Epoch-bound block construction now passes the correct next epoch instead of a hard-coded epoch value.
+- Runtime block execution commits the certificate carried by an epoch-transition block before calculating the resulting state root.
+- The node therefore has the full local event-loop path from epoch boundary detection to certificate gossip and certificate-bearing block production.
