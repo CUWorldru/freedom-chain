@@ -115,3 +115,116 @@ pub fn build_next_block(
         receipts: Vec::new(),
     })
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use freedom_crypto::{generate_keypair, sign};
+    use freedom_primitives::Supply;
+    use freedom_state::Account;
+    use freedom_types::{Genesis, TransferPayload, TxKind, Validator};
+
+    fn test_state() -> ChainState {
+        let validators = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            let owner = freedom_primitives::address_from_public_key(&key);
+            let id = freedom_primitives::hash_bytes(&[b"validator", &[i + 1]].concat());
+            (id, Validator {
+                validator_id: id,
+                owner,
+                consensus_key: key,
+                stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            })
+        }).collect::<Vec<_>>();
+        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: validators.into_iter().map(|(_,v)| v).collect() };
+        let mut state = initialize(&genesis).unwrap();
+        let key = generate_keypair();
+        let public = key.verifying_key().to_bytes();
+        state.insert_account(Account::new(public, 1_000));
+        state.supply = Supply { total: 1_000, circulating: 1_000, locked: 0, staked: 0, treasury: 0 };
+        state.assert_invariants();
+        state
+    }
+
+    #[test]
+    fn mempool_orders_and_block_builder_commits_transfer() {
+        let mut state = test_state();
+        let key = state.accounts.values().next().unwrap().public_key;
+        let sender = state.accounts.keys().next().copied().unwrap();
+
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&key);
+        let recipient = freedom_primitives::address_from_public_key(&[9; 32]);
+        let payload = TransferPayload { to: recipient, amount: 250 }.encode();
+        let mut tx = Transaction {
+            chain_id: CHAIN_ID,
+            sender,
+            nonce: 0,
+            kind: TxKind::Transfer,
+            payload,
+            fee: 10,
+            signature: Vec::new(),
+        };
+        tx.signature = sign(&signing_key, &tx.signing_bytes()).to_vec();
+
+        let mut mempool = Mempool::new();
+        let hash = mempool.submit(&state, tx.clone()).unwrap();
+        assert_eq!(mempool.len(), 1);
+
+        let proposer = freedom_consensus::proposer_for_height(&state, 1).unwrap();
+        let block = build_next_block(&state, &mempool, proposer, 1, 1, 100).unwrap();
+        assert_eq!(block.transactions, vec![tx.clone()]);
+        assert_eq!(block.header.tx_root, tx_root(&block.transactions));
+        assert_eq!(block.header.receipts_root, receipts_root(&{
+            let mut preview = state.clone();
+            block.transactions.iter().map(|t| execute_transaction(&mut preview, t).unwrap()).collect::<Vec<_>>()
+        }));
+
+        let committed = execute_block(&mut state, &block).unwrap();
+        assert_eq!(state.height, 1);
+        assert_eq!(state.last_block_hash, block_hash(&committed));
+        assert_eq!(state.accounts.get(&recipient).unwrap().balance, 250);
+        mempool.remove_committed(&committed.transactions);
+        assert_eq!(mempool.len(), 0);
+        assert!(mempool.remove(&hash).is_none());
+    }
+
+    #[test]
+    fn mempool_rejects_stale_nonce_and_duplicate_hash() {
+        let state = test_state();
+        let sender = state.accounts.keys().next().copied().unwrap();
+        let key = state.accounts.get(&sender).unwrap().public_key;
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&key);
+        let recipient = freedom_primitives::address_from_public_key(&[8; 32]);
+        let mut tx = Transaction {
+            chain_id: CHAIN_ID,
+            sender,
+            nonce: 0,
+            kind: TxKind::Transfer,
+            payload: TransferPayload { to: recipient, amount: 1 }.encode(),
+            fee: 0,
+            signature: Vec::new(),
+        };
+        tx.signature = sign(&signing_key, &tx.signing_bytes()).to_vec();
+        let mut mempool = Mempool::new();
+        mempool.submit(&state, tx.clone()).unwrap();
+        assert!(mempool.submit(&state, tx).is_err());
+
+        let mut stale = Transaction {
+            chain_id: CHAIN_ID,
+            sender,
+            nonce: 1,
+            kind: TxKind::Transfer,
+            payload: TransferPayload { to: recipient, amount: 1 }.encode(),
+            fee: 0,
+            signature: Vec::new(),
+        };
+        stale.signature = sign(&signing_key, &stale.signing_bytes()).to_vec();
+        let mut next_state = state.clone();
+        next_state.accounts.get_mut(&sender).unwrap().nonce = 2;
+        assert!(mempool.submit(&next_state, stale).is_err());
+    }
+}
