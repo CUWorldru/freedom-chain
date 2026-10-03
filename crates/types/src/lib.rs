@@ -917,6 +917,103 @@ impl EvmTransferProof {
 }
 
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TronTransactionEventProof {
+    pub raw_data: Vec<u8>,
+    pub tx_hash: Hash,
+    pub block_number: u64,
+    pub block_id: Hash,
+    pub transaction_index: u32,
+    /// TRON log address is the 20-byte contract address without the 0x41 prefix.
+    pub contract_address: Vec<u8>,
+    /// topics[0] is the Solidity event signature; topics[1]/topics[2] are indexed addresses.
+    pub topics: Vec<Hash>,
+    /// ABI-encoded non-indexed event arguments.
+    pub data: Vec<u8>,
+    pub execution_success: bool,
+}
+
+impl TronTransactionEventProof {
+    pub const TRANSFER_EVENT_SIGNATURE: Hash = [
+        0xdd, 0xf2, 0x52, 0xad, 0x1b, 0xe2, 0xc8, 0x9b,
+        0x69, 0xc2, 0xb0, 0x68, 0xfc, 0x37, 0x8d, 0xaa,
+        0x95, 0x2b, 0xa7, 0xf1, 0x63, 0xc4, 0xa1, 0x16,
+        0x28, 0xf5, 0x5a, 0x4d, 0xf5, 0x23, 0xb3, 0xef,
+    ];
+
+    pub fn computed_tx_hash(&self) -> Hash {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(&self.raw_data).into()
+    }
+
+    pub fn from_topic(&self) -> Result<[u8; 20], String> {
+        if self.topics.len() < 3 { return Err("TRC-20 Transfer requires 3 topics".into()); }
+        let mut out = [0u8; 20];
+        out.copy_from_slice(&self.topics[1][12..]);
+        Ok(out)
+    }
+
+    pub fn to_topic(&self) -> Result<[u8; 20], String> {
+        if self.topics.len() < 3 { return Err("TRC-20 Transfer requires 3 topics".into()); }
+        let mut out = [0u8; 20];
+        out.copy_from_slice(&self.topics[2][12..]);
+        Ok(out)
+    }
+
+    pub fn amount(&self) -> Result<u128, String> {
+        if self.data.len() != 32 { return Err("TRC-20 Transfer data must be exactly 32 bytes".into()); }
+        if self.data[..16].iter().any(|b| *b != 0) {
+            return Err("TRC-20 Transfer amount exceeds u128".into());
+        }
+        let mut amount = [0u8; 16];
+        amount.copy_from_slice(&self.data[16..]);
+        Ok(u128::from_be_bytes(amount))
+    }
+
+    pub fn validate_transfer_event(&self) -> bool {
+        self.raw_data.len() > 0
+            && self.tx_hash == self.computed_tx_hash()
+            && self.block_number > 0
+            && self.block_id != [0; 32]
+            && self.transaction_index < u32::MAX
+            && self.contract_address.len() == 20
+            && self.topics.len() == 3
+            && self.topics[0] == Self::TRANSFER_EVENT_SIGNATURE
+            && self.topics[1][..12].iter().all(|b| *b == 0)
+            && self.topics[2][..12].iter().all(|b| *b == 0)
+            && self.amount().map(|a| a > 0).unwrap_or(false)
+            && self.execution_success
+    }
+
+    pub fn verify_binding(
+        &self,
+        header: &TronBlockHeaderProof,
+        expected_tx_hash: Hash,
+        expected_index: u32,
+    ) -> bool {
+        self.validate_transfer_event()
+            && self.block_number == header.block_number().unwrap_or(0)
+            && self.block_id == header.block_id
+            && self.tx_hash == expected_tx_hash
+            && self.transaction_index == expected_index
+    }
+
+    pub fn proof_hash(&self) -> Hash {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"FREEDOM-TRON-TX-EVENT-V1");
+        out.extend_from_slice(&self.tx_hash);
+        out.extend_from_slice(&self.block_number.to_le_bytes());
+        out.extend_from_slice(&self.block_id);
+        out.extend_from_slice(&self.transaction_index.to_le_bytes());
+        out.extend_from_slice(&self.contract_address);
+        for topic in &self.topics { out.extend_from_slice(topic); }
+        out.extend_from_slice(&(self.data.len() as u64).to_le_bytes());
+        out.extend_from_slice(&self.data);
+        freedom_primitives::hash_bytes(&out)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TronTrc20TransferProof {
     pub bridge_id: Hash,
