@@ -160,11 +160,8 @@ impl ChainStore {
         };
 
         if snapshot.height == 0 {
-            if snapshot.certificate.is_some()
-                || !snapshot.finality_validator_set.is_empty()
-                || snapshot.epoch_transition_certificate.is_some()
-            {
-                return Err(StorageError::InvalidSnapshot("genesis snapshot contains finality metadata".into()));
+            if snapshot.certificate.is_some() || snapshot.epoch_transition_certificate.is_some() {
+                return Err(StorageError::InvalidSnapshot("genesis snapshot contains finality certificate metadata".into()));
             }
         } else {
             let checkpoint = checkpoint.as_ref().expect("non-genesis checkpoint validated above");
