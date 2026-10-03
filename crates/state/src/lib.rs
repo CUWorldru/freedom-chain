@@ -48,20 +48,18 @@ impl ChainState {
  pub fn slash_evidence(&mut self,evidence_hash:Hash,amount:u128)->Result<u128,StateError>{
   if self.slashed_evidence.contains_key(&evidence_hash){return Ok(0)}
   let evidence=self.evidence.get(&evidence_hash).ok_or(StateError::InvalidEvidence)?;
-  let (validator_owner,total_stake)={let v=self.validators.get(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;(v.owner,v.stake.saturating_add(v.unbonding_stake))};
-  let expected=self.deterministic_slash_amount(&evidence.kind,total_stake);
+  let (owner,total)={let v=self.validators.get(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;(v.owner,v.stake.saturating_add(v.unbonding_stake))};
+  let expected=self.deterministic_slash_amount(&evidence.kind,total);
   if amount!=expected{return Err(StateError::InvalidEvidence)}
-  let slash=expected.min(total_stake);
-  let mut remaining=slash;
-  if let Some(v)=self.validators.get_mut(&evidence.validator_id){let active_cut=remaining.min(v.stake);v.stake-=active_cut;remaining-=active_cut;let pending_cut=remaining.min(v.unbonding_stake);v.unbonding_stake-=pending_cut;remaining-=pending_cut;}
-  if remaining!=0{return Err(StateError::InvalidEvidence)}
-  if slash>0 {
-   if let Some(a)=self.accounts.get_mut(&validator_owner){a.staked=a.staked.saturating_sub(slash);} else {return Err(StateError::AccountNotFound)}
-   let mut pending=slash.saturating_sub(self.validators.get(&evidence.validator_id).map(|v|v.stake).unwrap_or(0));
-   if pending>0 { let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.validator_id==evidence.validator_id).map(|(id,_)|*id).collect(); for id in ids { if pending==0{break} if let Some(e)=self.unbonding.get_mut(&id){let cut=pending.min(e.amount);e.amount-=cut;pending-=cut;} if self.unbonding.get(&id).map(|e|e.amount==0).unwrap_or(false){self.unbonding.remove(&id);} } }
-  }
-  self.slashed_evidence.insert(evidence_hash,slash);
-  Ok(slash)
+  let slash=expected.min(total);
+  let (active_cut,pending_cut)={let v=self.validators.get_mut(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;let x=slash.min(v.stake);v.stake-=x;let y=(slash-x).min(v.unbonding_stake);v.unbonding_stake-=y;(x,y)};
+  if active_cut+pending_cut!=slash{return Err(StateError::InvalidEvidence)}
+  if let Some(a)=self.accounts.get_mut(&owner){a.staked=a.staked.saturating_sub(slash)}else{return Err(StateError::AccountNotFound)}
+  let mut pending=pending_cut;
+  let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.validator_id==evidence.validator_id).map(|(id,_)|*id).collect();
+  for id in ids { if pending==0{break} if let Some(e)=self.unbonding.get_mut(&id){let x=pending.min(e.amount);e.amount-=x;pending-=x;} if self.unbonding.get(&id).map(|e|e.amount==0).unwrap_or(false){self.unbonding.remove(&id);} }
+  if pending!=0{return Err(StateError::InvalidEvidence)}
+  self.slashed_evidence.insert(evidence_hash,slash);Ok(slash)
  }
  pub fn deterministic_slash_amount(&self,kind:&freedom_types::EquivocationKind,stake:u128)->u128{
   let bps=match kind { freedom_types::EquivocationKind::DoubleProposal=>500, freedom_types::EquivocationKind::DoublePrevote=>1000, freedom_types::EquivocationKind::DoublePrecommit=>1000 };
