@@ -304,7 +304,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 if committed.header.height % snapshot_interval == 0 { if let Err(e) = store.save_snapshot(&state, block_hash(&committed)) { eprintln!("snapshot persistence error: {e}"); } }
                                                 accepted += 1;
                                             }
-                                            if accepted > 0 { println!("SYNCED blocks={} height={}", accepted, state.height); pending_sync=None; round=0; timeout_round_sent=None; }
+                                            if accepted > 0 {
+                                                println!("SYNCED blocks={} height={}", accepted, state.height);
+                                                pending_sync=None;
+                                                round=0;
+                                                timeout_round_sent=None;
+                                                if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
+                                                    let (next_proposal, next_block) = build_local_proposal(&state, owner, &consensus_key, round)?;
+                                                    blocks.insert(next_proposal.block_hash, next_block);
+                                                    println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(next_proposal.block_hash));
+                                                    publish(&mut swarm, &NetworkMessage::Proposal(next_proposal))?;
+                                                }
+                                            }
                                         }
                                         SyncWireResponse::Snapshot(response) => {
                                             if response.height <= state.height || freedom_network::validate_snapshot_response(&response).is_err() { continue; }
@@ -398,6 +409,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             protocol.reset_round();
                                             blocks.clear();
                                             println!("SNAPSHOT_ACTIVATED height={} hash={} bytes={}", response.height, hex::encode(response.block_hash), response.state_json.len());
+                                            if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
+                                                let (next_proposal, next_block) = build_local_proposal(&state, owner, &consensus_key, round)?;
+                                                blocks.insert(next_proposal.block_hash, next_block);
+                                                println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(next_proposal.block_hash));
+                                                publish(&mut swarm, &NetworkMessage::Proposal(next_proposal))?;
+                                            }
                                         }
                                     }
                                 }
