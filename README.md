@@ -1222,3 +1222,10 @@ Bitcoin validation additionally requires the candidate finality height to be the
 Adds the `CrossChainProofAdapter` boundary. Each chain supplies its own proof semantics while State routes validation through the adapter selected by `CrossChainProofKind`.
 
 Current adapters: Bitcoin UTXO, Ethereum/EVM, and Tron. Ethereum/EVM and Tron adapters intentionally provide only structural envelope validation at this stage; they do not claim transaction/event finality until their chain-specific proof verifiers are implemented.
+
+
+## M135 — Ethereum Proof Boundary
+
+Adds explicit Ethereum proof structures for transaction/receipt inclusion metadata and finalized-block metadata. `EthereumTransactionProof::verify_binding` binds a transaction proof to the common finality envelope by exact block height, block hash and proof hash.
+
+This is intentionally a proof boundary rather than a claim of Ethereum consensus verification: RLP/receipt-trie verification and Ethereum PoS finality certificate verification remain separate implementation steps.
