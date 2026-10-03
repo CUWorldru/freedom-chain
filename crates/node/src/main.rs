@@ -373,7 +373,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         SyncWireRequest::Snapshot(req) => {
                                             if freedom_network::validate_snapshot_request(&req).is_err() { eprintln!("SNAPSHOT_REQUEST_REJECTED height={}", req.height); continue; }
-                                            if let Ok(Some(snapshot)) = store.load_snapshot(req.height) {
+                                            if let Ok(Some(snapshot)) = store.latest_snapshot_at_or_below(req.height) {
                                                 if let (Some(certificate), Ok(Some(checkpoint))) = (snapshot.certificate.clone(), store.get_block(snapshot.height)) {
                                                     if let Ok(state_json) = serde_json::to_vec(&snapshot.state) {
                                                         let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse {
@@ -433,7 +433,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         SyncWireResponse::Snapshot(response) => {
-                                            if pending_snapshot != Some((response.request_id, response.height)) {
+                                            if pending_snapshot.map(|(id, _)| id) != Some(response.request_id) {
                                                 eprintln!("SNAPSHOT_REJECTED unsolicited or stale response at {}", response.height);
                                                 continue;
                                             }
