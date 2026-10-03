@@ -586,6 +586,10 @@ pub struct BitcoinUtxoProof {
 impl BitcoinUtxoProof {
     pub fn computed_tx_hash(&self)->Option<Hash>{if self.raw_transaction.is_empty(){return None;}Some(bitcoin_sha256d(&self.raw_transaction))}
     pub fn validate_transaction_binding(&self)->bool{self.computed_tx_hash()==Some(self.tx_hash)}
+    pub fn validate_output_binding(&self)->bool{
+        let Ok(tx)=BitcoinTransaction::parse(&self.raw_transaction) else{return false};
+        tx.txid==self.tx_hash&&tx.output(self.vout).map(|o|o.amount_sat==self.amount_sat&&o.script_pubkey==self.script_pubkey).unwrap_or(false)
+    }
     pub fn event_index(&self)->u64 { self.vout as u64 }
     pub fn validate_binding(&self,expected_tx:Hash,expected_vout:u32,expected_amount:u64,expected_script:&[u8])->bool{
         self.tx_hash==expected_tx&&self.vout==expected_vout&&self.amount_sat==expected_amount&&self.script_pubkey==expected_script&&self.tx_hash!=[0;32]&&!self.script_pubkey.is_empty()&&self.amount_sat>0
