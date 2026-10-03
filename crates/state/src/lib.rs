@@ -36,7 +36,7 @@ pub struct LedgerEntry { pub tx_hash:Hash, pub sender:Address, pub kind:u8, pub 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct DrawState { pub config:DrawConfig,pub total_tickets:u64,pub prize_pool_mfdm:u128,pub cu_fund_mfdm:u128,pub annual_reserve_mfdm:u128,pub executed:bool }
 
 #[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,#[serde(default)] pub unbonding:BTreeMap<Hash,UnbondingEntry>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,pub cu_fund_mfdm:u128,pub annual_reserve_mfdm:u128,pub draw_prize_pool_mfdm:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch:u64,pub epoch_length:u64,pub active_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,pub epoch_issuance:u128,pub epoch_cap:u128,pub evidence:BTreeMap<Hash,freedom_types::EquivocationEvidence>,pub slashed_evidence:BTreeMap<Hash,u128> }
-#[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding }
+#[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle }
 impl ChainState {
  pub fn record_equivocation(&mut self,evidence:freedom_types::EquivocationEvidence)->Result<bool,StateError>{
   if evidence.first.is_empty() || evidence.second.is_empty() || evidence.first == evidence.second { return Err(StateError::InvalidEvidence); }
@@ -68,6 +68,7 @@ impl ChainState {
 
  pub const UNBONDING_COOLDOWN: u64 = 200;
  pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis FDM must be zero");let validators=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators,nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_mfdm:0,annual_reserve_mfdm:0,draw_prize_pool_mfdm:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
+ pub fn validator_lifecycle(&self, validator_id:Hash)->Result<freedom_types::ValidatorLifecycle,StateError>{let v=self.validators.get(&validator_id).ok_or(StateError::InvalidEvidence)?;Ok(if v.stake>0{freedom_types::ValidatorLifecycle::Active}else if v.unbonding_stake>0{freedom_types::ValidatorLifecycle::Unbonding}else{freedom_types::ValidatorLifecycle::Exited})}
  pub fn active_validator_entries(&self)->Vec<freedom_types::ValidatorSetEntry>{self.active_validator_set.values().cloned().collect()}
  pub fn refresh_validator_set(&mut self){
   let any_stake=self.validators.values().any(|v|v.stake>0);self.active_validator_set=self.validators.iter().filter(|(_,v)|!any_stake||v.stake>0).map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect();
@@ -90,10 +91,11 @@ impl ChainState {
  pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>self.claim_reward(tx),TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
  fn stake(&mut self,tx:&Transaction)->Result<(),StateError>{
   let p=freedom_types::StakePayload::decode(&tx.payload).map_err(|_|StateError::UnsupportedTransaction)?;
+  let id=self.validators.values().find(|v|v.owner==tx.sender).map(|v|v.validator_id).ok_or(StateError::InvalidEvidence)?;
+  if self.validator_lifecycle(id)?==freedom_types::ValidatorLifecycle::Unbonding{return Err(StateError::InvalidValidatorLifecycle)}
   let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
   if a.balance<p.amount{return Err(StateError::InsufficientBalance)}
   a.balance-=p.amount;a.staked=a.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
-  let id=self.validators.values().find(|v|v.owner==tx.sender).map(|v|v.validator_id).ok_or(StateError::InvalidEvidence)?;
   let v=self.validators.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
   v.stake=v.stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   self.advance_nonce(tx.sender)
@@ -104,6 +106,7 @@ impl ChainState {
   let id=self.validators.values().find(|v|v.owner==tx.sender).map(|v|v.validator_id).ok_or(StateError::InvalidEvidence)?;
   let owner=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?.owner;
   let active=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?.stake;
+  if active==0{return Err(StateError::InvalidValidatorLifecycle)}
   if active<p.amount{return Err(StateError::InsufficientBalance)}
   let a=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
   if a.staked<p.amount{return Err(StateError::InsufficientBalance)}
