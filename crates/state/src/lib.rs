@@ -170,6 +170,22 @@ impl ChainState {
   self.bridge_withdrawal_status.insert(id,BridgeWithdrawalStatus::Requested);
   Ok(id)
  }
+ pub fn approve_bridge_with_authenticated_set(&mut self,id:Hash,request_id:Hash)->Result<(),StateError>{
+  let w=self.bridge_withdrawals.get(&id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if w.request_hash==[0;32] || request_id==[0;32] { return Err(StateError::InvalidBridgeWithdrawal); }
+  let set=self.bridge_approval_sets.get(&request_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let policy=self.bridge_security_policies.get(&w.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if set.request_id!=request_id || set.approvals.iter().any(|a|a.withdrawal_id!=id||a.bridge_id!=w.bridge_id||a.nonce!=w.nonce||a.amount!=w.amount||a.destination_chain_id!=w.destination_chain_id||a.asset_id!=w.asset_id||a.intent_hash!=w.request_hash){
+   return Err(StateError::InvalidBridgeWithdrawal);
+  }
+  let keys=self.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
+  let quorum=set.quorum_reached_authenticated(policy,w.bridge_id,id,w.request_hash,&keys);
+  let threshold=set.threshold_reached(policy);
+  let approved=match policy.approval_mode { freedom_types::BridgeApprovalMode::Quorum=>quorum, freedom_types::BridgeApprovalMode::Threshold=>threshold, freedom_types::BridgeApprovalMode::QuorumAndThreshold=>quorum&&threshold };
+  if !approved { return Err(StateError::InvalidBridgeWithdrawalTransition); }
+  self.bridge_withdrawal_status.insert(id,BridgeWithdrawalStatus::Approved);
+  Ok(())
+ }
  pub fn advance_bridge_withdrawal(&mut self,id:Hash,next:BridgeWithdrawalStatus)->Result<(),StateError>{
   let current=*self.bridge_withdrawal_status.get(&id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if !self.bridge_withdrawals.contains_key(&id) { return Err(StateError::InvalidBridgeWithdrawal); }
@@ -186,6 +202,7 @@ impl ChainState {
    _=>false,
   };
   if !allowed { return Err(StateError::InvalidBridgeWithdrawalTransition); }
+  if next==BridgeWithdrawalStatus::Approved { return Err(StateError::InvalidBridgeWithdrawalTransition); }
   if next==BridgeWithdrawalStatus::Finalized {
    let w=self.bridge_withdrawals.get(&id).ok_or(StateError::InvalidBridgeWithdrawal)?;
    let a=self.bridge_accounting.get(&w.asset_id).cloned().unwrap_or_default();
@@ -437,6 +454,22 @@ impl ChainState {
  pub fn assert_invariants(&self){assert!(self.supply.is_consistent());for (id,asset) in &self.asset_registry{assert_eq!(id,&asset.asset_id);assert!(asset.validate_identity());assert!(!asset.symbol.is_empty());}for (replay_key,message) in &self.processed_bridge_messages{assert_eq!(replay_key,&message.replay_key());assert!(message.validate_hash());assert_eq!(message.protocol_version,BRIDGE_MESSAGE_PROTOCOL_VERSION);assert_eq!(message.destination_chain_id,freedom_primitives::CHAIN_ID);}for (replay_key,status) in &self.bridge_message_status{assert!(self.processed_bridge_messages.contains_key(replay_key));assert!(*status as u8>=BridgeMessageStatus::Verified as u8&&*status as u8<=BridgeMessageStatus::Minted as u8);}for (id,p) in &self.bridge_security_policies{assert_eq!(id,&p.bridge_id);assert!(p.validate());}for (id,set) in &self.bridge_approval_sets{assert_eq!(id,&set.request_id);assert!(!set.approvals.is_empty());}for (id,w) in &self.bridge_withdrawals{assert_eq!(id,&w.withdrawal_id);assert!(w.validate_hash());assert_eq!(w.compute_id(),w.withdrawal_id);assert!(self.bridge_withdrawal_status.contains_key(id));}for (id,status) in &self.bridge_withdrawal_status{assert!(self.bridge_withdrawals.contains_key(id));assert!((*status as u8>=BridgeWithdrawalStatus::Requested as u8&&*status as u8<=BridgeWithdrawalStatus::Rejected as u8));}for id in self.bridge_accounting.keys(){assert!(self.validate_bridge_accounting(*id).is_ok());}let sum=self.accounts.values().try_fold(0u128,|s,a|{let h=a.balance.checked_add(a.locked).and_then(|v|v.checked_add(a.staked))?;s.checked_add(h)});assert!(sum.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,sum.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_mfdm.checked_add(self.annual_reserve_mfdm).and_then(|x|x.checked_add(self.draw_prize_pool_mfdm)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
 }
 
+
+
+#[cfg(test)]
+mod m92_bridge_approval_transition_tests {
+ use super::*; use ed25519_dalek::SigningKey;
+ fn setup()->(ChainState,Hash,Hash){
+  let key=SigningKey::from_bytes(&[7;32]); let pubkey=key.verifying_key().to_bytes(); let vid=freedom_primitives::hash_bytes(&pubkey);
+  let v=Validator{validator_id:vid,owner:[1;32],consensus_key:pubkey,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+  let g=Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![v.clone()]}; let mut s=ChainState::genesis(&g);
+  let bridge=[9;32]; let policy=BridgeSecurityPolicy{bridge_id:bridge,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1000,max_withdrawal_amount:1000,daily_limit:1000,emergency_paused:false,nonce_floor:0}; s.register_bridge_security_policy(policy).unwrap();
+  let asset=*s.asset_registry.keys().next().unwrap();
+  let mut w=BridgeWithdrawal{withdrawal_id:[0;32],bridge_id:bridge,asset_id:asset,destination_chain_id:2,amount:10,sender:[2;32],recipient:vec![3],nonce:0,request_hash:[0;32]}; w.request_hash=w.compute_hash();w.withdrawal_id=w.compute_id();s.bridge_withdrawals.insert(w.withdrawal_id,w.clone());s.bridge_withdrawal_status.insert(w.withdrawal_id,BridgeWithdrawalStatus::Validated);
+  (s,w.withdrawal_id,vid)
+ }
+ #[test] fn approval_requires_authenticated_evidence(){let (mut s,id,vid)=setup();assert_eq!(s.advance_bridge_withdrawal(id,BridgeWithdrawalStatus::Approved),Err(StateError::InvalidBridgeWithdrawalTransition));let k=SigningKey::from_bytes(&[7;32]);let mut a=BridgeApproval{bridge_id:[9;32],request_id:[4;32],withdrawal_id:id,validator_id:vid,nonce:0,amount:10,destination_chain_id:2,asset_id:*s.asset_registry.keys().next().unwrap(),intent_hash:s.bridge_withdrawals[&id].request_hash,signature:Vec::new()};a.signature=k.sign(&a.signing_message()).to_bytes().to_vec();s.record_bridge_approval_set(BridgeApprovalSet{request_id:[4;32],approvals:vec![a],threshold_signatures:0}).unwrap();assert!(s.approve_bridge_with_authenticated_set(id,[4;32]).is_ok());assert_eq!(s.bridge_withdrawal_status[&id],BridgeWithdrawalStatus::Approved);}
+}
 
 #[cfg(test)]
 mod m79_bridge_replay_tests {
