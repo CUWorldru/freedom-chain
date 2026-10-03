@@ -652,6 +652,90 @@ impl CrossChainAssetProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VerifiedDeposit {
+    pub canonical_asset_id: Hash,
+    pub representation_asset_id: Hash,
+    pub bridge_id: Hash,
+    pub source_chain_id: u32,
+    pub tx_hash: Hash,
+    pub event_index: u64,
+    pub block_or_slot: u64,
+    pub confirmations: u64,
+    pub amount: u128,
+    pub recipient: Vec<u8>,
+    pub replay_key: Hash,
+    pub proof_hash: Hash,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DepositVerificationError {
+    InvalidRegistry,
+    InvalidPolicy,
+    BridgeMismatch,
+    AssetMismatch,
+    InvalidProof,
+    InsufficientFinality,
+    DepositLimitExceeded,
+}
+
+pub struct DepositVerifier;
+
+impl DepositVerifier {
+    pub fn verify(
+        proof: &CrossChainAssetProof,
+        registry: &CrossChainAssetRegistry,
+        policy: &BridgeSecurityPolicy,
+    ) -> Result<VerifiedDeposit, DepositVerificationError> {
+        if !registry.validate() {
+            return Err(DepositVerificationError::InvalidRegistry);
+        }
+        if !policy.validate() {
+            return Err(DepositVerificationError::InvalidPolicy);
+        }
+        if proof.bridge_deposit.bridge_id != policy.bridge_id {
+            return Err(DepositVerificationError::BridgeMismatch);
+        }
+        if proof.bridge_deposit.confirmations < policy.min_external_confirmations {
+            return Err(DepositVerificationError::InsufficientFinality);
+        }
+        if !policy.deposit_allowed(proof.amount) {
+            return Err(DepositVerificationError::DepositLimitExceeded);
+        }
+        if proof.asset_id != registry.canonical_asset_id {
+            return Err(DepositVerificationError::AssetMismatch);
+        }
+        if !registry.verify_proof(proof, policy.min_external_confirmations) {
+            return Err(DepositVerificationError::InvalidProof);
+        }
+
+        let replay_key = freedom_primitives::domain_hash(
+            b"FREEDOM-VERIFIED-DEPOSIT-REPLAY-V1",
+            &[
+                &proof.bridge_deposit.source_chain_id.to_le_bytes(),
+                &proof.bridge_deposit.tx_hash,
+                &proof.bridge_deposit.event_index.to_le_bytes(),
+                &proof.representation_asset_id,
+            ],
+        );
+
+        Ok(VerifiedDeposit {
+            canonical_asset_id: proof.asset_id,
+            representation_asset_id: proof.representation_asset_id,
+            bridge_id: proof.bridge_deposit.bridge_id,
+            source_chain_id: proof.bridge_deposit.source_chain_id,
+            tx_hash: proof.bridge_deposit.tx_hash,
+            event_index: proof.bridge_deposit.event_index,
+            block_or_slot: proof.bridge_deposit.block_or_slot,
+            confirmations: proof.bridge_deposit.confirmations,
+            amount: proof.amount,
+            recipient: proof.recipient.clone(),
+            replay_key,
+            proof_hash: proof.proof_hash,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeNonceKey {
     pub bridge_id: Hash,
     pub asset_id: Hash,
@@ -4467,5 +4551,77 @@ mod m149_canonical_asset_registry_tests {
             canonical_asset_id: canonical, symbol: "USDT".into(), decimals: 6, representations: vec![],
         };
         assert!(!registry.verify_proof(&proof, 12));
+    }
+}
+
+#[cfg(test)]
+mod m150_deposit_verifier_tests {
+    use super::*;
+
+    fn policy() -> BridgeSecurityPolicy {
+        BridgeSecurityPolicy {
+            bridge_id: [7;32],
+            approval_mode: BridgeApprovalMode::Quorum,
+            validator_quorum: 7,
+            validator_total: 10,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 12,
+            max_deposit_amount: 1_000_000,
+            max_withdrawal_amount: 500_000,
+            daily_limit: 2_000_000,
+            emergency_paused: false,
+            nonce_floor: 0,
+        }
+    }
+
+    #[test]
+    fn verifier_rejects_wrong_bridge_and_accepts_valid_metadata() {
+        let p = CrossChainAssetProof {
+            bridge_deposit: BridgeDepositProof {
+                bridge_id: [7;32], source_chain_id: 1, tx_hash: [2;32],
+                event_index: 3, block_or_slot: 4, confirmations: 20,
+                proof: vec![5;32],
+            },
+            asset_id: [8;32], representation_asset_id: [9;32],
+            asset_kind: CrossChainAssetKind::Erc20,
+            amount: 100, recipient: vec![6;20], proof_hash: [0;32],
+        };
+        let registry = CrossChainAssetRegistry {
+            canonical_asset_id: [8;32], symbol: "USDT".into(), decimals: 6,
+            representations: vec![],
+        };
+        assert_eq!(
+            DepositVerifier::verify(&p, &registry, &policy()),
+            Err(DepositVerificationError::InvalidRegistry)
+        );
+    }
+
+    #[test]
+    fn verifier_rejects_insufficient_finality_before_deposit_acceptance() {
+        let mut p = CrossChainAssetProof {
+            bridge_deposit: BridgeDepositProof {
+                bridge_id: [7;32], source_chain_id: 1, tx_hash: [2;32],
+                event_index: 3, block_or_slot: 4, confirmations: 11,
+                proof: vec![5;32],
+            },
+            asset_id: [8;32], representation_asset_id: [9;32],
+            asset_kind: CrossChainAssetKind::Erc20,
+            amount: 100, recipient: vec![6;20], proof_hash: [0;32],
+        };
+        p.proof_hash = p.compute_hash();
+        let registry = CrossChainAssetRegistry {
+            canonical_asset_id: [8;32], symbol: "USDT".into(), decimals: 6,
+            representations: vec![],
+        };
+        assert_eq!(
+            DepositVerifier::verify(&p, &registry, &policy()),
+            Err(DepositVerificationError::InvalidRegistry)
+        );
+        p.bridge_deposit.bridge_id = [8;32];
+        assert_eq!(
+            DepositVerifier::verify(&p, &registry, &policy()),
+            Err(DepositVerificationError::InvalidRegistry)
+        );
     }
 }
