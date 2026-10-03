@@ -808,3 +808,15 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - the cryptographic message hash binds source chain, destination chain, bridge, asset, nonce, amount, and recipient, preventing cross-domain reinterpretation;
 - replay identity additionally binds source chain, source transaction, source event/output index, and nonce;
 - no bridge message is considered cryptographically valid unless message_hash matches the canonical hash.
+
+## M79 — Persistent Bridge Replay Protection
+
+- processed bridge messages are now persisted directly in consensus-visible ChainState;
+- every processed message is indexed by the canonical replay key derived from source chain, source transaction, source event/output index, and nonce;
+- an exact replay of an already processed message is rejected as DuplicateBridgeMessage;
+- a conflicting payload that reuses an existing replay identity is rejected rather than silently overwriting the original message;
+- bridge messages must target Freedom Chain, use the supported protocol version, have a non-zero amount and a valid message hash;
+- the referenced asset must exist, be Active, be Bridged, and match both the source chain and bridge ID carried by the message;
+- replay records are included in the deterministic state root, so replay protection survives snapshots and consensus state recovery;
+- the replay index uses serde defaulting so older serialized ChainState values can deserialize with an empty replay set;
+- M79 records verified bridge messages but does not mint or release assets yet; mint/burn accounting is intentionally deferred to the bridge state machine and supply-invariant milestones.
