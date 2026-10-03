@@ -6,20 +6,20 @@ use freedom_types::{Genesis, RegisterNodePayload, SubmitContributionPayload, Bil
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account { pub address:Address,pub public_key:[u8;32],pub nonce:u64,pub balance:u128,pub locked:u128,pub staked:u128 }
 impl Account { pub fn new(public_key:[u8;32],balance:u128)->Self{Self{address:address_from_public_key(&public_key),public_key,nonce:0,balance,locked:0,staked:0}} }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Node { pub node_id:Hash,pub owner:Address,pub capabilities:u64,pub reputation:u64,pub total_wu:u128,pub successful_tasks:u64,pub failed_tasks:u64 }
-#[derive(Clone, Debug, PartialEq, Eq)] pub enum ContributionStatus { Submitted, Verified, Rejected, Rewarded }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub enum ContributionStatus { Submitted, Verified, Rejected, Rewarded }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Contribution { pub contribution_id:Hash,pub node_id:Hash,pub task_id:Hash,pub work_units:u128,pub quality_score:u32,pub verification_score:u32,pub result_hash:Hash,pub verifier_set:Vec<Hash>,pub status:ContributionStatus,pub reward_id:Option<Hash>,pub reward_amount:u128 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Reward { pub reward_id:Hash,pub owner:Address,pub contribution_id:Hash,pub wu:u128,pub gross_reward:u128,pub final_reward:u128,pub epoch:u64 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LedgerEntry { pub tx_hash:Hash, pub sender:Address, pub kind:u8, pub nonce:u64, pub success:bool }
 
-#[derive(Clone, Debug, PartialEq, Eq)] pub struct Purchase { pub purchase_id:Hash,pub buyer:Address,pub merchant:Address,pub product_id:u8,pub price:u128,pub reference:Hash,pub block_height:u64 }
-#[derive(Clone, Debug, PartialEq, Eq)] pub struct BillingRecord { pub billing_id:Hash,pub buyer:Address,pub merchant:Address,pub product_id:u8,pub amount:u128,pub reference:Hash,pub status:u8,pub reserved_at:u64,pub captured_at:Option<u64>,pub refunded_at:Option<u64> }
-#[derive(Clone, Debug, PartialEq, Eq)] pub struct Ticket { pub ticket_id:Hash,pub owner:Address,pub draw_id:Hash,pub created_at:u64 }
-#[derive(Clone, Debug, PartialEq, Eq)] pub struct DrawState { pub config:DrawConfig,pub total_tickets:u64,pub prize_pool_mfdm:u128,pub cu_fund_mfdm:u128,pub annual_reserve_mfdm:u128,pub executed:bool }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct Purchase { pub purchase_id:Hash,pub buyer:Address,pub merchant:Address,pub product_id:u8,pub price:u128,pub reference:Hash,pub block_height:u64 }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct BillingRecord { pub billing_id:Hash,pub buyer:Address,pub merchant:Address,pub product_id:u8,pub amount:u128,pub reference:Hash,pub status:u8,pub reserved_at:u64,pub captured_at:Option<u64>,pub refunded_at:Option<u64> }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct Ticket { pub ticket_id:Hash,pub owner:Address,pub draw_id:Hash,pub created_at:u64 }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct DrawState { pub config:DrawConfig,pub total_tickets:u64,pub prize_pool_mfdm:u128,pub cu_fund_mfdm:u128,pub annual_reserve_mfdm:u128,pub executed:bool }
 
 #[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,pub cu_fund_mfdm:u128,pub annual_reserve_mfdm:u128,pub draw_prize_pool_mfdm:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch_issuance:u128,pub epoch_cap:u128 }
 #[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool }
