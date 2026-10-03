@@ -2258,6 +2258,86 @@ impl BitcoinUtxoCompactTransitionBoundary {
     }
 }
 
+pub const BITCOIN_UTXO_SMT_DOMAIN: &[u8] = b"FREEDOM-BITCOIN-UTXO-SMT-V2";
+pub const BITCOIN_UTXO_SMT_DEPTH: usize = 256;
+
+pub fn bitcoin_utxo_smt_key(txid: &Hash, vout: u32) -> Hash {
+    let mut b=Vec::new();
+    b.extend_from_slice(BITCOIN_UTXO_SMT_DOMAIN);
+    b.extend_from_slice(b"KEY");
+    b.extend_from_slice(txid);
+    b.extend_from_slice(&vout.to_le_bytes());
+    freedom_primitives::hash_bytes(&b)
+}
+
+pub fn bitcoin_utxo_smt_leaf(entry: Option<&BitcoinUtxoStateEntry>) -> Hash {
+    let mut b=Vec::new();
+    b.extend_from_slice(BITCOIN_UTXO_SMT_DOMAIN);
+    if let Some(e)=entry {
+        b.extend_from_slice(b"LEAF");
+        b.extend_from_slice(&bitcoin_utxo_smt_key(&e.tx_hash,e.vout));
+        b.extend_from_slice(&e.amount_sat.to_le_bytes());
+        b.extend_from_slice(&(e.script_pubkey.len() as u64).to_le_bytes());
+        b.extend_from_slice(&e.script_pubkey);
+    } else {
+        b.extend_from_slice(b"EMPTY");
+    }
+    freedom_primitives::hash_bytes(&b)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSmtProof {
+    pub entry: Option<BitcoinUtxoStateEntry>,
+    pub siblings: Vec<Hash>,
+}
+
+impl BitcoinUtxoSmtProof {
+    pub fn verify(&self, root: Hash) -> bool {
+        if self.siblings.len() != BITCOIN_UTXO_SMT_DEPTH { return false; }
+        let key=match &self.entry {
+            Some(e)=>bitcoin_utxo_smt_key(&e.tx_hash,e.vout),
+            None=>return false,
+        };
+        let mut current=bitcoin_utxo_smt_leaf(self.entry.as_ref());
+        let mut bit=0usize;
+        for sibling in &self.siblings {
+            let byte=key[bit/8];
+            let right=((byte>>(bit%8))&1)==1;
+            current=if right {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",sibling.as_slice(),current.as_slice()].concat())
+            } else {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",current.as_slice(),sibling.as_slice()].concat())
+            };
+            bit+=1;
+        }
+        current==root
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSmtUpdateProof {
+    pub previous_root: Hash,
+    pub next_root: Hash,
+    pub removals: Vec<BitcoinUtxoSmtProof>,
+    pub additions: Vec<BitcoinUtxoSmtProof>,
+}
+
+impl BitcoinUtxoSmtUpdateProof {
+    pub fn validate(&self) -> bool {
+        if self.previous_root == [0;32] || self.next_root == [0;32]
+            || self.removals.is_empty() && self.additions.is_empty() {
+            return false;
+        }
+        let mut keys=std::collections::BTreeSet::new();
+        for p in self.removals.iter().chain(self.additions.iter()) {
+            let Some(e)=&p.entry else { return false; };
+            if !keys.insert(bitcoin_utxo_smt_key(&e.tx_hash,e.vout)) { return false; }
+            if !p.verify(self.previous_root) { return false; }
+        }
+        true
+    }
+}
+
 pub struct BitcoinUtxoCommitmentAttestation {
     pub bridge_id: Hash,
     pub chain_id: u32,
