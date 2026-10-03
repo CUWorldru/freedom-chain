@@ -38,7 +38,13 @@ fn send_sync_request(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn make_evidence_message(evidence: freedom_types::EquivocationEvidence, sender: Hash, key: &ed25519_dalek::SigningKey) -> freedom_types::EvidenceMessage {
+    let mut msg=freedom_types::EvidenceMessage{evidence,sender,signature:Vec::new()};
+    msg.signature=freedom_crypto::sign(key,&msg.signing_bytes()).to_vec();
+    msg
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let validators: Vec<Validator> = (0u8..3).map(|i| {
         let key = [i + 1; 32];
         Validator {
