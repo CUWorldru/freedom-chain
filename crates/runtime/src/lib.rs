@@ -212,7 +212,14 @@ pub fn verify_external_bridge_deposit(
     canonical_asset_id: Hash,
     recipient_override: Option<Vec<u8>>,
 ) -> Result<freedom_types::VerifiedDeposit, String> {
-    let resolved = resolve_bridge_representation(external, registry, canonical_asset_id)?;
+    let context = BridgeIngressContext::build(
+        external,
+        registry,
+        policy,
+        descriptor,
+        canonical_asset_id,
+    )?;
+    let resolved = context.resolved;
 
     let proof = match external {
         freedom_types::ExternalBridgeDepositProof::BitcoinUtxo(p) =>
@@ -232,8 +239,8 @@ pub fn verify_external_bridge_deposit(
             p.to_cross_chain_asset_proof(
                 policy.min_external_confirmations,
                 &p.usdt_contract,
-                resolved.canonical_asset_id,
-                resolved.representation_asset_id,
+                resolved.canonical_asset_id(),
+                resolved.representation_asset_id(),
             ).map_err(|e| format!("TronUsdtDeposit:{e:?}"))?,
     };
 
