@@ -2005,6 +2005,25 @@ impl BitcoinMerkleVerification {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BitcoinChainContext {
+    pub tip_height: u64,
+    pub tip_hash: Hash,
+}
+
+impl BitcoinChainContext {
+    pub fn validate(&self) -> bool {
+        self.tip_height > 0 && self.tip_hash != [0u8; 32]
+    }
+
+    pub fn confirmations_for(&self, block_height: u64) -> Option<u64> {
+        if !self.validate() || block_height == 0 || block_height > self.tip_height {
+            return None;
+        }
+        Some(self.tip_height - block_height + 1)
+    }
+}
+
 pub struct BitcoinUtxoProof {
     pub bridge_id: Hash,
     pub chain_id: u32,
@@ -2067,6 +2086,28 @@ impl BitcoinUtxoProof {
             return false;
         }
         self.confirmations > 0
+    }
+
+    pub fn verify_against_chain_context(
+        &self,
+        context: &BitcoinChainContext,
+        required_confirmations: u64,
+    ) -> Result<u64, BridgeAdapterError> {
+        if !context.validate() || self.block_height == 0 {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        let confirmations = context
+            .confirmations_for(self.block_height)
+            .ok_or(BridgeAdapterError::InvalidProof)?;
+        if self.confirmations != confirmations || confirmations < required_confirmations {
+            return Err(if confirmations < required_confirmations {
+                BridgeAdapterError::InsufficientFinality
+            } else {
+                BridgeAdapterError::InvalidProof
+            });
+        }
+        self.verify_bitcoin_chain()?;
+        Ok(confirmations)
     }
 
     pub fn verify_bitcoin_chain(&self) -> Result<BitcoinBlockHeaderVerification, BridgeAdapterError> {
