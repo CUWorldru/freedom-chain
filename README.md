@@ -799,3 +799,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - asset identity is validated before registration and duplicate asset IDs are rejected;
 - the asset registry is included in the deterministic state root and therefore inherits existing block/snapshot state-root validation;
 - the registry field uses serde defaulting for backward-compatible state decoding while new genesis state always contains FRC.
+
+
+## M78 — Bridge Message Domain Separation
+
+- added canonical BridgeMessage with protocol version, source/destination chain IDs, bridge ID, asset ID, source transaction hash, source event index, nonce, amount, recipient, and message hash;
+- message hashing uses a dedicated FREEDOM bridge domain and canonical binary field ordering;
+- the cryptographic message hash binds source chain, destination chain, bridge, asset, nonce, amount, and recipient, preventing cross-domain reinterpretation;
+- replay identity additionally binds source chain, source transaction, source event/output index, and nonce;
+- no bridge message is considered cryptographically valid unless message_hash matches the canonical hash.
