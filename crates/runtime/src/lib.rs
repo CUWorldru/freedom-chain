@@ -150,7 +150,6 @@ pub fn verify_bridge_deposit_with_adapter(
                 p.chain_id,
                 freedom_types::CrossChainAssetKind::BitcoinUtxo,
                 b"BTC",
-                [0u8; 32],
                 p.bridge_id,
             ).is_none() {
                 return Err("BitcoinRegistryIdentityMismatch".into());
@@ -161,7 +160,6 @@ pub fn verify_bridge_deposit_with_adapter(
                 p.chain_id,
                 freedom_types::CrossChainAssetKind::Erc20,
                 &p.token_contract,
-                [0u8; 32],
                 p.bridge_id,
             ).is_none() {
                 return Err("EvmTokenRegistryIdentityMismatch".into());
@@ -172,7 +170,6 @@ pub fn verify_bridge_deposit_with_adapter(
                 p.chain_id,
                 freedom_types::CrossChainAssetKind::Trc20,
                 &p.usdt_contract,
-                [0u8; 32],
                 p.bridge_id,
             ).is_none() {
                 return Err("TronTokenRegistryIdentityMismatch".into());
