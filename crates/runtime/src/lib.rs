@@ -187,6 +187,66 @@ impl<'a> BridgeIngressContext<'a> {
             registry,
             canonical_asset_id,
         )?;
+        match external {
+            freedom_types::ExternalBridgeDepositProof::BitcoinUtxo(p) => {
+                if !freedom_types::expected_asset_kind_for_mainnet(
+                    p.chain_id,
+                    freedom_types::CrossChainAssetKind::BitcoinUtxo,
+                ) {
+                    return Err("UnsupportedBitcoinNetwork".into());
+                }
+                if registry.find_representation_by_external_identity(
+                    p.chain_id,
+                    freedom_types::CrossChainAssetKind::BitcoinUtxo,
+                    b"BTC",
+                    p.bridge_id,
+                ).map(|r| r.representation.asset_id) != Some(resolved.representation_asset_id()) {
+                    return Err("BitcoinRegistryIdentityMismatch".into());
+                }
+            }
+            freedom_types::ExternalBridgeDepositProof::EvmTransfer(p) => {
+                if !freedom_types::expected_asset_kind_for_mainnet(
+                    p.chain_id,
+                    freedom_types::CrossChainAssetKind::Erc20,
+                ) {
+                    return Err("UnsupportedEvmNetwork".into());
+                }
+                if p.token_contract.len() != 20
+                    || p.token_contract.iter().all(|b| *b == 0)
+                {
+                    return Err("InvalidEvmContractAddress".into());
+                }
+                if registry.find_representation_by_external_identity(
+                    p.chain_id,
+                    freedom_types::CrossChainAssetKind::Erc20,
+                    &p.token_contract,
+                    p.bridge_id,
+                ).map(|r| r.representation.asset_id) != Some(resolved.representation_asset_id()) {
+                    return Err("EvmTokenRegistryIdentityMismatch".into());
+                }
+            }
+            freedom_types::ExternalBridgeDepositProof::TronUsdt(p) => {
+                if !freedom_types::expected_asset_kind_for_mainnet(
+                    p.chain_id,
+                    freedom_types::CrossChainAssetKind::Trc20,
+                ) {
+                    return Err("UnsupportedTronNetwork".into());
+                }
+                if p.usdt_contract.len() != 20
+                    || p.usdt_contract.iter().all(|b| *b == 0)
+                {
+                    return Err("InvalidTronContractAddress".into());
+                }
+                if registry.find_representation_by_external_identity(
+                    p.chain_id,
+                    freedom_types::CrossChainAssetKind::Trc20,
+                    &p.usdt_contract,
+                    p.bridge_id,
+                ).map(|r| r.representation.asset_id) != Some(resolved.representation_asset_id()) {
+                    return Err("TronTokenRegistryIdentityMismatch".into());
+                }
+            }
+        }
         if !registry.has_representation(resolved.representation_asset_id()) {
             return Err("InvalidBridgeIngressContext".into());
         }
