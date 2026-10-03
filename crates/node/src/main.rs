@@ -51,6 +51,13 @@ enum PeerEvidenceKind {
     SnapshotConflict,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum PeerEvidenceSeverity {
+    Normal,
+    Elevated,
+    Critical,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct PeerReputationEvidence {
     peer: libp2p::PeerId,
@@ -58,6 +65,7 @@ struct PeerReputationEvidence {
     request_id: Hash,
     fingerprint: Hash,
     kind: PeerEvidenceKind,
+    severity: PeerEvidenceSeverity,
     reason: String,
 }
 
@@ -77,6 +85,9 @@ struct PeerReputationPolicy {
     evidence_limit: usize,
     sync_conflict_weight: u32,
     snapshot_conflict_weight: u32,
+    normal_severity_multiplier: u32,
+    elevated_severity_multiplier: u32,
+    critical_severity_multiplier: u32,
 }
 
 const PEER_REPUTATION_POLICY: PeerReputationPolicy = PeerReputationPolicy {
@@ -86,13 +97,22 @@ const PEER_REPUTATION_POLICY: PeerReputationPolicy = PeerReputationPolicy {
     evidence_limit: PEER_EVIDENCE_LIMIT,
     sync_conflict_weight: 1,
     snapshot_conflict_weight: 1,
+    normal_severity_multiplier: 1,
+    elevated_severity_multiplier: 2,
+    critical_severity_multiplier: 3,
 };
 
-fn peer_evidence_weight(kind: &PeerEvidenceKind) -> u32 {
-    match kind {
+fn peer_evidence_weight(kind: &PeerEvidenceKind, severity: PeerEvidenceSeverity) -> u32 {
+    let base = match kind {
         PeerEvidenceKind::SyncConflict => PEER_REPUTATION_POLICY.sync_conflict_weight,
         PeerEvidenceKind::SnapshotConflict => PEER_REPUTATION_POLICY.snapshot_conflict_weight,
-    }
+    };
+    let multiplier = match severity {
+        PeerEvidenceSeverity::Normal => PEER_REPUTATION_POLICY.normal_severity_multiplier,
+        PeerEvidenceSeverity::Elevated => PEER_REPUTATION_POLICY.elevated_severity_multiplier,
+        PeerEvidenceSeverity::Critical => PEER_REPUTATION_POLICY.critical_severity_multiplier,
+    };
+    base.saturating_mul(multiplier)
 }
 
 fn compact_peer_evidence(reputation: &mut PeerReputation) -> bool {
@@ -118,6 +138,7 @@ fn record_peer_evidence(
     });
     entry.score = entry.score.saturating_add(peer_evidence_weight(
         &evidence.kind,
+        evidence.severity,
     ));
     entry.last_decay_height = height;
     entry.evidence.push(evidence);
