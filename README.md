@@ -1054,3 +1054,8 @@ Bitcoin Merkle deposit proofs can now be validated against the persisted canonic
 ## M116 — Bitcoin Deposit Finality Depth Binding
 
 Bitcoin deposit finality is now derived from the verified canonical tip: `tip_height - deposit_block_height + 1`. The proof's claimed confirmation count must exactly match that derived depth, and the derived depth must satisfy the bridge policy's `min_external_confirmations`. A caller can no longer inflate confirmations by supplying an arbitrary number.
+
+
+## M117 — Bitcoin UTXO Deposit Binding
+
+Bitcoin UTXO deposits now expose an explicit commitment over transaction hash, output index, amount and scriptPubKey. State validation requires the proof to match the expected UTXO identity and value, uses the persisted canonical tip for finality depth, and keeps the bridge reorg gate active. This prevents an external caller from swapping the transaction output, amount or destination script independently of the proof.
