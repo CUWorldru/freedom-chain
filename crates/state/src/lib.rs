@@ -297,6 +297,7 @@ impl ChainState {
   }
   self.bridge_withdrawal_status.insert(id,next); Ok(())
  }
+ pub fn validate_bitcoin_deposit_against_canonical_tip(&self,bridge_id:Hash,proof:&freedom_types::BitcoinMerkleProof,headers:&[freedom_types::BitcoinBlockHeader])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id||!proof.verify_against_canonical_tip(1,tip,headers){return Err(StateError::BitcoinReorgDetected);}Ok(())}
  pub fn bitcoin_deposit_allowed(&self,bridge_id:Hash)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)}
  pub fn record_verified_external_lock(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 || !self.asset_registry.contains_key(&asset_id) { return Err(StateError::InvalidBridgeAccounting); }
