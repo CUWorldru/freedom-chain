@@ -820,3 +820,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - replay records are included in the deterministic state root, so replay protection survives snapshots and consensus state recovery;
 - the replay index uses serde defaulting so older serialized ChainState values can deserialize with an empty replay set;
 - M79 records verified bridge messages but does not mint or release assets yet; mint/burn accounting is intentionally deferred to the bridge state machine and supply-invariant milestones.
+
+## M80 — Bridge Message State Machine
+
+- bridge messages now have an explicit consensus-visible lifecycle: Verified → Accepted → Minted;
+- recording a cryptographically valid bridge message enters the Verified state;
+- acceptance is only possible from Verified, and Minted is only reachable from Accepted;
+- transitions are forward-only and repeated transitions are rejected;
+- bridge lifecycle status is included in the deterministic state root;
+- M79 bridge records remain deserializable because lifecycle status is stored in a separate serde-defaulted map;
+- legacy M79 records without a status are safely treated as Verified when first accepted, providing an explicit migration path;
+- M80 does not yet create supply or mint balances: the Minted state is a state-machine transition only, while actual supply accounting is deferred to the supply-invariant milestone.
