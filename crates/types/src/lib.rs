@@ -1862,6 +1862,24 @@ pub struct BitcoinBlockHeader {
 }
 
 impl BitcoinBlockHeader {
+    pub fn parse(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != 80 {
+            return None;
+        }
+        let mut previous_block_hash = [0u8; 32];
+        let mut merkle_root = [0u8; 32];
+        previous_block_hash.copy_from_slice(&bytes[4..36]);
+        merkle_root.copy_from_slice(&bytes[36..68]);
+        Some(Self {
+            version: i32::from_le_bytes(bytes[0..4].try_into().ok()?),
+            previous_block_hash,
+            merkle_root,
+            timestamp: u32::from_le_bytes(bytes[68..72].try_into().ok()?),
+            bits: u32::from_le_bytes(bytes[72..76].try_into().ok()?),
+            nonce: u32::from_le_bytes(bytes[76..80].try_into().ok()?),
+        })
+    }
+
     pub fn serialize(&self) -> [u8; 80] {
         let mut out = [0u8; 80];
         out[0..4].copy_from_slice(&self.version.to_le_bytes());
@@ -1913,7 +1931,13 @@ pub struct BitcoinBlockHeaderVerification {
 
 impl BitcoinBlockHeaderVerification {
     pub fn verify(header: &BitcoinBlockHeader) -> Result<Self, BridgeAdapterError> {
-        if header.timestamp == 0 {
+        if header.timestamp == 0 || header.bits == 0 {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        let encoded = header.serialize();
+        let parsed = BitcoinBlockHeader::parse(&encoded)
+            .ok_or(BridgeAdapterError::InvalidProof)?;
+        if parsed != *header {
             return Err(BridgeAdapterError::InvalidProof);
         }
         let Some(target) = BitcoinBlockHeader::target_from_bits(header.bits) else {
