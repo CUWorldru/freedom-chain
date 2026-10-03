@@ -605,3 +605,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - a response from a different peer cannot satisfy a pending request merely by reproducing the deterministic protocol `request_id`;
 - snapshot responses are explicitly rejected when their returned height exceeds the requested target;
 - this closes the remaining gap between application-level request correlation and the authenticated request-response transport.
+
+
+## M57 — Multi-Peer Sync Selection
+
+- periodic block synchronization no longer always trusts the first connected peer;
+- sync requests rotate deterministically across the currently connected peers;
+- a new sync request is not issued while another outbound sync request is still pending;
+- disconnecting a pending sync/snapshot peer clears that stale request anchor;
+- peer rotation remains fail-closed because every response is still bound to its exact peer and transport request ID;
+- regression coverage verifies deterministic peer rotation and empty-peer handling.
