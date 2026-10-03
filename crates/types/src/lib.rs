@@ -2052,6 +2052,79 @@ impl BitcoinUtxoAccumulatorProof {
 
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoStateEntry {
+    pub tx_hash: Hash,
+    pub vout: u32,
+    pub amount_sat: u64,
+    pub script_pubkey: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoAccumulatorTransition {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub previous_tip: BitcoinChainCheckpoint,
+    pub next_tip: BitcoinChainCheckpoint,
+    pub previous_root: Hash,
+    pub previous_leaf_count: u64,
+    pub spent: Vec<(Hash, u32)>,
+    pub created: Vec<BitcoinUtxoStateEntry>,
+    pub next_root: Hash,
+    pub next_leaf_count: u64,
+}
+
+impl BitcoinUtxoAccumulatorTransition {
+    pub fn compute_next(
+        previous: &[BitcoinUtxoStateEntry],
+        spent: &[(Hash,u32)],
+        created: &[BitcoinUtxoStateEntry],
+    ) -> Result<(Hash,u64), String> {
+        let spent_set: std::collections::BTreeSet<(Hash,u32)> = spent.iter().copied().collect();
+        if spent_set.len()!=spent.len() { return Err("duplicate spent outpoint".into()); }
+        let mut map=std::collections::BTreeMap::<(Hash,u32),BitcoinUtxoStateEntry>::new();
+        for e in previous {
+            if map.insert((e.tx_hash,e.vout),e.clone()).is_some() {
+                return Err("duplicate previous outpoint".into());
+            }
+        }
+        for outpoint in &spent_set {
+            if map.remove(outpoint).is_none() { return Err("spent outpoint is not in previous UTXO set".into()); }
+        }
+        for e in created {
+            if map.insert((e.tx_hash,e.vout),e.clone()).is_some() {
+                return Err("created outpoint already exists".into());
+            }
+        }
+        let rows: Vec<(Hash,u32,u64,Vec<u8>)> = map.values().map(|e| {
+            (e.tx_hash,e.vout,e.amount_sat,e.script_pubkey.clone())
+        }).collect();
+        if rows.is_empty() { return Err("UTXO set cannot be empty".into()); }
+        Ok((BitcoinUtxoAccumulator::compute_root(&rows), map.len() as u64))
+    }
+
+    pub fn verify_transition(&self, previous: &[BitcoinUtxoStateEntry]) -> Result<(), String> {
+        if self.bridge_id == [0;32] || self.chain_id == 0
+            || self.previous_root == [0;32] || self.next_root == [0;32]
+            || self.previous_leaf_count == 0 || self.next_leaf_count == 0
+            || self.next_tip.height != self.previous_tip.height + 1 {
+            return Err("invalid UTXO transition metadata".into());
+        }
+        let rows: Vec<(Hash,u32,u64,Vec<u8>)> = previous.iter().map(|e|
+            (e.tx_hash,e.vout,e.amount_sat,e.script_pubkey.clone())
+        ).collect();
+        if rows.len() as u64 != self.previous_leaf_count
+            || BitcoinUtxoAccumulator::compute_root(&rows) != self.previous_root {
+            return Err("previous UTXO root mismatch".into());
+        }
+        let (root,count)=Self::compute_next(previous,&self.spent,&self.created)?;
+        if root != self.next_root || count != self.next_leaf_count {
+            return Err("next UTXO root mismatch".into());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinUtxoCommitmentAttestation {
     pub bridge_id: Hash,
     pub chain_id: u32,
