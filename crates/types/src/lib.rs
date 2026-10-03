@@ -357,6 +357,31 @@ pub enum AssetType {
 pub const BRIDGE_MESSAGE_PROTOCOL_VERSION: u16 = 1;
 pub const BRIDGE_MESSAGE_DOMAIN: &[u8] = b"FREEDOM-BRIDGE-MESSAGE-V1";
 
+pub const BITCOIN_MAINNET_CHAIN_ID: u32 = 0x0000_0001;
+pub const ETHEREUM_MAINNET_CHAIN_ID: u32 = 0x0000_0002;
+pub const TRON_MAINNET_CHAIN_ID: u32 = 728_126_428;
+
+pub fn is_supported_mainnet_chain(chain_id: u32) -> bool {
+    matches!(
+        chain_id,
+        BITCOIN_MAINNET_CHAIN_ID
+            | ETHEREUM_MAINNET_CHAIN_ID
+            | TRON_MAINNET_CHAIN_ID
+    )
+}
+
+pub fn expected_asset_kind_for_mainnet(
+    chain_id: u32,
+    kind: CrossChainAssetKind,
+) -> bool {
+    match chain_id {
+        BITCOIN_MAINNET_CHAIN_ID => kind == CrossChainAssetKind::BitcoinUtxo,
+        ETHEREUM_MAINNET_CHAIN_ID => kind == CrossChainAssetKind::Erc20,
+        TRON_MAINNET_CHAIN_ID => kind == CrossChainAssetKind::Trc20,
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeMessage {
     pub protocol_version: u16,
