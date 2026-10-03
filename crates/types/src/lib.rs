@@ -175,7 +175,6 @@ pub enum AssetType {
     Bridged = 2,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub const BRIDGE_MESSAGE_PROTOCOL_VERSION: u16 = 1;
 pub const BRIDGE_MESSAGE_DOMAIN: &[u8] = b"FREEDOM-BRIDGE-MESSAGE-V1";
 
@@ -282,6 +281,58 @@ impl AssetDefinition {
             self.bridge_id,
         ) && !self.symbol.is_empty()
     }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BridgeDirection { Inbound = 1, Outbound = 2 }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BridgeWithdrawalStatus {
+    Requested = 1, Validated = 2, Approved = 3, Signing = 4,
+    Broadcast = 5, ExternalConfirmed = 6, Finalized = 7, Rejected = 8,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeWithdrawal {
+    pub withdrawal_id: Hash,
+    pub bridge_id: Hash,
+    pub asset_id: Hash,
+    pub destination_chain_id: u32,
+    pub amount: u128,
+    pub sender: Address,
+    pub recipient: Vec<u8>,
+    pub nonce: u64,
+    pub request_hash: Hash,
+}
+impl BridgeWithdrawal {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-BRIDGE-WITHDRAWAL-V1");
+        o.extend_from_slice(&self.bridge_id); o.extend_from_slice(&self.asset_id);
+        o.extend_from_slice(&self.destination_chain_id.to_le_bytes());
+        o.extend_from_slice(&self.amount.to_le_bytes()); o.extend_from_slice(&self.sender);
+        o.extend_from_slice(&(self.recipient.len() as u64).to_le_bytes());
+        o.extend_from_slice(&self.recipient); o.extend_from_slice(&self.nonce.to_le_bytes()); o
+    }
+    pub fn compute_hash(&self) -> Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
+    pub fn validate_hash(&self) -> bool { self.request_hash == self.compute_hash() }
+    pub fn compute_id(&self) -> Hash {
+        freedom_primitives::domain_hash(
+            b"FREEDOM-BRIDGE-WITHDRAWAL-ID-V1",
+            &[&self.bridge_id,&self.asset_id,&self.destination_chain_id.to_le_bytes(),
+              &self.sender,&self.nonce.to_le_bytes()],
+        )
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct BridgeAccounting {
+    pub verified_external_locked: u128,
+    pub freedom_minted: u128,
+    pub freedom_burned: u128,
+    pub external_released: u128,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
