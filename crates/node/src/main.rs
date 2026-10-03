@@ -335,6 +335,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let hash = vote.block_hash;
                                     let ready = protocol.receive_vote(&state, vote, hash, state.height + 1, round)?;
                                     if ready {
+                                        let precommit = protocol.lock_on_prevote_quorum(&state, hash, state.height + 1, round)?;
+                                        publish(&mut swarm, &NetworkMessage::Precommit(precommit))?;
+                                    }
+                                }
+                                Ok(NetworkMessage::Precommit(precommit)) => {
+                                    if precommit.height != state.height + 1 || precommit.round != round { continue; }
+                                    let hash = precommit.block_hash;
+                                    let ready = protocol.receive_precommit(&state, precommit, hash, state.height + 1, round)?;
+                                    if ready {
                                         if let Some(block) = blocks.get(&hash).cloned() {
                                             let committed = protocol.finalize_if_quorum(&mut state, &block, round)?;
                                             store.put_block(&committed)?;
@@ -343,12 +352,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     block_hash: freedom_consensus::block_hash(&committed),
                                                     height: committed.header.height,
                                                     round,
-                                                    votes: protocol.votes.values().cloned().collect(),
+                                                    precommits: protocol.precommits.values().cloned().collect(),
                                                 };
                                                 store.save_snapshot_with_certificate(&state, freedom_consensus::block_hash(&committed), certificate)?;
                                             }
                                             println!("FINALIZED height={} round={} hash={}", committed.header.height, round, hex::encode(block_hash(&committed)));
-                                            protocol.reset_round();
+                                            protocol.reset_height();
                                             blocks.clear();
                                             round = 0;
                                             timeout_round_sent = None;
