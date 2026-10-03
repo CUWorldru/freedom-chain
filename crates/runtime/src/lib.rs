@@ -123,6 +123,25 @@ pub fn build_next_block(
 
 
 #[cfg(test)]
+mod m29_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+
+    #[test]
+    fn message_dedup_is_bounded_and_deterministic() {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
+        let mut p = ValidatorProtocol::new(hash_bytes(b"v"), key);
+        assert!(p.remember_message(hash_bytes(b"a")));
+        assert!(!p.remember_message(hash_bytes(b"a")));
+        p.max_seen_messages = 2;
+        assert!(p.remember_message(hash_bytes(b"b")));
+        assert!(p.remember_message(hash_bytes(b"c")));
+        assert_eq!(p.seen_message_order.len(), 2);
+        assert!(!p.seen_messages.contains(&hash_bytes(b"a")));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use freedom_crypto::sign;
