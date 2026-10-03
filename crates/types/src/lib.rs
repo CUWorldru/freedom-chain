@@ -597,6 +597,34 @@ impl BitcoinUtxoProof {
 }
 
 
+pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
+    let mut current=tx_hash;
+    for (depth,sibling) in branch.iter().enumerate(){
+        let bit=(index>>depth)&1;
+        let mut bytes=Vec::with_capacity(64);
+        if bit==0{bytes.extend_from_slice(&current);bytes.extend_from_slice(sibling)}else{bytes.extend_from_slice(sibling);bytes.extend_from_slice(&current)}
+        let first=freedom_primitives::hash_bytes(&bytes);
+        current=freedom_primitives::hash_bytes(&first);
+    }
+    current
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinMerkleProof {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub tx_hash: Hash,
+    pub block_height: u64,
+    pub confirmations: u64,
+    pub merkle_root: Hash,
+    pub merkle_branch: Vec<Hash>,
+    pub merkle_index: u32,
+}
+impl BitcoinMerkleProof {
+    pub fn verify(&self,required_confirmations:u64)->bool{
+        self.bridge_id!=[0;32]&&self.chain_id!=0&&self.tx_hash!=[0;32]&&self.merkle_root!=[0;32]&&!self.merkle_branch.is_empty()&&self.confirmations>=required_confirmations&&bitcoin_merkle_root(self.tx_hash,&self.merkle_branch,self.merkle_index)==self.merkle_root
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EvmTransferProof {
     pub bridge_id: Hash,
@@ -1176,6 +1204,14 @@ mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn bitcoin_utxo_requires_six_confirmations(){let a=BitcoinAdapter::new(d()).unwrap();assert_eq!(a.verify_utxo_deposit(&p(5)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_utxo_deposit(&p(6)).is_ok());}
  #[test] fn bitcoin_vout_is_replay_event_identity(){assert_eq!(p(6).event_index(),2);}
  #[test] fn bitcoin_withdrawal_uses_script_bytes(){let a=BitcoinAdapter::new(d()).unwrap();let x=a.build_utxo_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();assert!(x.validate_hash());}
+}
+
+#[cfg(test)]
+mod m98_bitcoin_merkle_tests {
+ use super::*;
+ #[test] fn merkle_root_changes_with_index(){let tx=[1;32];let a=[2;32];let b=[3;32];let x=bitcoin_merkle_root(tx,&[a,b],0);let y=bitcoin_merkle_root(tx,&[a,b],1);assert_ne!(x,y);}
+ #[test] fn merkle_proof_verifies(){let tx=[1;32];let branch=vec![[2;32],[3;32]];let root=bitcoin_merkle_root(tx,&branch,0);let p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:6,merkle_root:root,merkle_branch:branch,merkle_index:0};assert!(p.verify(6));}
+ #[test] fn insufficient_confirmations_fail(){let tx=[1;32];let branch=vec![[2;32]];let root=bitcoin_merkle_root(tx,&branch,0);let p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:5,merkle_root:root,merkle_branch:branch,merkle_index:0};assert!(!p.verify(6));}
 }
 
 #[cfg(test)]
