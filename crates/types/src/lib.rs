@@ -2718,9 +2718,19 @@ pub struct EvmFinalityAdapter;
 impl CrossChainProofAdapter for EvmFinalityAdapter {
     fn proof_kind(&self) -> CrossChainProofKind { CrossChainProofKind::Ethereum }
 
-    fn verify_envelope(&self, envelope: &CrossChainFinalityEnvelope) -> Result<(), CrossChainProofError> {
-        if envelope.proof_kind != self.proof_kind() || !envelope.validate_structure() {
-            return Err(CrossChainProofError::InvalidEnvelope);
+    fn verify_envelope(&self, envelope:&CrossChainFinalityEnvelope)->Result<(),CrossChainProofError>{
+        if envelope.proof_kind!=self.proof_kind() || !envelope.validate_structure(){return Err(CrossChainProofError::InvalidEnvelope);}
+        Ok(())
+    }
+
+    pub fn verify_finality_proof(&self,proof:&EthereumFinalityProof,envelope:&CrossChainFinalityEnvelope)->Result<(),CrossChainProofError>{
+        if !proof.validate_structure(){return Err(CrossChainProofError::InvalidProof);}
+        if envelope.proof_kind!=CrossChainProofKind::Ethereum
+            || envelope.finalized_height!=proof.finalized_block_number
+            || envelope.finalized_hash!=proof.finalized_block_hash
+            || envelope.state_root!=proof.state_root
+            || envelope.proof_hash!=proof.proof_hash(){
+            return Err(CrossChainProofError::InvalidProof);
         }
         Ok(())
     }
