@@ -35,6 +35,7 @@ pub struct SnapshotSyncRequest { pub request_id: Hash, pub height: u64 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SnapshotSyncResponse {
     pub request_id: Hash,
+    pub chain_id: u64,
     pub height: u64,
     pub block_hash: Hash,
     pub state_root: Hash,
