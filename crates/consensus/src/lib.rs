@@ -15,3 +15,34 @@ pub fn block_hash(block:&Block)->Hash{domain_hash(b"FREEDOM-BLOCK-HASH-V1",&[&ca
 pub fn proposer_for_height(state:&ChainState,height:u64)->Option<freedom_primitives::Address>{if state.validators.is_empty(){return None}let mut ids:Vec<_>=state.validators.keys().copied().collect();ids.sort();let id=ids[((height-1) as usize)%ids.len()];state.validators.get(&id).map(|v|v.owner)}
 pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{if block.header.height!=state.height+1{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
 #[cfg(test)]mod tests{use super::*;use freedom_primitives::{merkle_proof,merkle_root,verify_merkle_proof};use freedom_types::{TxKind,Transaction,Receipt};#[test]fn merkle_proof_verifies(){let leaves=vec![hash_bytes(b"a"),hash_bytes(b"b"),hash_bytes(b"c")];let root=merkle_root(&leaves);let proof=merkle_proof(&leaves,2).unwrap();assert!(verify_merkle_proof(root,leaves[2],&proof));}#[test]fn roots_are_order_sensitive(){let a=Transaction{chain_id:1,sender:[1;32],nonce:0,kind:TxKind::Transfer,payload:vec![1],fee:0,signature:vec![2;64]};let b=Transaction{chain_id:1,sender:[1;32],nonce:1,kind:TxKind::Transfer,payload:vec![2],fee:0,signature:vec![3;64]};assert_ne!(tx_root(&[a.clone(),b.clone()]),tx_root(&[b,a]));let r1=Receipt{tx_hash:a.hash(),success:true,gas_used:1,events:vec![]};let r2=Receipt{tx_hash:b.hash(),success:true,gas_used:1,events:vec![]};assert_ne!(receipts_root(&[r1.clone(),r2.clone()]),receipts_root(&[r2,r1]));}}
+
+
+use freedom_crypto::verify;
+
+pub fn quorum_threshold(validator_count: usize) -> usize {
+    (validator_count * 2) / 3 + 1
+}
+
+pub fn validate_vote(state: &ChainState, vote: &freedom_types::ValidatorVote, expected_block_hash: Hash, expected_height: u64) -> Result<(), String> {
+    if vote.block_hash != expected_block_hash { return Err("vote block hash mismatch".into()); }
+    if vote.height != expected_height { return Err("vote height mismatch".into()); }
+    let validator = state.validators.get(&vote.validator_id).ok_or_else(|| "unknown validator".to_string())?;
+    if vote.signature.len() != 64 { return Err("invalid vote signature length".into()); }
+    let mut sig = [0u8;64];
+    sig.copy_from_slice(&vote.signature);
+    if !verify(&validator.consensus_key, &vote.signing_bytes(), &sig) {
+        return Err("invalid vote signature".into());
+    }
+    Ok(())
+}
+
+pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, votes: &[freedom_types::ValidatorVote]) -> Result<(), String> {
+    let threshold = quorum_threshold(state.validators.len());
+    let mut seen = std::collections::BTreeSet::new();
+    for vote in votes {
+        validate_vote(state, vote, block_hash, height)?;
+        if !seen.insert(vote.validator_id) { return Err("duplicate validator vote".into()); }
+    }
+    if seen.len() < threshold { return Err(format!("quorum not reached: {}/{}", seen.len(), threshold)); }
+    Ok(())
+}

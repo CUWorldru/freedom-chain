@@ -161,3 +161,29 @@ pub struct DrawConfig { pub draw_id: Hash, pub draw_type: DrawType, pub ticket_p
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DrawResult { pub draw_id: Hash, pub total_tickets: u64, pub prize_pool_mfdm: u128, pub cu_fund_mfdm: u128, pub annual_reserve_mfdm: u128, pub winners: Vec<Hash>, pub randomness_seed: Hash, pub selection_proof: Hash }
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BlockProposal {
+    pub block_hash: Hash,
+    pub height: u64,
+    pub proposer: Address,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValidatorVote {
+    pub block_hash: Hash,
+    pub height: u64,
+    pub validator_id: Hash,
+    pub signature: Vec<u8>,
+}
+impl ValidatorVote {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"FREEDOM-VOTE-V1");
+        out.extend_from_slice(&self.block_hash);
+        out.extend_from_slice(&self.height.to_le_bytes());
+        out.extend_from_slice(&self.validator_id);
+        out
+    }
+}

@@ -225,3 +225,15 @@ mod tests {
         assert!(mempool.submit(&next_state, stale).is_err());
     }
 }
+
+
+pub fn finalize_block_with_quorum(
+    state: &mut ChainState,
+    block: &Block,
+    votes: &[freedom_types::ValidatorVote],
+) -> Result<Block, String> {
+    let hash = block_hash(block);
+    freedom_consensus::validate_quorum(state, hash, block.header.height, votes)?;
+    let committed = execute_block(state, block)?;
+    Ok(committed)
+}
