@@ -74,7 +74,8 @@ pub fn verify_bridge_deposit_with_adapter(
     policy: &freedom_types::BridgeSecurityPolicy,
     descriptor: &freedom_types::BridgeAdapterDescriptor,
 ) -> Result<freedom_types::VerifiedDeposit, String> {
-    if descriptor.bridge_id != policy.bridge_id
+    if !descriptor.validate()
+        || descriptor.bridge_id != policy.bridge_id
         || descriptor.chain_id != proof.bridge_deposit.source_chain_id
         || !descriptor.enabled
         || descriptor.required_confirmations != policy.min_external_confirmations
@@ -853,5 +854,6 @@ mod m161_bridge_adapter_tests {
             enabled: false,
         };
         assert!(!descriptor.enabled);
+        assert!(descriptor.validate());
     }
 }
