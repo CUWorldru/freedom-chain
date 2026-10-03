@@ -26,6 +26,8 @@ pub struct StateSnapshot {
     pub state: ChainState,
     #[serde(default)]
     pub certificate: Option<freedom_types::FinalityCertificate>,
+    #[serde(default)]
+    pub epoch_transition_certificate: Option<freedom_types::ValidatorSetCertificate>,
 }
 
 pub struct ChainStore { db: DB }
@@ -96,7 +98,14 @@ impl ChainStore {
         block_hash: [u8;32],
         certificate: Option<freedom_types::FinalityCertificate>,
     ) -> Result<(), StorageError> {
-        let snapshot = StateSnapshot { height: state.height, block_hash, state_root: state.state_root(), state: state.clone(), certificate };
+        let snapshot = StateSnapshot {
+            height: state.height,
+            block_hash,
+            state_root: state.state_root(),
+            state: state.clone(),
+            certificate,
+            epoch_transition_certificate: state.validator_set_certificate.clone(),
+        };
         let bytes = serde_json::to_vec(&snapshot).map_err(|e| StorageError::Codec(e.to_string()))?;
         self.db.put(Self::snapshot_key(state.height), bytes).map_err(|e| StorageError::Rocks(e.to_string()))?;
         Ok(())
@@ -106,7 +115,16 @@ impl ChainStore {
         let Some(bytes) = self.db.get(Self::snapshot_key(height)).map_err(|e| StorageError::Rocks(e.to_string()))? else { return Ok(None); };
         let snapshot: StateSnapshot = serde_json::from_slice(&bytes).map_err(|e| StorageError::Codec(e.to_string()))?;
         if snapshot.height != height || snapshot.state.height != height { return Err(StorageError::InvalidSnapshot("height mismatch".into())); }
-        if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }
+        if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }if snapshot.epoch_transition_certificate.as_ref().map(|c| c.hash())
+            != snapshot.state.validator_set_certificate.as_ref().map(|c| c.hash()) {
+            return Err(StorageError::InvalidSnapshot("epoch transition certificate mismatch".into()));
+        }
+        if let Some(cert) = &snapshot.epoch_transition_certificate {
+            if cert.hash() != freedom_types::ValidatorSetCertificate::hash(cert) {
+                return Err(StorageError::InvalidSnapshot("invalid epoch transition certificate hash".into()));
+            }
+        }
+        
         Ok(Some(snapshot))
     }
 
@@ -166,5 +184,6 @@ mod tests {
         assert_eq!(loaded.block_hash, [9;32]);
         assert_eq!(loaded.state.state_root(), loaded.state_root);
         assert!(loaded.certificate.is_none());
+        assert!(loaded.epoch_transition_certificate.is_none());
     }
 }
