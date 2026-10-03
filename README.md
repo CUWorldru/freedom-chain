@@ -292,3 +292,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Votes, precommits and timeout certificates now require at least two-thirds of active validator stake; zero total stake cannot form quorum.
 - Added Stake and Unstake payloads and activated validator-owner stake transitions in state execution.
 - Stake weight is now available to the consensus core; full validator-set lifecycle and epoch activation remain M27.
+
+
+## M27 — Epoch-Based Validator Set Lifecycle
+
+- Added an epoch-scoped active validator set snapshot.
+- Consensus proposer selection and validator signature validation now use the active epoch set.
+- Stake changes do not retroactively change the quorum of an already active epoch.
+- Validator set refresh happens only at deterministic epoch boundaries; zero-stake Genesis uses a bootstrap validator set until economic stake is activated.
+- Block execution validates the header epoch and commits epoch/set data into the state root.
+- Full validator onboarding/exit governance and epoch activation transactions remain future hardening work.
