@@ -1781,6 +1781,9 @@ impl BitcoinSpendScanBlock {
 pub struct BitcoinUtxoSpendStateProof {
     pub utxo: BitcoinUtxoProof,
     pub inclusion_header: BitcoinBlockHeader,
+    /// Complete raw transactions for the inclusion block. This is required
+    /// because a transaction may spend an output created earlier in the same block.
+    pub inclusion_block_transactions: Vec<Vec<u8>>,
     /// Blocks from the block immediately after the UTXO inclusion block through
     /// the claimed canonical tip, inclusive.
     pub post_inclusion_blocks: Vec<BitcoinSpendScanBlock>,
@@ -1811,8 +1814,18 @@ impl BitcoinUtxoSpendStateProof {
         {
             return Err("UTXO inclusion header/Merkle proof invalid".into());
         }
-        if self.inclusion_header.block_hash() != self.utxo_block_hash_expected() {
-            return Err("UTXO inclusion header is not bound to the canonical proof".into());
+        let inclusion_block = BitcoinSpendScanBlock {
+            height: self.utxo.block_height,
+            header: self.inclusion_header.clone(),
+            raw_transactions: self.inclusion_block_transactions.clone(),
+        };
+        inclusion_block.verify_structure()?;
+        let inclusion_hashes = inclusion_block.transaction_hashes()?;
+        if !inclusion_hashes.contains(&self.utxo.tx_hash) {
+            return Err("UTXO transaction is absent from inclusion block".into());
+        }
+        if inclusion_block.spends_outpoint(self.utxo.tx_hash, self.utxo.vout)? {
+            return Err("bitcoin UTXO was spent in its inclusion block".into());
         }
 
         let expected_blocks = canonical_tip.height - self.utxo.block_height;
@@ -1842,25 +1855,7 @@ impl BitcoinUtxoSpendStateProof {
         if previous_hash != canonical_tip.block_hash {
             return Err("bitcoin spend-scan does not reach canonical tip".into());
         }
-        if expected_blocks > 0 {
-            let headers: Vec<_> = self.post_inclusion_blocks.iter().map(|b| b.header.clone()).collect();
-            let derived = bitcoin_validate_from_checkpoint(
-                &BitcoinChainCheckpoint {
-                    height: self.utxo.block_height,
-                    block_hash: self.inclusion_header.block_hash(),
-                    chainwork: [1; 32],
-                },
-                &headers,
-            ).map_err(|_| "bitcoin spend-scan chainwork validation failed".to_string())?;
-            if derived.height != canonical_tip.height || derived.block_hash != canonical_tip.block_hash {
-                return Err("bitcoin spend-scan canonical chain validation failed".into());
-            }
-        }
         Ok(())
-    }
-
-    fn utxo_block_hash_expected(&self) -> Hash {
-        self.inclusion_header.block_hash()
     }
 
     pub fn is_unspent(&self, canonical_tip: &BitcoinChainCheckpoint) -> bool {
