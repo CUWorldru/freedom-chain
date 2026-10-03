@@ -133,8 +133,16 @@ impl ChainState {
  }
  pub fn register_bitcoin_checkpoint(&mut self,bridge_id:Hash,checkpoint:BitcoinChainCheckpoint)->Result<(),StateError>{
   if bridge_id==[0;32]||!checkpoint.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
+  let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if policy.bridge_id!=bridge_id||policy.min_external_confirmations==0{return Err(StateError::InvalidBridgeWithdrawal);}
   if let Some(old)=self.bitcoin_checkpoints.get(&bridge_id){if checkpoint.height<old.height||checkpoint.height==old.height&&checkpoint.block_hash!=old.block_hash{return Err(StateError::InvalidBridgeWithdrawal);}}
   self.bitcoin_checkpoints.insert(bridge_id,checkpoint);Ok(())
+ }
+ pub fn validate_bitcoin_checkpoint_binding(&self,bridge_id:Hash,descriptor:&freedom_types::BridgeAdapterDescriptor)->Result<(),StateError>{
+  let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if descriptor.bridge_id!=bridge_id||descriptor.chain_id==0||descriptor.kind!=freedom_types::BridgeAdapterKind::Bitcoin||descriptor.finality_model!=freedom_types::BridgeFinalityModel::Confirmations||descriptor.required_confirmations!=policy.min_external_confirmations||!checkpoint.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
+  Ok(())
  }
  pub fn register_bridge_security_policy(&mut self, policy:BridgeSecurityPolicy)->Result<(),StateError>{
   if !policy.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
