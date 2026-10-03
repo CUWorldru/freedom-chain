@@ -876,3 +876,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - ERC-20 deposits require the configured bridge, chain, token contract, participants, non-zero amount, event signature, proof bytes, and required block finality;
 - EVM withdrawals require a canonical 20-byte recipient and produce a domain-separated withdrawal intent;
 - no EVM RPC, contract execution, private-key custody, or transaction broadcasting is performed by consensus code at this milestone; those operations belong in the external bridge executor/signer layer.
+
+
+## M85 — TRON / TRC-20 Adapter
+
+- added a dedicated TRC-20 transfer proof model with TRON chain ID, transaction hash, block number, confirmation depth, token contract, sender, recipient, amount, event index, event signature, and proof bytes;
+- TRC-20 deposit identity maps `tx_hash + event_index` into the existing bridge replay domain;
+- deposits require the configured bridge and chain, non-zero transaction/token/participants/amount, event signature, proof bytes, and the adapter's configured block-finality threshold;
+- withdrawals require a canonical TRON recipient byte representation and produce the existing domain-separated withdrawal intent;
+- this milestone does not perform TRON RPC calls, ABI/event decoding, private-key custody, proof cryptography, or transaction broadcasting; those remain outside consensus state and belong to the bridge executor/signer layer.
