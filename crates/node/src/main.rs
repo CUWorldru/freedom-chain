@@ -310,8 +310,8 @@ mod m31_tests {
         }
         let reputation = reputations.get(&peer).unwrap();
         assert_eq!(reputation.score, PEER_REPUTATION_POLICY.misbehavior_threshold);
-        assert_eq!(reputation.cooldown_until_height, 5);
-        assert!(!peer_is_eligible(&reputations, peer, 3));
+        assert_eq!(reputation.cooldown_until_height, 6);
+        assert!(!peer_is_eligible(&reputations, peer, 5));
         assert!(peer_is_eligible(&reputations, peer, 6));
     }
 
