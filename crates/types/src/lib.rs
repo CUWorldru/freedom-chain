@@ -2221,14 +2221,13 @@ impl BitcoinUtxoAccumulatorTransition {
         for (tx_pos,raw) in raw_transactions.iter().enumerate() {
             let tx=BitcoinTransaction::parse(raw).map_err(|_|"invalid Bitcoin transaction".to_string())?;
             if !seen_txids.insert(tx.txid) { return Err("duplicate transaction id".into()); }
+            let is_coinbase = tx.inputs.len()==1 && tx.inputs[0].previous_txid == [0;32];
             if tx_pos==0 {
-                if !tx.inputs.is_empty() && tx.inputs[0].previous_txid != [0;32] {
-                    return Err("first transaction is not coinbase".into());
-                }
-            } else if tx.inputs.iter().any(|i| i.previous_txid == [0;32]) {
-                return Err("non-coinbase transaction has null prevout".into());
+                if !is_coinbase { return Err("first transaction is not coinbase".into()); }
+            } else if is_coinbase || tx.inputs.iter().any(|i| i.previous_txid == [0;32]) {
+                return Err("invalid coinbase placement".into());
             }
-            if tx_pos>0 {
+            if !is_coinbase {
                 for input in &tx.inputs {
                     spent.push((input.previous_txid,input.previous_vout));
                 }
@@ -2249,8 +2248,40 @@ impl BitcoinUtxoAccumulatorTransition {
         previous: &[BitcoinUtxoStateEntry],
         raw_transactions: &[Vec<u8>],
     ) -> Result<(Hash,u64), String> {
-        let (spent,created)=Self::derive_block_delta(raw_transactions)?;
-        Self::compute_next(previous,&spent,&created)
+        if raw_transactions.is_empty() { return Err("empty Bitcoin block".into()); }
+        let mut map=std::collections::BTreeMap::<(Hash,u32),BitcoinUtxoStateEntry>::new();
+        for e in previous {
+            if map.insert((e.tx_hash,e.vout),e.clone()).is_some() {
+                return Err("duplicate previous outpoint".into());
+            }
+        }
+        let mut seen_txids=std::collections::BTreeSet::new();
+        for (tx_pos,raw) in raw_transactions.iter().enumerate() {
+            let tx=BitcoinTransaction::parse(raw).map_err(|_|"invalid Bitcoin transaction".to_string())?;
+            if !seen_txids.insert(tx.txid) { return Err("duplicate transaction id".into()); }
+            let coinbase=tx.inputs.len()==1 && tx.inputs[0].previous_txid==[0;32];
+            if tx_pos==0 {
+                if !coinbase { return Err("first transaction is not coinbase".into()); }
+            } else if coinbase || tx.inputs.iter().any(|i| i.previous_txid==[0;32]) {
+                return Err("invalid coinbase placement".into());
+            }
+            if !coinbase {
+                for input in &tx.inputs {
+                    if map.remove(&(input.previous_txid,input.previous_vout)).is_none() {
+                        return Err("transaction spends unavailable UTXO".into());
+                    }
+                }
+            }
+            for (vout,out) in tx.outputs.iter().enumerate() {
+                let entry=BitcoinUtxoStateEntry{tx_hash:tx.txid,vout:vout as u32,amount_sat:out.value,script_pubkey:out.script_pubkey.clone()};
+                if map.insert((entry.tx_hash,entry.vout),entry).is_some() {
+                    return Err("output collision".into());
+                }
+            }
+        }
+        if map.is_empty() { return Err("UTXO set cannot be empty".into()); }
+        let rows:Vec<(Hash,u32,u64,Vec<u8>)>=map.values().map(|e|(e.tx_hash,e.vout,e.amount_sat,e.script_pubkey.clone())).collect();
+        Ok((BitcoinUtxoAccumulator::compute_root(&rows),map.len() as u64))
     }
 }
 
