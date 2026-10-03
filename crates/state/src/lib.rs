@@ -182,7 +182,23 @@ impl ChainState {
       return Err(StateError::InvalidBridgeWithdrawal);
   }
   Ok(())
+ } pub fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
+  self.validate_bitcoin_utxo_attestation_for_commitment(bridge_id,commitment,attestation)?;
+  let canonical=self.bitcoin_canonical_tips.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let previous=self.bitcoin_utxo_attestations.get(&bridge_id).map(|a|a.accumulator_root);
+  if let Some(root)=previous {
+    if root!=commitment.previous_root { return Err(StateError::InvalidBridgeWithdrawal); }
+  }
+  if let Some(old)=self.bitcoin_utxo_attestations.get(&bridge_id) {
+    if attestation.sequence<=old.sequence { return Err(StateError::InvalidBridgeWithdrawal); }
+  }
+  let next=freedom_types::BitcoinChainCheckpoint{height:commitment.block_height,block_hash:commitment.block_hash,chainwork:attestation.bitcoin_tip_chainwork};
+  if next.height!=canonical.height+1 { return Err(StateError::InvalidBridgeWithdrawal); }
+  self.bitcoin_canonical_tips.insert(bridge_id,next);
+  self.bitcoin_utxo_attestations.insert(bridge_id,attestation.clone());
+  Ok(())
  }
+
  pub fn register_bitcoin_utxo_commitment_attestation(&mut self,attestation:freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let policy=self.bridge_security_policies.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let canonical=self.bitcoin_canonical_tips.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
