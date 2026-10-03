@@ -27,14 +27,14 @@ pub fn quorum_threshold(validator_count: usize) -> usize {
 }
 
 pub fn total_active_stake(state: &ChainState) -> u128 {
-    state.validators.values().map(|v| v.stake).sum()
+    state.active_validator_set.values().map(|v| v.stake).sum()
 }
 
 pub fn stake_quorum_reached(state: &ChainState, signers: &std::collections::BTreeSet<Hash>) -> bool {
     let total = total_active_stake(state);
     if total == 0 { return false; }
     let signed = signers.iter()
-        .filter_map(|id| state.validators.get(id))
+        .filter_map(|id| state.active_validator_set.get(id))
         .map(|v| v.stake)
         .sum::<u128>();
     signed.saturating_mul(3) >= total.saturating_mul(2)
