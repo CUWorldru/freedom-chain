@@ -5292,10 +5292,9 @@ mod m154_bridge_mint_authorization_tests {
     fn mint_authorization_rejects_tampered_deposit_binding() {
         let (mut deposit, message) = deposit_and_message();
         deposit.amount = 501;
-        let key = [7u8; 32];
-        let approval = signed_approval(message.bridge_id, message.message_hash, key);
+        let (approval, public_key) = signed_approval(message.bridge_id, message.message_hash);
         let mut keys = std::collections::BTreeMap::new();
-        keys.insert(approval.validator_id, key);
+        keys.insert(approval.validator_id, public_key);
         let approvals = BridgeMessageApprovalSet {
             bridge_id: message.bridge_id,
             message_hash: message.message_hash,
