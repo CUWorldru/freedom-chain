@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub struct BlockHeader {
     pub height: u64, pub round: u64, pub previous_hash: Hash, pub state_root: Hash, pub tx_root: Hash,
     pub receipts_root: Hash, pub timestamp: u64, pub epoch: u64, pub proposer: Address,
+    #[serde(default)]
+    pub epoch_transition_certificate: Option<ValidatorSetCertificate>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Block { pub header: BlockHeader, pub transactions: Vec<Transaction>, pub receipts: Vec<Receipt> }
