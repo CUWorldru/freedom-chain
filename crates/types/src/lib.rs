@@ -599,7 +599,7 @@ impl BitcoinUtxoProof {
         o.extend_from_slice(&self.confirmations.to_le_bytes()); o.extend_from_slice(&self.merkle_index.to_le_bytes());
         o.extend_from_slice(&(self.merkle_branch.len() as u64).to_le_bytes());
         for h in &self.merkle_branch { o.extend_from_slice(h); }
-        o.extend_from_slice(&(self.script_pubkey.len() as u64).to_le_bytes()); o.extend_from_slice(&self.script_pubkey); o
+        o.extend_from_slice(&(self.script_pubkey.len() as u64).to_le_bytes()); o.extend_from_slice(&self.script_pubkey);o.extend_from_slice(&(self.raw_transaction.len() as u64).to_le_bytes());o.extend_from_slice(&self.raw_transaction); o
     }
 }
 
