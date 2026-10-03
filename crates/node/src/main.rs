@@ -235,8 +235,16 @@ mod m31_tests {
             reason: "test".to_string(),
         });
         assert!(peer_is_eligible(&scores, peer, 10));
-        record_peer_misbehavior(&mut scores, peer, 10);
-        record_peer_misbehavior(&mut scores, peer, 10);
+        for _ in 0..2 {
+            record_peer_evidence(&mut scores, PeerReputationEvidence {
+                peer,
+                height: 10,
+                request_id: [0u8; 32],
+                fingerprint: [0u8; 32],
+                kind: PeerEvidenceKind::SnapshotConflict,
+                reason: "test".to_string(),
+            });
+        }
         assert!(!peer_is_eligible(&scores, peer, 10));
         assert!(peer_is_eligible(&scores, peer, 13));
     }
