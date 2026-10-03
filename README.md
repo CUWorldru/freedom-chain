@@ -4,30 +4,26 @@ Freedom Chain is the proprietary L1 for the CU Freedom economy.
 
 ## M0 — Genesis / Localnet foundation
 
-M0 establishes the non-negotiable monetary invariant:
-
-- Genesis FDM supply: **0**
-- No premine
-- No founder allocation
-- No investor allocation
-- No registration airdrop
+- Genesis FDM supply: 0
+- No premine, founder allocation, investor allocation, or registration airdrop
 - Treasury cannot mint FDM
 - First protocol-issued FDM can only appear through verified protocol contribution work
 
-Current M0 implementation:
+## M1 — Accounts / signed transfers
 
-- Rust workspace
-- primitives and canonical address hashing
-- Ed25519 signing primitives
-- chain state
-- genesis validation
-- minimum 3-validator genesis
-- zero-supply invariant
-- basic node executable
+M1 introduces:
+
+- account public keys and canonical addresses
+- Ed25519 transaction signatures
+- sequential nonces and replay protection
+- integer-only u128 FDM accounting
+- signed Transfer transactions
+- transaction fees credited to protocol treasury
+- state invariants tying supply to balances
+- executable unit test proving a signed transfer succeeds once and replay fails
 
 ## Roadmap
 
-- M1: accounts, signatures, nonces, transfers
 - M2: contribution registration, verification and WU
 - M3: first protocol-issued FDM
 - M4: CU Wallet + Billing + first FDM-only CU feature
