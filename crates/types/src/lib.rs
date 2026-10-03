@@ -624,6 +624,53 @@ impl CrossChainAssetRepresentation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CanonicalAssetProfile {
+    Btc = 1,
+    Eth = 2,
+    Usdt = 3,
+    Usdc = 4,
+}
+
+impl CanonicalAssetProfile {
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Self::Btc => "BTC",
+            Self::Eth => "ETH",
+            Self::Usdt => "USDT",
+            Self::Usdc => "USDC",
+        }
+    }
+
+    pub fn decimals(self) -> u8 {
+        match self {
+            Self::Btc => 8,
+            Self::Eth => 18,
+            Self::Usdt | Self::Usdc => 6,
+        }
+    }
+
+    pub fn validate_registry_identity(self, registry: &CrossChainAssetRegistry) -> bool {
+        registry.symbol == self.symbol()
+            && registry.decimals == self.decimals()
+            && registry.canonical_asset_id
+                == CrossChainAssetRegistry::compute_canonical_asset_id(
+                    self.symbol(),
+                    self.decimals(),
+                    registry_canonical_issuer(registry),
+                )
+    }
+}
+
+fn registry_canonical_issuer(registry: &CrossChainAssetRegistry) -> Hash {
+    registry
+        .representations
+        .first()
+        .map(|r| r.representation.issuer)
+        .unwrap_or([0; 32])
+}
+
 pub struct CrossChainAssetRegistry {
     pub canonical_asset_id: Hash,
     pub symbol: String,
