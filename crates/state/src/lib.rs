@@ -97,9 +97,10 @@ impl ChainState {
   if self.staking_activated && (self.validator_lifecycle(id)?!=freedom_types::ValidatorLifecycle::Active || self.validators.get(&id).ok_or(StateError::InvalidEvidence)?.unbonding_stake>0){return Err(StateError::InvalidValidatorLifecycle)}
   let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
   if a.balance<p.amount{return Err(StateError::InsufficientBalance)}
-  a.balance-=p.amount;a.staked=a.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;self.staking_activated=true;self.refresh_pending_validator_set();
+  a.balance-=p.amount;a.staked=a.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;self.staking_activated=true;
   let v=self.validators.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
   v.stake=v.stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  self.refresh_pending_validator_set();
   self.advance_nonce(tx.sender)
  }
  fn unstake(&mut self,tx:&Transaction)->Result<(),StateError>{
