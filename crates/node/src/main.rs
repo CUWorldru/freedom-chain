@@ -226,12 +226,19 @@ mod m31_tests {
     fn peer_sync_score_enters_and_exits_cooldown() {
         let peer = libp2p::PeerId::random();
         let mut scores = BTreeMap::new();
+        record_peer_evidence(&mut scores, PeerReputationEvidence {
+            peer,
+            height: 10,
+            request_id: [0u8; 32],
+            fingerprint: [0u8; 32],
+            kind: PeerEvidenceKind::SyncConflict,
+            reason: "test".to_string(),
+        });
+        assert!(peer_is_eligible(&scores, peer, 10));
         record_peer_misbehavior(&mut scores, peer, 10);
-        assert!(peer_is_sync_eligible(&scores, peer, 10));
         record_peer_misbehavior(&mut scores, peer, 10);
-        record_peer_misbehavior(&mut scores, peer, 10);
-        assert!(!peer_is_sync_eligible(&scores, peer, 10));
-        assert!(peer_is_sync_eligible(&scores, peer, 13));
+        assert!(!peer_is_eligible(&scores, peer, 10));
+        assert!(peer_is_eligible(&scores, peer, 13));
     }
 
     #[test]
@@ -813,13 +820,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             snapshot_entry.0 += 1;
                                             let snapshot_candidate_count = snapshot_candidates.len();
                                             if snapshot_conflict {
-                                                record_peer_misbehavior(&mut peer_sync_scores, peer, state.height);
+                                                let evidence = PeerReputationEvidence {
+                                                    peer,
+                                                    height: response.height,
+                                                    request_id: response.request_id,
+                                                    fingerprint: snapshot_fingerprint,
+                                                    kind: PeerEvidenceKind::SnapshotConflict,
+                                                    reason: "snapshot commitment disagrees with another fully validated response".to_string(),
+                                                };
+                                                snapshot_misbehavior.push(SnapshotMisbehaviorEvidence {
+                                                    peer: evidence.peer,
+                                                    height: evidence.height,
+                                                    request_id: evidence.request_id,
+                                                    snapshot_fingerprint: evidence.fingerprint,
+                                                    reason: evidence.reason.clone(),
+                                                });
+                                                record_peer_evidence(&mut peer_reputations, evidence);
                                                 eprintln!(
                                                     "SNAPSHOT_CONFLICT peer={} height={} fingerprint={} score={:?} candidates={}",
                                                     peer,
                                                     response.height,
                                                     hex::encode(snapshot_fingerprint),
-                                                    peer_sync_scores.get(&peer),
+                                                    peer_reputations.get(&peer).map(|r| r.score),
                                                     snapshot_candidate_count
                                                 );
                                             }
