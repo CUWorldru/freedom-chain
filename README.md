@@ -302,3 +302,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Validator set refresh happens only at deterministic epoch boundaries; zero-stake Genesis uses a bootstrap validator set until economic stake is activated.
 - Block execution validates the header epoch and commits epoch/set data into the state root.
 - Full validator onboarding/exit governance and epoch activation transactions remain future hardening work.
+
+
+## M28 — Consensus & Network Hardening
+
+- Proposal validation now requires the proposal round to match the block header round.
+- Valid-round proofs are validated independently for every proposal.
+- Proposal signer lookup uses the active epoch validator set.
+- Runtime prevote, precommit and timeout quorum checks use stake-weighted active-set quorum.
+- Conflicting timeout messages from the same validator are rejected as equivocation instead of being overwritten.
+- Timeout certificates remain composed of individually signed timeout messages and are validated against the earlier round.
+- Full peer-level evidence gossip, persistent anti-replay envelopes, and production-grade transport rate limiting remain future hardening work.
