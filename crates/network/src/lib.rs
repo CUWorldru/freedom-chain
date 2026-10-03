@@ -87,7 +87,14 @@ impl From<libp2p::kad::Event> for FreedomEvent {
     fn from(event: libp2p::kad::Event) -> Self { Self::Kademlia(event) }
 }
 
-pub fn make_proposal(block: freedom_types::Block, round: u64, consensus_key: &ed25519_dalek::SigningKey) -> BlockProposal {
+pub fn make_proposal(
+    block: freedom_types::Block,
+    round: u64,
+    consensus_key: &ed25519_dalek::SigningKey,
+    valid_round: Option<u64>,
+    valid_precommits: Vec<freedom_types::ValidatorPrecommit>,
+    timeout_certificate: Option<freedom_types::TimeoutCertificate>,
+) -> BlockProposal {
     let proposer = block.header.proposer;
     let block_hash = block_hash(&block);
     let mut proposal = BlockProposal {
@@ -96,6 +103,9 @@ pub fn make_proposal(block: freedom_types::Block, round: u64, consensus_key: &ed
         round,
         proposer,
         block,
+        valid_round,
+        valid_precommits,
+        timeout_certificate,
         signature: Vec::new(),
     };
     sign_proposal(&mut proposal, consensus_key);
