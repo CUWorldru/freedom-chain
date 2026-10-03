@@ -2043,9 +2043,19 @@ fn bitcoin_chainwork_add(work: &mut BitcoinChainWork, target: Hash) -> bool {
         if ge {
             let mut b = 0u64;
             for j in 0..5 {
-                let (v, under) = rem[j].overflowing_sub(value[j] + b);
-                b = u64::from(under);
-                rem[j] = v;
+                let (subtrahend, carry) = value[j].overflowing_add(b);
+                if carry {
+                    b = 1;
+                    let (v, under) = rem[j].overflowing_sub(subtrahend);
+                    rem[j] = v;
+                    if !under {
+                        b = 0;
+                    }
+                } else {
+                    let (v, under) = rem[j].overflowing_sub(subtrahend);
+                    b = u64::from(under);
+                    rem[j] = v;
+                }
             }
             if bit < 320 {
                 let qword = bit / 64;
