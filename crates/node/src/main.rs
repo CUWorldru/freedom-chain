@@ -298,6 +298,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Gossipsub(event)) => {
                         if let libp2p::gossipsub::Event::Message { message, .. } = event {
                             match decode_message(&message.data) {
+                                Ok(NetworkMessage::ValidatorSetVote(vote)) => {
+                                    if !protocol.remember_message(vote.message_id()) { continue; }
+                                    if freedom_network::validate_validator_set_vote(&state, &vote).is_err() { continue; }
+                                    valset_votes.insert(vote.validator_id, vote);
+                                    let votes: Vec<_> = valset_votes.values().cloned().collect();
+                                    if let Ok(cert) = freedom_runtime::collect_validator_set_certificate(&state, &votes) {
+                                        if valset_certificate_broadcasted != Some(cert.hash()) {
+                                            valset_certificate_broadcasted = Some(cert.hash());
+                                            state.validator_set_certificate = Some(cert.clone());
+                                            publish(&mut swarm, &NetworkMessage::ValidatorSetCertificate(cert))?;
+                                        }
+                                    }
+                                }
+                                Ok(NetworkMessage::ValidatorSetCertificate(cert)) => {
+                                    if !protocol.remember_message(cert.hash()) { continue; }
+                                    if freedom_consensus::validate_validator_set_certificate(&state, &cert).is_ok() {
+                                        state.validator_set_certificate = Some(cert);
+                                    }
+                                }
                                 Ok(NetworkMessage::SyncRequest(req)) => {
                                     if req.from_height == 0 || req.from_height > req.to_height {
                                         continue;
