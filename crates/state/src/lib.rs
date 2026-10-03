@@ -182,18 +182,19 @@ impl ChainState {
       return Err(StateError::InvalidBridgeWithdrawal);
   }
   Ok(())
- } pub fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
-  self.validate_bitcoin_utxo_attestation_for_commitment(bridge_id,commitment,attestation)?;
+ } pub fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
-  let previous=self.bitcoin_utxo_attestations.get(&bridge_id).map(|a|a.accumulator_root);
-  if let Some(root)=previous {
+  block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  if commitment.block_height!=block.height || commitment.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
+  if attestation.bitcoin_tip_height!=block.height || attestation.bitcoin_tip_hash!=commitment.block_hash{return Err(StateError::InvalidBridgeWithdrawal);}
+  self.validate_bitcoin_utxo_attestation_for_commitment(bridge_id,commitment,attestation)?;
+  if let Some(root)=self.bitcoin_utxo_attestations.get(&bridge_id).map(|a|a.accumulator_root) {
     if root!=commitment.previous_root { return Err(StateError::InvalidBridgeWithdrawal); }
   }
   if let Some(old)=self.bitcoin_utxo_attestations.get(&bridge_id) {
     if attestation.sequence<=old.sequence { return Err(StateError::InvalidBridgeWithdrawal); }
   }
-  let next=freedom_types::BitcoinChainCheckpoint{height:commitment.block_height,block_hash:commitment.block_hash,chainwork:attestation.bitcoin_tip_chainwork};
-  if next.height!=canonical.height+1 { return Err(StateError::InvalidBridgeWithdrawal); }
+  let next=freedom_types::BitcoinChainCheckpoint{height:block.height,block_hash:block.header.block_hash(),chainwork:attestation.bitcoin_tip_chainwork};
   self.bitcoin_canonical_tips.insert(bridge_id,next);
   self.bitcoin_utxo_attestations.insert(bridge_id,attestation.clone());
   Ok(())
