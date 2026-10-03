@@ -22,6 +22,7 @@ pub const VALSET_VOTE_TOPIC: &str = "freedom/1/validator-set-votes";
 pub const VALSET_CERT_TOPIC: &str = "freedom/1/validator-set-certificates";
 pub const SYNC_TOPIC: &str = "freedom/1/sync";
 pub const MAX_SYNC_BLOCKS: u64 = 32;
+pub const MAX_SNAPSHOT_STATE_BYTES: usize = 8 * 1024 * 1024;
 pub const SYNC_PROTOCOL: &str = "/freedom/1/sync/1";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -53,6 +54,15 @@ pub enum SyncWireRequest { Blocks(SyncRequest), Snapshot(SnapshotSyncRequest) }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SyncWireResponse { Blocks(SyncResponse), Snapshot(SnapshotSyncResponse) }
+
+pub fn validate_sync_request(req: &SyncRequest) -> Result<(), String> { if req.from_height == 0 { return Err("sync request cannot start at genesis".into()); } if req.to_height < req.from_height { return Err("sync request range is inverted".into()); } if req.to_height.saturating_sub(req.from_height).saturating_add(1) > MAX_SYNC_BLOCKS { return Err("sync request exceeds maximum block range".into()); } Ok(()) }
+
+pub fn validate_snapshot_request(req: &SnapshotSyncRequest) -> Result<(), String> { if req.height == 0 { return Err("snapshot request cannot target genesis".into()); } Ok(()) }
+
+pub fn validate_sync_response(response: &SyncResponse) -> Result<(), String> { if response.blocks.is_empty() { return Err("sync response is empty".into()); } if response.blocks.len() > MAX_SYNC_BLOCKS as usize { return Err("sync response exceeds maximum block count".into()); } if response.from_height == 0 { return Err("sync response cannot start at genesis".into()); } for (i,b) in response.blocks.iter().enumerate() { if b.header.height != response.from_height.saturating_add(i as u64) { return Err("sync response contains non-contiguous block heights".into()); } } Ok(()) }
+
+pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(), String> { if response.height == 0 { return Err("snapshot response cannot target genesis".into()); } if response.state_json.len() > MAX_SNAPSHOT_STATE_BYTES { return Err("snapshot state exceeds maximum encoded size".into()); } if response.checkpoint.header.height != response.height { return Err("snapshot checkpoint height mismatch".into()); } if response.checkpoint.header.state_root != response.state_root { return Err("snapshot checkpoint state root mismatch".into()); } if response.certificate.height != response.height || response.certificate.block_hash != response.block_hash { return Err("snapshot certificate identity mismatch".into()); } Ok(()) }
+
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "FreedomEvent")]
 pub struct FreedomBehaviour {
@@ -367,6 +377,9 @@ pub fn send_sync_request(swarm: &mut Swarm<FreedomBehaviour>, peer: PeerId, requ
 mod tests {
     use super::*;
     use freedom_primitives::hash_bytes;
+
+    #[test]
+    fn sync_request_bounds_are_enforced() { let id=[1u8;32]; assert!(validate_sync_request(&SyncRequest{request_id:id,from_height:1,to_height:32}).is_ok()); assert!(validate_sync_request(&SyncRequest{request_id:id,from_height:0,to_height:1}).is_err()); assert!(validate_sync_request(&SyncRequest{request_id:id,from_height:1,to_height:33}).is_err()); }
 
     #[test]
     fn network_messages_round_trip() {
