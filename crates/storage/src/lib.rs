@@ -65,6 +65,25 @@ impl ChainStore {
         Ok(())
     }
 
+    pub fn put_blocks_atomic(&self, blocks: &[Block]) -> Result<(), StorageError> {
+        if blocks.is_empty() {
+            return Ok(());
+        }
+        let mut batch = WriteBatch::default();
+        for block in blocks {
+            if block.header.height == 0 {
+                return Err(StorageError::InvalidMetadata);
+            }
+            let bytes = serde_json::to_vec(block)
+                .map_err(|e| StorageError::Codec(e.to_string()))?;
+            batch.put(Self::height_key(block.header.height), bytes);
+            batch.put(META_HEIGHT, block.header.height.to_be_bytes());
+            batch.put(META_HASH, block_hash(block));
+        }
+        self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn validate_tip_metadata(&self) -> Result<(), StorageError> {
         let height = self.latest_height()?;
         let hash = self.latest_hash()?;
