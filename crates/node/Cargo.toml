@@ -9,3 +9,5 @@ freedom-primitives = { path = "../primitives" }
 freedom-runtime = { path = "../runtime" }
 freedom-types = { path = "../types" }
 freedom-network = { path = "../network" }
+libp2p.workspace = true
+tokio.workspace = true
