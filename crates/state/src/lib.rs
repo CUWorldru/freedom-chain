@@ -154,10 +154,10 @@ impl ChainState {
   if journal.len()>freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT{let excess=journal.len()-freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT;journal.drain(0..excess);}
   Ok(())
  }
- pub fn recover_bitcoin_reorg(&mut self,recovery:freedom_types::BitcoinReorgRecovery)->Result<(),StateError>{
-  if !recovery.validate(){return Err(StateError::BitcoinReorgDetected);}
+ pub fn recover_bitcoin_reorg_with_tip(&mut self,recovery:freedom_types::BitcoinReorgRecovery,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{
+  if !recovery.validate(){return Err(StateError::BitcoinReorgDetected);} if proof.tip_height!=recovery.canonical_height||proof.tip_hash!=recovery.canonical_block_hash||proof.chainwork!=recovery.canonical_chainwork{return Err(StateError::BitcoinReorgDetected);}
   let journal=self.bitcoin_reorg_evidence.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
-  if !journal.iter().any(|e|e.fingerprint==recovery.evidence_fingerprint){return Err(StateError::BitcoinReorgDetected);} let checkpoint=self.bitcoin_checkpoints.get(&recovery.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?; if recovery.canonical_height<checkpoint.height||recovery.canonical_chainwork<checkpoint.chainwork{return Err(StateError::BitcoinReorgDetected);}
+  if !journal.iter().any(|e|e.fingerprint==recovery.evidence_fingerprint){return Err(StateError::BitcoinReorgDetected);} let checkpoint=self.bitcoin_checkpoints.get(&recovery.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?; if recovery.canonical_height<checkpoint.height||recovery.canonical_chainwork<checkpoint.chainwork{return Err(StateError::BitcoinReorgDetected);} if !proof.verify(checkpoint){return Err(StateError::BitcoinReorgDetected);}
   let policy=self.bitcoin_reorg_policy.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
   let mut ids=recovery.validator_ids.clone();ids.sort();ids.dedup();
   if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
