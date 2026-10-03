@@ -106,9 +106,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
         .unwrap_or(DEFAULT_SNAPSHOT_INTERVAL);
     let replay_from = if let Some(snapshot) = store.latest_snapshot()? {
-        let checkpoint = store.get_block(snapshot.height)?.ok_or("snapshot checkpoint block missing")?;
-        if block_hash(&checkpoint) != snapshot.block_hash || checkpoint.header.state_root != snapshot.state_root {
-            return Err(format!("snapshot checkpoint mismatch at {}", snapshot.height).into());
+        if snapshot.height > stored_height {
+            return Err(format!(
+                "snapshot height {} is ahead of stored chain height {}",
+                snapshot.height, stored_height
+            ).into());
+        }
+        if snapshot.height == 0 {
+            if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
+                return Err("genesis snapshot hash linkage mismatch".into());
+            }
+        } else {
+            let checkpoint = store.get_block(snapshot.height)?.ok_or("snapshot checkpoint block missing")?;
+            if block_hash(&checkpoint) != snapshot.block_hash || checkpoint.header.state_root != snapshot.state_root {
+                return Err(format!("snapshot checkpoint mismatch at {}", snapshot.height).into());
+            }
         }
         state = snapshot.state;
         if state.last_block_hash != snapshot.block_hash || state.height != snapshot.height {
