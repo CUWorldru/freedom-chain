@@ -553,7 +553,12 @@ impl AssetDefinition {
 
     pub fn validate_external_address_format(&self) -> bool {
         match self.asset_type {
-            AssetType::Native => self.contract_address.as_slice() == b"BTC",
+            AssetType::Native => {
+                (self.source_chain_id == BITCOIN_MAINNET_CHAIN_ID
+                    && self.contract_address.as_slice() == b"BTC")
+                    || (self.source_chain_id == ETHEREUM_MAINNET_CHAIN_ID
+                        && self.contract_address.as_slice() == b"ETH")
+            },
             AssetType::Bridged => {
                 (self.source_chain_id == ETHEREUM_MAINNET_CHAIN_ID
                     || self.source_chain_id == TRON_MAINNET_CHAIN_ID)
