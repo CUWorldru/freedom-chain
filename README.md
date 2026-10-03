@@ -954,3 +954,8 @@ Outbound withdrawals now use a persistent nonce registry keyed by bridge, asset 
 ## M97 — External Deposit Proof Verification Framework
 
 External bridge deposits now have a domain-separated `ExternalDepositProof` commitment covering bridge, source chain, transaction, event/output index, block/slot, finality and proof bytes. A verifier interface provides a common security boundary for Bitcoin, EVM, TRON, TON and Solana adapters. M97 establishes binding and finality checks; chain-specific Merkle/MPT/receipt/BOC/account-state cryptographic proof engines remain adapter-specific follow-up work.
+
+
+## M99 — Bitcoin Block Header Binding
+
+Bitcoin Merkle proofs are now bound to an 80-byte Bitcoin block header. The header is serialized with Bitcoin little-endian field encoding and hashed with SHA-256d to derive the block hash; the proof requires the header Merkle root to match the verified transaction Merkle root. This prevents a standalone Merkle branch from being treated as a sufficient external inclusion proof.
