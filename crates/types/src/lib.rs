@@ -1065,6 +1065,37 @@ impl TronUsdtDepositProof {
         self.event.amount()
     }
 
+    pub fn to_bridge_deposit(
+        &self,
+        required_confirmations: u64,
+        expected_usdt_contract: &[u8],
+    ) -> Result<BridgeDepositProof, BridgeAdapterError> {
+        if !self.validate_with_contract(required_confirmations, expected_usdt_contract) {
+            return if self.confirmations < required_confirmations {
+                Err(BridgeAdapterError::InsufficientFinality)
+            } else {
+                Err(BridgeAdapterError::InvalidProof)
+            };
+        }
+        let amount = self.amount().map_err(|_| BridgeAdapterError::InvalidProof)?;
+        if amount == 0 {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        Ok(BridgeDepositProof {
+            bridge_id: self.bridge_id,
+            source_chain_id: self.chain_id,
+            tx_hash: self.event.tx_hash,
+            event_index: self.event.transaction_index as u64,
+            block_or_slot: self.header.block_number().map_err(|_| BridgeAdapterError::InvalidProof)?,
+            confirmations: self.confirmations,
+            proof: self.proof_hash().to_vec(),
+        })
+    }
+
+    pub fn amount_checked(&self) -> Result<u128, BridgeAdapterError> {
+        self.amount().map_err(|_| BridgeAdapterError::InvalidProof)
+    }
+
     pub fn proof_hash(&self) -> Hash {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"FREEDOM-TRON-USDT-DEPOSIT-V1");
