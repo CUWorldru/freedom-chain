@@ -1851,6 +1851,46 @@ pub struct BridgeAccounting {
 
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinMerkleVerification {
+    pub tx_hash: Hash,
+    pub merkle_root: Hash,
+}
+
+impl BitcoinMerkleVerification {
+    pub fn verify(
+        proof: &BitcoinUtxoProof,
+        expected_merkle_root: Hash,
+    ) -> Result<Self, BridgeAdapterError> {
+        if !proof.validate_transaction_binding() || proof.merkle_branch.is_empty() {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        let mut current = proof.tx_hash;
+        let mut index = proof.merkle_index;
+        for sibling in &proof.merkle_branch {
+            let mut pair = Vec::with_capacity(64);
+            if index & 1 == 0 {
+                pair.extend_from_slice(&current);
+                pair.extend_from_slice(sibling);
+            } else {
+                pair.extend_from_slice(sibling);
+                pair.extend_from_slice(&current);
+            }
+            current = bitcoin_sha256d(&pair);
+            index >>= 1;
+        }
+
+        if current != expected_merkle_root {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        Ok(Self {
+            tx_hash: proof.tx_hash,
+            merkle_root: current,
+        })
+    }
+}
+
 pub struct BitcoinUtxoProof {
     pub bridge_id: Hash,
     pub chain_id: u32,
