@@ -733,3 +733,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - current production evidence remains Normal, preserving existing scoring behavior;
 - policy multipliers are 1x Normal, 2x Elevated, and 3x Critical;
 - severity is persisted with evidence, so later policy inspection can distinguish ordinary and elevated incidents.
+
+
+## M71 — Automatic Reputation Evidence Severity
+
+- severity is derived deterministically from recent evidence context instead of being manually selected;
+- first and second recent conflicts of the same evidence kind are Normal;
+- the third recent conflict of the same kind is Elevated;
+- the fourth and subsequent recent conflicts are Critical;
+- the classification is bounded to recent evidence, so compaction remains compatible with the policy.
