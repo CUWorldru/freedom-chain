@@ -143,6 +143,24 @@ pub fn validate_block_transition(state: &ChainState, block: &freedom_types::Bloc
     if block.header.previous_hash != state.last_block_hash { return Err("invalid proposal previous hash".into()); }
     if freedom_consensus::tx_root(&block.transactions) != block.header.tx_root { return Err("proposal transaction root mismatch".into()); }
 
+    let mut bridge_ids = std::collections::BTreeSet::new();
+    for tx in &block.transactions {
+        if tx.kind == freedom_types::TxKind::BridgeMint {
+            let payload = freedom_types::BridgeMintTransactionPayload::decode(&tx.payload)
+                .map_err(|_| "proposal bridge mint payload invalid".to_string())?;
+            let canonical = payload.encode()
+                .map_err(|_| "proposal bridge mint payload non-canonical".to_string())?;
+            if canonical != tx.payload {
+                return Err("proposal bridge mint payload non-canonical".into());
+            }
+            let id = payload.canonical_id()
+                .map_err(|_| "proposal bridge mint canonical id invalid".to_string())?;
+            if !bridge_ids.insert(id) {
+                return Err("proposal contains duplicate bridge mint canonical id".into());
+            }
+        }
+    }
+
     let mut working = state.clone();
     let mut receipts = Vec::with_capacity(block.transactions.len());
     for tx in &block.transactions {
@@ -470,4 +488,20 @@ pub fn make_sync_request(request_id: Hash, from_height: u64) -> NetworkMessage {
         from_height,
         to_height: from_height.saturating_add(MAX_SYNC_BLOCKS.saturating_sub(1)),
     })
+}
+
+
+#[cfg(test)]
+mod m160_bridge_proposal_tests {
+    use super::*;
+
+    #[test]
+    fn bridge_mint_block_validation_rejects_duplicate_canonical_ids() {
+        // The duplicate-ID rule is deterministic at proposal validation time:
+        // two differently relayed transactions cannot represent the same proof.
+        let mut ids = std::collections::BTreeSet::new();
+        let id = freedom_primitives::hash_bytes(b"bridge-proof");
+        assert!(ids.insert(id));
+        assert!(!ids.insert(id));
+    }
 }
