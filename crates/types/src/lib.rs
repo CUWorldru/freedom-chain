@@ -1022,6 +1022,13 @@ impl CrossChainAssetProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ExternalBridgeDepositProof {
+    BitcoinUtxo(BitcoinUtxoProof),
+    EvmTransfer(EvmTransferProof),
+    TronUsdt(TronUsdtDepositProof),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VerifiedDeposit {
     pub canonical_asset_id: Hash,
     pub representation_asset_id: Hash,
