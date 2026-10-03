@@ -272,3 +272,30 @@ mod m32_tests {
   assert_eq!(state.deterministic_slash_amount(&freedom_types::EquivocationKind::DoublePrecommit,0),0);
  }
 }
+
+
+#[cfg(test)]
+mod m33_tests {
+ use super::*;
+ use freedom_types::{Genesis, Validator, Transaction, TxKind, UnstakePayload, EquivocationEvidence, EquivocationKind};
+ fn validator_state() -> (ChainState, Address, Hash) {
+  let key=[7u8;32]; let owner=freedom_primitives::address_from_public_key(&key); let id=freedom_primitives::hash_bytes(b"m33-validator");
+  let v=Validator{validator_id:id,owner,consensus_key:key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+  let g=Genesis{chain_id:1,initial_supply:0,validators:vec![v]}; let mut s=ChainState::genesis(&g); s.insert_account(Account::new(key,0));
+  s.accounts.get_mut(&owner).unwrap().staked=100; (s,owner,id)
+ }
+ #[test] fn unstake_enters_cooldown_without_returning_balance() {
+  let (mut s,owner,id)=validator_state(); let tx=Transaction{chain_id:1,sender:owner,nonce:0,kind:TxKind::Unstake,payload:UnstakePayload{amount:40}.encode(),fee:0,signature:vec![]}; s.unstake(&tx).unwrap();
+  assert_eq!(s.accounts.get(&owner).unwrap().balance,0); assert_eq!(s.accounts.get(&owner).unwrap().staked,100); assert_eq!(s.validators.get(&id).unwrap().stake,60); assert_eq!(s.validators.get(&id).unwrap().unbonding_stake,40); assert_eq!(s.unbonding.len(),1); assert_eq!(s.unbonding.values().next().unwrap().release_height,UNBONDING_COOLDOWN);
+ }
+ #[test] fn unbonding_releases_at_maturity() {
+  let (mut s,owner,id)=validator_state(); let tx=Transaction{chain_id:1,sender:owner,nonce:0,kind:TxKind::Unstake,payload:UnstakePayload{amount:100}.encode(),fee:0,signature:vec![]}; s.unstake(&tx).unwrap();
+  s.height=UNBONDING_COOLDOWN-1; s.maybe_advance_epoch(); assert_eq!(s.accounts.get(&owner).unwrap().balance,0);
+  s.height=UNBONDING_COOLDOWN; s.maybe_advance_epoch(); assert_eq!(s.accounts.get(&owner).unwrap().balance,100); assert_eq!(s.accounts.get(&owner).unwrap().staked,0); assert_eq!(s.validators.get(&id).unwrap().unbonding_stake,0); assert!(s.unbonding.is_empty());
+ }
+ #[test] fn pending_unbonding_stake_is_slashable() {
+  let (mut s,owner,id)=validator_state(); let tx=Transaction{chain_id:1,sender:owner,nonce:0,kind:TxKind::Unstake,payload:UnstakePayload{amount:100}.encode(),fee:0,signature:vec![]}; s.unstake(&tx).unwrap();
+  let mut e=EquivocationEvidence{kind:EquivocationKind::DoublePrecommit,height:1,round:0,validator_id:id,first:vec![1],second:vec![2],evidence_hash:[0;32]}; e.evidence_hash=freedom_primitives::hash_bytes(&e.signing_bytes()); s.record_equivocation(e.clone()).unwrap();
+  let expected=s.deterministic_slash_amount(&e.kind,100); assert_eq!(s.slash_evidence(e.evidence_hash,expected).unwrap(),10); assert_eq!(s.validators.get(&id).unwrap().unbonding_stake,90); assert_eq!(s.accounts.get(&owner).unwrap().staked,90); assert_eq!(s.unbonding.values().next().unwrap().amount,90);
+ }
+}
