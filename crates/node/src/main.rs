@@ -110,6 +110,10 @@ fn decay_peer_reputation(
             reputation.last_decay_height = reputation.last_decay_height.saturating_add(
                 steps.saturating_mul(PEER_SCORE_DECAY_INTERVAL)
             );
+            if reputation.evidence.len() > PEER_EVIDENCE_LIMIT {
+                let excess = reputation.evidence.len() - PEER_EVIDENCE_LIMIT;
+                reputation.evidence.drain(0..excess);
+            }
         }
     }
     changed
