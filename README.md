@@ -699,3 +699,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - an already-issued cooldown is never shortened by decay;
 - peer eligibility requires both an expired cooldown and a score below the misbehavior threshold;
 - sustained clean operation can therefore restore a peer's sync/snapshot eligibility without a permanent blacklist.
+
+
+## M67 — Reputation Evidence Compaction
+
+- each peer retains at most 32 detailed reputation evidence records;
+- adding new evidence evicts the oldest detailed records while preserving score and cooldown state;
+- decay also enforces the same bound for previously persisted or legacy reputation data;
+- the bounded journal prevents long-running nodes from growing reputation storage without limit;
+- evidence compaction does not alter the accumulated score or an already-issued cooldown.
