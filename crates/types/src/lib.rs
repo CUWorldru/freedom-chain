@@ -2633,6 +2633,52 @@ fn ethereum_rlp_encode_bytes(payload:&[u8])->Vec<u8>{
     else {let mut len=payload.len();let mut b=Vec::new();while len>0{b.push((len&0xff) as u8);len>>=8;}b.reverse();let mut o=vec![0xb7+b.len() as u8];o.extend_from_slice(&b);o.extend_from_slice(payload);o}
 }
 
+fn ethereum_rlp_encode_u64(value:u64)->Vec<u8>{
+    if value==0{return ethereum_rlp_encode_bytes(&[]);}
+    let mut b=value.to_be_bytes().to_vec();
+    while b.first()==Some(&0){b.remove(0);}
+    ethereum_rlp_encode_bytes(&b)
+}
+
+fn ethereum_rlp_decode_u64(payload:&[u8])->Result<u64,String>{
+    if payload.len()>8{return Err("RLP integer exceeds u64".into());}
+    if payload.len()>1 && payload[0]==0{return Err("non-canonical RLP integer".into());}
+    let mut value=0u64;
+    for b in payload{value=value.checked_mul(256).ok_or("RLP integer overflow")?.checked_add(*b as u64).ok_or("RLP integer overflow")?;}
+    Ok(value)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EthereumExecutionBlockHeader { pub rlp:Vec<u8> }
+
+impl EthereumExecutionBlockHeader {
+    pub fn fields(&self)->Result<Vec<&[u8]>,String>{ethereum_rlp_decode_list(&self.rlp)}
+    pub fn block_hash(&self)->Hash{ethereum_keccak256(&self.rlp)}
+    pub fn state_root(&self)->Result<Hash,String>{
+        let f=self.fields()?; if f.len()<15{return Err("Ethereum header has too few fields".into());}
+        f[3].try_into().map_err(|_|"invalid stateRoot length".into())
+    }
+    pub fn receipts_root(&self)->Result<Hash,String>{
+        let f=self.fields()?; if f.len()<15{return Err("Ethereum header has too few fields".into());}
+        f[5].try_into().map_err(|_|"invalid receiptsRoot length".into())
+    }
+    pub fn block_number(&self)->Result<u64,String>{
+        let f=self.fields()?; if f.len()<15{return Err("Ethereum header has too few fields".into());}
+        ethereum_rlp_decode_u64(f[8])
+    }
+    pub fn validate_structure(&self)->bool{
+        let Ok(f)=self.fields() else{return false;};
+        f.len()>=15 && f[3].len()==32 && f[5].len()==32 && self.block_number().map(|n|n>0).unwrap_or(false)
+    }
+    pub fn verify_execution_binding(&self,bh:Hash,sr:Hash,bn:u64,rr:Hash)->bool{
+        self.validate_structure() && self.block_hash()==bh && self.state_root()==Ok(sr)
+            && self.block_number()==Ok(bn) && self.receipts_root()==Ok(rr)
+    }
+    pub fn proof_hash(&self)->Hash{
+        freedom_primitives::hash_bytes(&[b"FREEDOM-ETH-EXECUTION-HEADER-V1".as_slice(),&self.rlp].concat())
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumTransactionProof {
     pub block_number:u64,
