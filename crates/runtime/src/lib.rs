@@ -68,6 +68,41 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
  Ok(())
 }
 
+pub fn verify_external_bridge_deposit(
+    external: &freedom_types::ExternalBridgeDepositProof,
+    registry: &freedom_types::CrossChainAssetRegistry,
+    policy: &freedom_types::BridgeSecurityPolicy,
+    descriptor: &freedom_types::BridgeAdapterDescriptor,
+    canonical_asset_id: Hash,
+    representation_asset_id: Hash,
+    recipient_override: Option<Vec<u8>>,
+) -> Result<freedom_types::VerifiedDeposit, String> {
+    let proof = match external {
+        freedom_types::ExternalBridgeDepositProof::BitcoinUtxo(p) =>
+            p.to_cross_chain_asset_proof(
+                policy.min_external_confirmations,
+                canonical_asset_id,
+                representation_asset_id,
+                recipient_override.unwrap_or_default(),
+            ).map_err(|e| format!("BitcoinDeposit:{e:?}"))?,
+        freedom_types::ExternalBridgeDepositProof::EvmTransfer(p) =>
+            p.to_cross_chain_asset_proof(
+                policy.min_external_confirmations,
+                canonical_asset_id,
+                representation_asset_id,
+            ).map_err(|e| format!("EvmDeposit:{e:?}"))?,
+        freedom_types::ExternalBridgeDepositProof::TronUsdt(p) =>
+            p.to_cross_chain_asset_proof(
+                policy.min_external_confirmations,
+                &p.usdt_contract,
+                canonical_asset_id,
+                representation_asset_id,
+            ).map_err(|e| format!("TronUsdtDeposit:{e:?}"))?,
+    };
+
+    verify_bridge_deposit_with_adapter(&proof, registry, policy, descriptor)
+}
+
 pub fn verify_bridge_deposit_with_adapter(
     proof: &freedom_types::CrossChainAssetProof,
     registry: &freedom_types::CrossChainAssetRegistry,
