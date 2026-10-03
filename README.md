@@ -1104,3 +1104,14 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - Attestations are monotonic by sequence per bridge to prevent replay/rollback.
 - The attestation is persisted in ChainState and can be queried after registration.
 - M122 still does not claim that the accumulator root is a Bitcoin consensus commitment; it authenticates the root as a Freedom Chain bridge commitment.
+
+
+## M123 — Bitcoin UTXO Accumulator State Transitions
+
+- Replaces the earlier conceptual accumulator fold with a deterministic binary Merkle tree.
+- Leaves are canonical UTXO records (txid, vout, amount, scriptPubKey), sorted by leaf hash.
+- Odd nodes are duplicated at each tree level; the leaf count is committed in accumulator metadata.
+- Adds an explicit UTXO state transition containing spent outpoints and newly created outputs.
+- The transition recomputes the complete next UTXO set and therefore the next authenticated root; duplicate, missing-spend and output-collision conditions are rejected.
+- The state layer checks that a transition starts exactly from the currently canonical Bitcoin tip and advances one Bitcoin block.
+- This is a correctness-first reference transition protocol. It does not pretend Bitcoin headers themselves commit to the UTXO set.
