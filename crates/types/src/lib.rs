@@ -117,6 +117,33 @@ pub struct ValidatorSetEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValidatorSetCertificate {
+    pub from_epoch: u64,
+    pub to_epoch: u64,
+    pub previous_set_hash: Hash,
+    pub new_set_hash: Hash,
+    pub precommits: Vec<ValidatorPrecommit>,
+}
+
+impl ValidatorSetCertificate {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"FREEDOM-VALSET-CERT-V1");
+        out.extend_from_slice(&self.from_epoch.to_le_bytes());
+        out.extend_from_slice(&self.to_epoch.to_le_bytes());
+        out.extend_from_slice(&self.previous_set_hash);
+        out.extend_from_slice(&self.new_set_hash);
+        for p in &self.precommits {
+            out.extend_from_slice(&p.signing_bytes());
+        }
+        out
+    }
+    pub fn hash(&self) -> Hash {
+        freedom_primitives::hash_bytes(&self.signing_bytes())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:Vec<Validator> }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
