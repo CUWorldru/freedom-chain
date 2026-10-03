@@ -12,7 +12,7 @@ fn decode_submit_evidence(b:&[u8])->Option<freedom_types::SubmitEvidencePayload>
  let mut slash=[0u8;16];slash.copy_from_slice(b.get(i..i+16)?);
  Some(freedom_types::SubmitEvidencePayload{evidence:freedom_types::EquivocationEvidence{kind,height,round,validator_id,first,second,evidence_hash},slash_amount:u128::from_le_bytes(slash)})
 }
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use freedom_primitives::{address_from_public_key, Address, Hash, Supply, GENESIS_SUPPLY};
 use freedom_types::{Genesis, RegisterNodePayload, SubmitContributionPayload, BillingPayload, PurchasePayload, CreateTicketPayload, DrawConfig, DrawResult, Event, Transaction, TxKind, TransferPayload, Validator, UnbondingEntry};
@@ -48,12 +48,18 @@ impl ChainState {
  pub fn slash_evidence(&mut self,evidence_hash:Hash,amount:u128)->Result<u128,StateError>{
   if self.slashed_evidence.contains_key(&evidence_hash){return Ok(0)}
   let evidence=self.evidence.get(&evidence_hash).ok_or(StateError::InvalidEvidence)?;
-  let validator=self.validators.get_mut(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;
-  let expected=match evidence.kind { freedom_types::EquivocationKind::DoubleProposal=>validator.stake.saturating_mul(500)/10_000, freedom_types::EquivocationKind::DoublePrevote|freedom_types::EquivocationKind::DoublePrecommit=>validator.stake.saturating_mul(1000)/10_000 };
+  let (validator_owner,total_stake)={let v=self.validators.get(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;(v.owner,v.stake.saturating_add(v.unbonding_stake))};
+  let expected=self.deterministic_slash_amount(&evidence.kind,total_stake);
   if amount!=expected{return Err(StateError::InvalidEvidence)}
-  let slash=expected.min(validator.stake);
-  validator.stake-=slash;
-  if let Some(a)=self.accounts.get_mut(&validator.owner){a.staked=a.staked.saturating_sub(slash);}
+  let slash=expected.min(total_stake);
+  let mut remaining=slash;
+  if let Some(v)=self.validators.get_mut(&evidence.validator_id){let active_cut=remaining.min(v.stake);v.stake-=active_cut;remaining-=active_cut;let pending_cut=remaining.min(v.unbonding_stake);v.unbonding_stake-=pending_cut;remaining-=pending_cut;}
+  if remaining!=0{return Err(StateError::InvalidEvidence)}
+  if slash>0 {
+   if let Some(a)=self.accounts.get_mut(&validator_owner){a.staked=a.staked.saturating_sub(slash);} else {return Err(StateError::AccountNotFound)}
+   let mut pending=slash.saturating_sub(self.validators.get(&evidence.validator_id).map(|v|v.stake).unwrap_or(0));
+   if pending>0 { let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.validator_id==evidence.validator_id).map(|(id,_)|*id).collect(); for id in ids { if pending==0{break} if let Some(e)=self.unbonding.get_mut(&id){let cut=pending.min(e.amount);e.amount-=cut;pending-=cut;} if self.unbonding.get(&id).map(|e|e.amount==0).unwrap_or(false){self.unbonding.remove(&id);} } }
+  }
   self.slashed_evidence.insert(evidence_hash,slash);
   Ok(slash)
  }
@@ -219,13 +225,15 @@ impl ChainState {
  fn enc_draw(d:&DrawState)->Vec<u8>{let mut o=Vec::new();let c=&d.config;o.extend_from_slice(&c.draw_id);o.push(c.draw_type as u8);o.extend_from_slice(&c.ticket_price_mfdm.to_le_bytes());o.extend_from_slice(&c.winner_count.to_le_bytes());o.extend_from_slice(&c.starts_at.to_le_bytes());o.extend_from_slice(&c.ends_at.to_le_bytes());o.extend_from_slice(&c.seed_block.to_le_bytes());o.extend_from_slice(&d.total_tickets.to_le_bytes());o.extend_from_slice(&d.prize_pool_mfdm.to_le_bytes());o.extend_from_slice(&d.cu_fund_mfdm.to_le_bytes());o.extend_from_slice(&d.annual_reserve_mfdm.to_le_bytes());o.push(d.executed as u8);o}
  fn enc_draw_result(r:&DrawResult)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&r.draw_id);o.extend_from_slice(&r.total_tickets.to_le_bytes());o.extend_from_slice(&r.prize_pool_mfdm.to_le_bytes());o.extend_from_slice(&r.cu_fund_mfdm.to_le_bytes());o.extend_from_slice(&r.annual_reserve_mfdm.to_le_bytes());put_len(&mut o,r.winners.len());for w in &r.winners{o.extend_from_slice(w);}o.extend_from_slice(&r.randomness_seed);o.extend_from_slice(&r.selection_proof);o}
  fn enc_evidence(e:&freedom_types::EquivocationEvidence)->Vec<u8>{let mut o=e.signing_bytes();o.extend_from_slice(&e.evidence_hash);o}
- fn enc_validator(v:&Validator)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&v.validator_id);o.extend_from_slice(&v.owner);o.extend_from_slice(&v.consensus_key);o.extend_from_slice(&v.stake.to_le_bytes());o.extend_from_slice(&v.blocks_proposed.to_le_bytes());o.extend_from_slice(&v.blocks_finalized.to_le_bytes());o.extend_from_slice(&v.missed_votes.to_le_bytes());o}
+ fn enc_validator(v:&Validator)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&v.validator_id);o.extend_from_slice(&v.owner);o.extend_from_slice(&v.consensus_key);o.extend_from_slice(&v.stake.to_le_bytes());o.extend_from_slice(&v.unbonding_stake.to_le_bytes());o.extend_from_slice(&v.blocks_proposed.to_le_bytes());o.extend_from_slice(&v.blocks_finalized.to_le_bytes());o.extend_from_slice(&v.missed_votes.to_le_bytes());o}
+ fn enc_unbonding(e:&UnbondingEntry)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&e.unbonding_id);o.extend_from_slice(&e.validator_id);o.extend_from_slice(&e.owner);o.extend_from_slice(&e.amount.to_le_bytes());o.extend_from_slice(&e.requested_height.to_le_bytes());o.extend_from_slice(&e.release_height.to_le_bytes());o}
  fn enc_ledger(l:&LedgerEntry)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&l.tx_hash);o.extend_from_slice(&l.sender);o.push(l.kind);o.extend_from_slice(&l.nonce.to_le_bytes());o.push(l.success as u8);o}
  fn enc_event(e:&Event)->Vec<u8>{let mut o=Vec::new();match e{Event::FdmTransferred{from,to,amount}=>{o.push(1);o.extend_from_slice(from);o.extend_from_slice(to);o.extend_from_slice(&amount.to_le_bytes())},Event::TicketCreated{ticket_id,draw_id,owner}=>{o.push(2);o.extend_from_slice(ticket_id);o.extend_from_slice(draw_id);o.extend_from_slice(owner)},Event::DrawFundAllocated{draw_id,prize_pool,cu_fund,annual_reserve}=>{o.push(3);o.extend_from_slice(draw_id);o.extend_from_slice(&prize_pool.to_le_bytes());o.extend_from_slice(&cu_fund.to_le_bytes());o.extend_from_slice(&annual_reserve.to_le_bytes())},Event::DrawExecuted{draw_id,randomness_seed,selection_proof}=>{o.push(4);o.extend_from_slice(draw_id);o.extend_from_slice(randomness_seed);o.extend_from_slice(selection_proof)},Event::PrizePaid{draw_id,ticket_id,winner,amount}=>{o.push(5);o.extend_from_slice(draw_id);o.extend_from_slice(ticket_id);o.extend_from_slice(winner);o.extend_from_slice(&amount.to_le_bytes())},Event::EquivocationSlashed{evidence_hash,validator_id,amount}=>{o.push(6);o.extend_from_slice(evidence_hash);o.extend_from_slice(validator_id);o.extend_from_slice(&amount.to_le_bytes())}}o}
  pub fn state_root(&self)->Hash{
   let mut leaves=Vec::new();
   for (k,v) in &self.accounts{leaves.push(state_leaf(b"account",k,&enc_account(v)));}
   for (k,v) in &self.validators{leaves.push(state_leaf(b"validator",k,&enc_validator(v)));}
+  for (k,v) in &self.unbonding{leaves.push(state_leaf(b"unbonding",k,&enc_unbonding(v)));}
   for (k,v) in &self.active_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"active_validator",k,&x));}
   for (k,v) in &self.evidence{leaves.push(state_leaf(b"evidence",k,&enc_evidence(v)));}
   for (k,v) in &self.slashed_evidence{leaves.push(state_leaf(b"slashed_evidence",k,&v.to_le_bytes()));}
@@ -244,7 +252,7 @@ impl ChainState {
   leaves.sort();
   freedom_primitives::merkle_root(&leaves)
  }
- pub fn assert_invariants(&self){assert!(self.supply.is_consistent());let sum=self.accounts.values().try_fold(0u128,|s,a|{let h=a.balance.checked_add(a.locked).and_then(|v|v.checked_add(a.staked))?;s.checked_add(h)});assert!(sum.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,sum.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_mfdm.checked_add(self.annual_reserve_mfdm).and_then(|x|x.checked_add(self.draw_prize_pool_mfdm)).map(|x|x<=self.supply.treasury).unwrap_or(false));for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
+ pub fn assert_invariants(&self){assert!(self.supply.is_consistent());let sum=self.accounts.values().try_fold(0u128,|s,a|{let h=a.balance.checked_add(a.locked).and_then(|v|v.checked_add(a.staked))?;s.checked_add(h)});assert!(sum.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,sum.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_mfdm.checked_add(self.annual_reserve_mfdm).and_then(|x|x.checked_add(self.draw_prize_pool_mfdm)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
 }
 
 #[cfg(test)]
