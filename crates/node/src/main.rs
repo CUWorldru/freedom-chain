@@ -483,17 +483,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pending_sync.push((peer_id, sync_outbound_id, sync_id, state.height.saturating_add(1)));
                             sync_round_peers.insert(peer_id, state.height.saturating_add(1));
                         }
-                        if pending_snapshot.is_empty() {
-                            let snapshot_peer_count = connected_peers.len().min(2);
-                            snapshot_required = snapshot_peer_count.max(1);
-                            snapshot_candidates.clear();
-                            for snapshot_peer in connected_peers.iter().copied().take(snapshot_peer_count) {
-                                if !peer_is_sync_eligible(&peer_sync_scores, snapshot_peer, state.height) {
-                                    continue;
-                                }
-                                let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, snapshot_peer, validator_id, u64::MAX);
-                                pending_snapshot.push((snapshot_peer, snapshot_outbound_id, snapshot_request_id, u64::MAX));
+                        if !pending_snapshot.iter().any(|(pending_peer, ..)| *pending_peer == peer_id)
+                            && pending_snapshot.len() < 2
+                            && peer_is_sync_eligible(&peer_sync_scores, peer_id, state.height)
+                        {
+                            if pending_snapshot.is_empty() {
+                                snapshot_candidates.clear();
                             }
+                            let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
+                            pending_snapshot.push((peer_id, snapshot_outbound_id, snapshot_request_id, u64::MAX));
+                            snapshot_required = pending_snapshot.len().max(1);
                         }
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => {
