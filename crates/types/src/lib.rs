@@ -2250,18 +2250,32 @@ fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub const BITCOIN_MAINNET_CHAIN_ID: u32 = 0x4254_4301;
+pub const BITCOIN_MAINNET_GENESIS_HASH: Hash = [
+    0x6f, 0xe2, 0x8c, 0x0a, 0xb6, 0xf1, 0xb3, 0x72,
+    0xc1, 0xa6, 0xa2, 0x46, 0xae, 0x63, 0xf7, 0x4f,
+    0x93, 0x1e, 0x83, 0x65, 0xe1, 0x5a, 0x08, 0x9c,
+    0x68, 0xd6, 0x19, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
 pub struct BitcoinNetworkCheckpoint {
+    pub chain_id: u32,
+    pub genesis_hash: Hash,
     pub height: u64,
     pub block_hash: Hash,
 }
 
 impl BitcoinNetworkCheckpoint {
     pub fn validate(&self) -> bool {
-        self.height > 0 && self.block_hash != [0u8; 32]
+        self.chain_id == BITCOIN_MAINNET_CHAIN_ID
+            && self.genesis_hash == BITCOIN_MAINNET_GENESIS_HASH
+            && self.height > 0
+            && self.block_hash != [0u8; 32]
     }
 }
 
 pub struct BitcoinChainContext {
+    pub chain_id: u32,
     pub checkpoint: BitcoinNetworkCheckpoint,
     pub start_height: u64,
     pub base_start_height: u64,
@@ -2275,7 +2289,9 @@ pub struct BitcoinChainContext {
 
 impl BitcoinChainContext {
     pub fn validate(&self) -> bool {
-        self.checkpoint.validate()
+        self.chain_id == BITCOIN_MAINNET_CHAIN_ID
+            && self.checkpoint.validate()
+            && self.checkpoint.chain_id == self.chain_id
             && self.checkpoint.height <= self.base_start_height
             && self.tip_height > 0
             && self.start_height > 0
