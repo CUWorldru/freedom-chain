@@ -2546,8 +2546,6 @@ impl CrossChainProofAdapter for BitcoinUtxoFinalityAdapter {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 fn ethereum_keccak256(data:&[u8])->Hash {
     use sha3::{Digest,Keccak256};
     let mut h=Keccak256::new();
