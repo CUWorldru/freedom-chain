@@ -1068,3 +1068,17 @@ Bitcoin UTXO proofs now carry the raw transaction and cryptographically bind it 
 ## M119 — Bitcoin Raw Transaction Parser + Output Verification
 
 Bitcoin raw transactions are now parsed inside the verifier with legacy and SegWit serialization support. The parser enforces canonical CompactSize encoding, exact transaction consumption, input/output structure, and derives both TXID (without witness data) and WTXID (full serialization). Bitcoin UTXO verification now binds the claimed vout, amount and scriptPubKey to the actual parsed transaction output instead of trusting those fields independently. This completes the transaction-inclusion-to-exact-output boundary; live unspent/spent-state verification remains a separate next boundary.
+
+
+## M120 — Bitcoin UTXO Spend-State Verification
+
+- Bitcoin headers do not commit a UTXO set, so M120 does not claim a compact UTXO absence proof from headers alone.
+- BitcoinUtxoSpendStateProof verifies the exact M119 output binding first.
+- The complete inclusion block is scanned, covering same-block spends.
+- Every subsequent block through the canonical tip is supplied with its complete raw transaction list.
+- Each block's transaction set is parsed, its Merkle root is recomputed with Bitcoin's odd-leaf duplication rule, and the result is checked against the PoW-valid block header.
+- Every transaction input is checked for a spend of the target (txid, vout).
+- Header linkage is checked from the inclusion block through the canonical tip.
+- The claimed tip must exactly match the persisted canonical Bitcoin checkpoint.
+- State exposes validate_bitcoin_utxo_spend_state so bridge validation can require the unspent-state proof.
+- This is a correctness-first full-block scan and can be large; it is not yet a compact UTXO-accumulator proof and does not replace full Bitcoin script/consensus validation.
