@@ -1215,3 +1215,10 @@ Introduces a chain-neutral `CrossChainFinalityEnvelope` carrying bridge/chain id
 Supported proof kinds currently include Bitcoin UTXO, Ethereum, Tron, TON, Solana and a generic finality adapter. The envelope is deliberately only a common boundary: each chain must provide its own proof construction and verification rules.
 
 Bitcoin validation additionally requires the candidate finality height to be the successor of the persisted canonical tip and rejects unchanged state roots and sequence replay.
+
+
+## M134 — Cross-Chain Proof Adapters
+
+Adds the `CrossChainProofAdapter` boundary. Each chain supplies its own proof semantics while State routes validation through the adapter selected by `CrossChainProofKind`.
+
+Current adapters: Bitcoin UTXO, Ethereum/EVM, and Tron. Ethereum/EVM and Tron adapters intentionally provide only structural envelope validation at this stage; they do not claim transaction/event finality until their chain-specific proof verifiers are implemented.
