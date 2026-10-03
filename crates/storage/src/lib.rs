@@ -1,3 +1,4 @@
+use freedom_state::ChainState;
 use freedom_types::Block;
 use rocksdb::{Options, DB};
 use std::path::Path;
@@ -5,9 +6,10 @@ use std::path::Path;
 const BLOCK_PREFIX: &[u8] = b"block:";
 const META_HEIGHT: &[u8] = b"meta:height";
 const META_HASH: &[u8] = b"meta:last_hash";
+const SNAPSHOT_PREFIX: &[u8] = b"snapshot:";
 
 #[derive(Debug)]
-pub enum StorageError { Rocks(String), Codec(String), MissingBlock(u64), InvalidMetadata }
+pub enum StorageError { Rocks(String), Codec(String), MissingBlock(u64), InvalidMetadata, InvalidSnapshot(String) }
 
 impl std::fmt::Display for StorageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -15,6 +17,14 @@ impl std::fmt::Display for StorageError {
     }
 }
 impl std::error::Error for StorageError {}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct StateSnapshot {
+    pub height: u64,
+    pub block_hash: [u8;32],
+    pub state_root: [u8;32],
+    pub state: ChainState,
+}
 
 pub struct ChainStore { db: DB }
 
@@ -24,6 +34,8 @@ impl ChainStore {
         opts.create_if_missing(true);
         Ok(Self { db: DB::open(&opts, path).map_err(|e| StorageError::Rocks(e.to_string()))? })
     }
+
+    fn snapshot_key(height: u64) -> Vec<u8> { let mut k = SNAPSHOT_PREFIX.to_vec(); k.extend_from_slice(&height.to_be_bytes()); k }
 
     fn height_key(height: u64) -> Vec<u8> {
         let mut k = BLOCK_PREFIX.to_vec();
@@ -63,6 +75,33 @@ impl ChainStore {
         }
     }
 
+    pub fn save_snapshot(&self, state: &ChainState, block_hash: [u8;32]) -> Result<(), StorageError> {
+        let snapshot = StateSnapshot { height: state.height, block_hash, state_root: state.state_root(), state: state.clone() };
+        let bytes = serde_json::to_vec(&snapshot).map_err(|e| StorageError::Codec(e.to_string()))?;
+        self.db.put(Self::snapshot_key(state.height), bytes).map_err(|e| StorageError::Rocks(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn load_snapshot(&self, height: u64) -> Result<Option<StateSnapshot>, StorageError> {
+        let Some(bytes) = self.db.get(Self::snapshot_key(height)).map_err(|e| StorageError::Rocks(e.to_string()))? else { return Ok(None); };
+        let snapshot: StateSnapshot = serde_json::from_slice(&bytes).map_err(|e| StorageError::Codec(e.to_string()))?;
+        if snapshot.height != height || snapshot.state.height != height { return Err(StorageError::InvalidSnapshot("height mismatch".into())); }
+        if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }
+        Ok(Some(snapshot))
+    }
+
+    pub fn latest_snapshot(&self) -> Result<Option<StateSnapshot>, StorageError> {
+        let mut best = None;
+        for item in self.db.iterator(rocksdb::IteratorMode::Start) {
+            let (key, _) = item.map_err(|e| StorageError::Rocks(e.to_string()))?;
+            if key.starts_with(SNAPSHOT_PREFIX) && key.len() == SNAPSHOT_PREFIX.len() + 8 {
+                let mut h=[0u8;8]; h.copy_from_slice(&key[SNAPSHOT_PREFIX.len()..]);
+                let height=u64::from_be_bytes(h);
+                if best.map(|b| height>b).unwrap_or(true) { best=Some(height); }
+            }
+        }
+        match best { Some(h)=>self.load_snapshot(h), None=>Ok(None) }
+    }
     pub fn range(&self, from: u64, to: u64) -> Result<Vec<Block>, StorageError> {
         if from > to { return Ok(Vec::new()); }
         let mut out = Vec::with_capacity((to - from + 1) as usize);
@@ -101,5 +140,10 @@ mod tests {
         assert_eq!(store.latest_height().unwrap(), 1);
         assert_eq!(store.latest_hash().unwrap(), block_hash(&block));
         assert_eq!(store.get_block(1).unwrap(), Some(block));
+        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis { chain_id: 1, initial_supply: 0, validators: vec![] });
+        store.save_snapshot(&genesis, [9;32]).unwrap();
+        let loaded = store.load_snapshot(0).unwrap().unwrap();
+        assert_eq!(loaded.block_hash, [9;32]);
+        assert_eq!(loaded.state.state_root(), loaded.state_root);
     }
 }
