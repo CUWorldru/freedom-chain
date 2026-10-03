@@ -329,6 +329,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
     let mut pending_sync = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
     let mut sync_candidates = BTreeMap::<Hash, (u64, SyncResponse)>::new();
+    let mut sync_required = 1usize;
     let mut pending_snapshot = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut sync_peer_cursor = 0usize;
@@ -363,6 +364,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if !connected_peers.is_empty() && pending_sync.is_empty() {
                     let from_height = state.height.saturating_add(1);
                     let peer_count = connected_peers.len().min(2);
+                    sync_required = peer_count.max(1);
                     for _ in 0..peer_count {
                         let peer = match select_sync_peer(&connected_peers, &mut sync_peer_cursor) {
                             Some(peer) => peer,
@@ -467,7 +469,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let fingerprint = hash_bytes(&serde_json::to_vec(&response.blocks)?);
                                             let entry = sync_candidates.entry(fingerprint).or_insert((0, response.clone()));
                                             entry.0 += 1;
-                                            let required = if pending_sync.len() + entry.0 >= 2 { 2 } else { 1 };
+                                            let required = sync_required;
                                             if entry.0 < required {
                                                 continue;
                                             }
@@ -491,6 +493,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 println!("SYNCED blocks={} height={}", accepted, state.height);
                                                 pending_sync.clear();
                                                 sync_candidates.clear();
+                                                sync_required = 1;
                                                 round=0;
                                                 timeout_round_sent=None;
                                                 if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
