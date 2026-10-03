@@ -624,9 +624,8 @@ pub fn bitcoin_target_from_bits(bits:u32)->Option<[u8;32]>{
     if (bits&0x0080_0000)!=0{return None;}
     let mut out=[0u8;32]; let bytes=mantissa.to_be_bytes();
     let m=[bytes[1],bytes[2],bytes[3]];
-    let start=32usize.checked_sub(exponent)?; let shift=exponent-3;
-    if shift>29{return None;}
-    out[start+shift..start+shift+3].copy_from_slice(&m); Some(out)
+    let start=32usize.checked_sub(exponent)?;
+    out[start..start+3].copy_from_slice(&m); Some(out)
 }
 pub fn bitcoin_hash_leq_target(hash:Hash,target:[u8;32])->bool{hash.iter().rev().cmp(target.iter().rev())!=std::cmp::Ordering::Greater}
 pub fn bitcoin_pow_valid(header:&BitcoinBlockHeader)->bool{bitcoin_target_from_bits(header.bits).map(|t|bitcoin_hash_leq_target(header.block_hash(),t)).unwrap_or(false)}
