@@ -2,6 +2,16 @@
 
 321MORE Network is the proprietary L1 for the CU Freedom economy.
 
+## Network Identity
+
+- Network: **321MORE Network**
+- Native Asset: **321M**
+- Gas Asset: **321M**
+- Ticker / Symbol: **321M**
+- Chain ID: **1** (unchanged)
+- Native accounting scale: **100,000 native units = 1 321M** (unchanged)
+- Consensus, cryptographic domains, transaction wire encoding, reward/emission rules and cross-chain proof semantics are unchanged by this rename.
+
 ## M0 — Genesis / Localnet foundation
 
 - Genesis 321M supply: 0
