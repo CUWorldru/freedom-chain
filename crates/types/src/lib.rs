@@ -1172,6 +1172,23 @@ impl TronUsdtDepositProof {
         self.amount().map_err(|_| BridgeAdapterError::InvalidProof)
     }
 
+    pub fn to_cross_chain_asset_proof(
+        &self,
+        required_confirmations: u64,
+        expected_usdt_contract: &[u8],
+        asset_id: Hash,
+    ) -> Result<CrossChainAssetProof, BridgeAdapterError> {
+        let deposit = self.to_bridge_deposit(required_confirmations, expected_usdt_contract)?;
+        let recipient = self.recipient().map_err(|_| BridgeAdapterError::InvalidProof)?.to_vec();
+        CrossChainAssetProof::from_bridge_deposit(
+            deposit,
+            asset_id,
+            CrossChainAssetKind::Trc20,
+            self.amount_checked()?,
+            recipient,
+        )
+    }
+
     pub fn proof_hash(&self) -> Hash {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"FREEDOM-TRON-USDT-DEPOSIT-V1");
@@ -4257,5 +4274,29 @@ mod m147_bridge_lifecycle_tests {
         assert!(p.to_bridge_deposit(20, &[0xaa;20]).is_err());
         p.confirmations = 19;
         assert_eq!(p.to_bridge_deposit(20, &[0xaa;20]), Err(BridgeAdapterError::InsufficientFinality));
+    }
+}
+
+#[cfg(test)]
+mod m148_unified_asset_proof_tests {
+    use super::*;
+
+    #[test]
+    fn unified_asset_proof_rejects_tampered_metadata() {
+        let deposit = BridgeDepositProof {
+            bridge_id: [1;32],
+            source_chain_id: TronUsdtDepositProof::TRON_MAINNET_CHAIN_ID,
+            tx_hash: [2;32],
+            event_index: 4,
+            block_or_slot: 100,
+            confirmations: 20,
+            proof: vec![9;32],
+        };
+        let mut p = CrossChainAssetProof::from_bridge_deposit(
+            deposit, [3;32], CrossChainAssetKind::Trc20, 123, vec![4;20]
+        ).unwrap();
+        assert!(p.validate(20));
+        p.amount = 124;
+        assert!(!p.validate(20));
     }
 }
