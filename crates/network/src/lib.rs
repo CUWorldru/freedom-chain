@@ -200,6 +200,61 @@ pub fn validator_set_certificate_topic() -> IdentTopic { IdentTopic::new(VALSET_
 pub fn timeout_topic() -> IdentTopic { IdentTopic::new(TIMEOUT_TOPIC) }
 pub fn sync_topic() -> IdentTopic { IdentTopic::new(SYNC_TOPIC) }
 
+pub fn make_validator_set_vote(
+    state: &ChainState,
+    validator_id: Hash,
+    to_epoch: u64,
+    new_set_hash: Hash,
+    consensus_key: &ed25519_dalek::SigningKey,
+) -> Result<freedom_types::ValidatorSetVote, String> {
+    if to_epoch != state.epoch.saturating_add(1) {
+        return Err("invalid validator set vote target epoch".into());
+    }
+    let previous_set_hash = freedom_consensus::validator_set_hash(&state.active_validator_set);
+    let expected_new_set_hash = freedom_consensus::validator_set_hash(&state.pending_validator_set);
+    if new_set_hash != expected_new_set_hash {
+        return Err("validator set vote new set hash mismatch".into());
+    }
+    let validator = state.active_validator_set.get(&validator_id)
+        .ok_or_else(|| "validator set vote signer is not active".to_string())?;
+    if validator.consensus_key != consensus_key.verifying_key().to_bytes() {
+        return Err("validator set vote key mismatch".into());
+    }
+    let mut vote = freedom_types::ValidatorSetVote {
+        from_epoch: state.epoch,
+        to_epoch,
+        previous_set_hash,
+        new_set_hash,
+        validator_id,
+        signature: Vec::new(),
+    };
+    vote.signature = sign(consensus_key, &vote.signing_bytes()).to_vec();
+    Ok(vote)
+}
+
+pub fn validate_validator_set_vote(
+    state: &ChainState,
+    vote: &freedom_types::ValidatorSetVote,
+) -> Result<(), String> {
+    if vote.from_epoch != state.epoch || vote.to_epoch != state.epoch.saturating_add(1) {
+        return Err("invalid validator set vote epoch".into());
+    }
+    if vote.previous_set_hash != freedom_consensus::validator_set_hash(&state.active_validator_set) {
+        return Err("validator set vote previous set mismatch".into());
+    }
+    if vote.new_set_hash != freedom_consensus::validator_set_hash(&state.pending_validator_set) {
+        return Err("validator set vote new set mismatch".into());
+    }
+    let validator = state.active_validator_set.get(&vote.validator_id)
+        .ok_or_else(|| "validator set vote signer is not active".to_string())?;
+    if vote.signature.len() != 64 { return Err("invalid validator set vote signature length".into()); }
+    let mut sig=[0u8;64]; sig.copy_from_slice(&vote.signature);
+    if !verify(&validator.consensus_key, &vote.signing_bytes(), &sig) {
+        return Err("invalid validator set vote signature".into());
+    }
+    Ok(())
+}
+
 pub fn make_timeout(height:u64,round:u64,validator_id:Hash,consensus_key:&ed25519_dalek::SigningKey)->ValidatorTimeout{let mut t=ValidatorTimeout{height,round,validator_id,signature:Vec::new()};t.signature=sign(consensus_key,&t.signing_bytes()).to_vec();t}
 
 pub fn proposal_topic() -> IdentTopic {
