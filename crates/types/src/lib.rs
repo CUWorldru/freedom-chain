@@ -579,6 +579,10 @@ impl CrossChainAssetRepresentation {
 
     pub fn validate_external_identity(&self) -> bool {
         if self.representation.bridge_id == [0; 32]
+            || !expected_asset_kind_for_mainnet(
+                self.representation.source_chain_id,
+                self.asset_kind,
+            )
             || self.representation.source_chain_id == 0
         {
             return false;
