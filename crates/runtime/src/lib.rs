@@ -233,7 +233,7 @@ pub fn finalize_block_with_quorum(
     votes: &[freedom_types::ValidatorVote],
 ) -> Result<Block, String> {
     let hash = block_hash(block);
-    freedom_consensus::validate_quorum(state, hash, block.header.height, votes)?;
+    freedom_consensus::validate_quorum(state, hash, block.header.height, 0, votes)?;
     let committed = execute_block(state, block)?;
     Ok(committed)
 }
@@ -260,14 +260,15 @@ impl ValidatorProtocol {
 
     pub fn receive_timeout(&mut self, state: &ChainState, timeout: freedom_types::ValidatorTimeout, height: u64, round: u64) -> Result<bool, String> { freedom_consensus::validate_timeout(state, &timeout, height, round)?; self.timeouts.insert(timeout.validator_id, timeout); Ok(self.timeouts.len() >= freedom_consensus::quorum_threshold(state.validators.len())) }
 
-    pub fn receive_vote(&mut self, state: &ChainState, vote: freedom_types::ValidatorVote, expected_block_hash: Hash, height: u64) -> Result<bool, String> {
-        freedom_consensus::validate_vote(state, &vote, expected_block_hash, height)?;
+    pub fn receive_vote(&mut self, state: &ChainState, vote: freedom_types::ValidatorVote, expected_block_hash: Hash, height: u64, round: u64) -> Result<bool, String> {
+        freedom_consensus::validate_vote(state, &vote, expected_block_hash, height, round)?;
         self.votes.insert(vote.validator_id, vote);
         Ok(self.votes.len() >= freedom_consensus::quorum_threshold(state.validators.len()))
     }
 
-    pub fn finalize_if_quorum(&self, state: &mut ChainState, block: &Block) -> Result<Block, String> {
+    pub fn finalize_if_quorum(&self, state: &mut ChainState, block: &Block, round: u64) -> Result<Block, String> {
         let votes: Vec<_> = self.votes.values().cloned().collect();
-        finalize_block_with_quorum(state, block, &votes)
+        freedom_consensus::validate_quorum(state, block_hash(block), block.header.height, round, &votes)?;
+        execute_block(state, block)
     }
 }
