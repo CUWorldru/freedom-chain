@@ -770,3 +770,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - repeated processing of the same fact does not append another journal entry;
 - distinct fingerprints remain independently countable;
 - deduplication happens before severity classification and score mutation.
+
+
+## M75 — Persistent Reputation Evidence Deduplication
+
+- reputation evidence keeps a persistent compact deduplication index of event IDs;
+- the detailed evidence journal remains bounded at 32 records per peer;
+- event IDs are domain-separated hashes of peer, height, request ID, fingerprint, and evidence kind;
+- repeated processing of an event remains rejected even after its detailed journal record has been compacted out;
+- the new field is backward-compatible with persisted reputation data, and startup rebuilds the index from legacy evidence before continuing.
