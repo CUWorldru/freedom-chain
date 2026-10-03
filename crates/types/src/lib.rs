@@ -2285,6 +2285,83 @@ pub fn bitcoin_utxo_smt_leaf(entry: Option<&BitcoinUtxoStateEntry>) -> Hash {
     freedom_primitives::hash_bytes(&b)
 }
 
+pub fn bitcoin_utxo_smt_node(left: Hash, right: Hash) -> Hash {
+    freedom_primitives::hash_bytes(&[
+        BITCOIN_UTXO_SMT_DOMAIN,b"NODE",left.as_slice(),right.as_slice()
+    ].concat())
+}
+
+pub fn bitcoin_utxo_smt_empty_hashes() -> Vec<Hash> {
+    let mut h=Vec::with_capacity(BITCOIN_UTXO_SMT_DEPTH+1);
+    h.push(bitcoin_utxo_smt_leaf(None));
+    for _ in 0..BITCOIN_UTXO_SMT_DEPTH {
+        let x=*h.last().unwrap();
+        h.push(bitcoin_utxo_smt_node(x,x));
+    }
+    h
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSmtSnapshot {
+    pub entries: Vec<BitcoinUtxoStateEntry>,
+}
+
+impl BitcoinUtxoSmtSnapshot {
+    pub fn root(&self) -> Result<Hash,String> {
+        let mut map=std::collections::BTreeMap::<Hash,BitcoinUtxoStateEntry>::new();
+        for e in &self.entries {
+            let key=bitcoin_utxo_smt_key(&e.tx_hash,e.vout);
+            if map.insert(key,e.clone()).is_some() { return Err("duplicate SMT key".into()); }
+        }
+        let empty=bitcoin_utxo_smt_empty_hashes();
+        fn build(
+            map:&std::collections::BTreeMap<Hash,BitcoinUtxoStateEntry>,
+            depth:usize,
+            prefix:u16,
+            empty:&[Hash],
+        )->Hash {
+            if depth==BITCOIN_UTXO_SMT_DEPTH { return map.values().next().map(|e|bitcoin_utxo_smt_leaf(Some(e))).unwrap_or(empty[0]); }
+            if map.is_empty() { return empty[BITCOIN_UTXO_SMT_DEPTH-depth]; }
+            let bitpos=depth;
+            let mut left=std::collections::BTreeMap::new();
+            let mut right=std::collections::BTreeMap::new();
+            for (k,e) in map {
+                if ((k[bitpos/8]>>(bitpos%8))&1)==0 { left.insert(*k,e.clone()); } else { right.insert(*k,e.clone()); }
+            }
+            bitcoin_utxo_smt_node(build(&left,depth+1,prefix<<1,empty),build(&right,depth+1,(prefix<<1)|1,empty))
+        }
+        Ok(build(&map,0,0,&empty))
+    }
+
+    pub fn proof_for(&self,key:Hash)->Result<BitcoinUtxoSmtProof,String>{
+        let mut map=std::collections::BTreeMap::<Hash,BitcoinUtxoStateEntry>::new();
+        for e in &self.entries {
+            let k=bitcoin_utxo_smt_key(&e.tx_hash,e.vout);
+            if map.insert(k,e.clone()).is_some(){return Err("duplicate SMT key".into());}
+        }
+        let entry=map.get(&key).cloned();
+        let empty=bitcoin_utxo_smt_empty_hashes();
+        let mut siblings=Vec::with_capacity(BITCOIN_UTXO_SMT_DEPTH);
+        let mut current=map;
+        for depth in 0..BITCOIN_UTXO_SMT_DEPTH {
+            let bit=((key[depth/8]>>(depth%8))&1)!=0;
+            let mut sibling_map=std::collections::BTreeMap::new();
+            let mut next=std::collections::BTreeMap::new();
+            for (k,e) in current {
+                let b=((k[depth/8]>>(depth%8))&1)!=0;
+                if b==bit { next.insert(k,e); } else { sibling_map.insert(k,e); }
+            }
+            siblings.push(if sibling_map.is_empty() {
+                empty[BITCOIN_UTXO_SMT_DEPTH-depth-1]
+            } else {
+                BitcoinUtxoSmtSnapshot{entries:sibling_map.into_values().collect()}.root()?
+            });
+            current=next;
+        }
+        Ok(BitcoinUtxoSmtProof{key,entry,siblings})
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinUtxoSmtProof {
     pub key: Hash,
