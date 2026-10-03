@@ -2060,6 +2060,8 @@ pub struct BitcoinUtxoStateEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub const BITCOIN_MAX_BLOCK_TXS_FOR_UTXO_TRANSITION: usize = 1_000_000;
+
 pub struct BitcoinUtxoAccumulatorTransition {
     pub bridge_id: Hash,
     pub chain_id: u32,
@@ -2206,3 +2208,49 @@ impl BitcoinUtxoCommitmentAttestation {
             && self.authenticated_count(validators) >= quorum
     }
 }
+impl BitcoinUtxoAccumulatorTransition {
+    pub fn derive_block_delta(
+        raw_transactions: &[Vec<u8>],
+    ) -> Result<(Vec<(Hash,u32)>,Vec<BitcoinUtxoStateEntry>), String> {
+        if raw_transactions.is_empty() || raw_transactions.len() > BITCOIN_MAX_BLOCK_TXS_FOR_UTXO_TRANSITION {
+            return Err("invalid block transaction count".into());
+        }
+        let mut spent=Vec::new();
+        let mut created=Vec::new();
+        let mut seen_txids=std::collections::BTreeSet::new();
+        for (tx_pos,raw) in raw_transactions.iter().enumerate() {
+            let tx=BitcoinTransaction::parse(raw).map_err(|_|"invalid Bitcoin transaction".to_string())?;
+            if !seen_txids.insert(tx.txid) { return Err("duplicate transaction id".into()); }
+            if tx_pos==0 {
+                if !tx.inputs.is_empty() && tx.inputs[0].previous_txid != [0;32] {
+                    return Err("first transaction is not coinbase".into());
+                }
+            } else if tx.inputs.iter().any(|i| i.previous_txid == [0;32]) {
+                return Err("non-coinbase transaction has null prevout".into());
+            }
+            if tx_pos>0 {
+                for input in &tx.inputs {
+                    spent.push((input.previous_txid,input.previous_vout));
+                }
+            }
+            for (vout,out) in tx.outputs.iter().enumerate() {
+                created.push(BitcoinUtxoStateEntry {
+                    tx_hash: tx.txid,
+                    vout: vout as u32,
+                    amount_sat: out.value,
+                    script_pubkey: out.script_pubkey.clone(),
+                });
+            }
+        }
+        Ok((spent,created))
+    }
+
+    pub fn verify_block_delta(
+        previous: &[BitcoinUtxoStateEntry],
+        raw_transactions: &[Vec<u8>],
+    ) -> Result<(Hash,u64), String> {
+        let (spent,created)=Self::derive_block_delta(raw_transactions)?;
+        Self::compute_next(previous,&spent,&created)
+    }
+}
+
