@@ -292,6 +292,8 @@ pub fn verify_bridge_deposit_with_adapter(
     context: &BridgeIngressContext<'_>,
 ) -> Result<freedom_types::VerifiedDeposit, String> {
     context.validate_proof(proof)?;
+    let registry = context.registry;
+    let policy = context.policy;
 
     freedom_types::DepositVerifier::verify(proof, registry, policy)
         .map_err(|e| format!("BridgeDepositVerification:{e:?}"))
