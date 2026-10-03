@@ -42,6 +42,8 @@ pub struct SnapshotSyncResponse {
     pub checkpoint: freedom_types::Block,
     pub certificate: freedom_types::FinalityCertificate,
     #[serde(default)]
+    pub finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
+    #[serde(default)]
     pub epoch_transition_certificate: Option<freedom_types::ValidatorSetCertificate>,
     pub state_json: Vec<u8>,
 }
