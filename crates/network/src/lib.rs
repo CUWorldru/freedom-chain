@@ -18,6 +18,8 @@ pub const VOTE_TOPIC: &str = "freedom/1/votes";
 pub const PRECOMMIT_TOPIC: &str = "freedom/1/precommits";
 pub const TIMEOUT_TOPIC: &str = "freedom/1/timeouts";
 pub const EVIDENCE_TOPIC: &str = "freedom/1/evidence";
+pub const VALSET_VOTE_TOPIC: &str = "freedom/1/validator-set-votes";
+pub const VALSET_CERT_TOPIC: &str = "freedom/1/validator-set-certificates";
 pub const SYNC_TOPIC: &str = "freedom/1/sync";
 pub const MAX_SYNC_BLOCKS: u64 = 32;
 pub const SYNC_PROTOCOL: &str = "/freedom/1/sync/1";
@@ -59,6 +61,8 @@ pub struct FreedomBehaviour {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NetworkMessage {
     Proposal(BlockProposal),
+    ValidatorSetVote(freedom_types::ValidatorSetVote),
+    ValidatorSetCertificate(freedom_types::ValidatorSetCertificate),
     Vote(ValidatorVote),
     Precommit(freedom_types::ValidatorPrecommit),
     Timeout(ValidatorTimeout),
@@ -190,6 +194,8 @@ pub fn make_vote(state: &ChainState, validator_id: Hash, proposal: &BlockProposa
 }
 
 pub fn evidence_topic() -> IdentTopic { IdentTopic::new(EVIDENCE_TOPIC) }
+pub fn validator_set_vote_topic() -> IdentTopic { IdentTopic::new(VALSET_VOTE_TOPIC) }
+pub fn validator_set_certificate_topic() -> IdentTopic { IdentTopic::new(VALSET_CERT_TOPIC) }
 
 pub fn timeout_topic() -> IdentTopic { IdentTopic::new(TIMEOUT_TOPIC) }
 pub fn sync_topic() -> IdentTopic { IdentTopic::new(SYNC_TOPIC) }
