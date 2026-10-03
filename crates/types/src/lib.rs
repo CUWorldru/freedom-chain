@@ -94,7 +94,18 @@ pub struct Receipt { pub tx_hash: Hash, pub success: bool, pub gas_used: u64, pu
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Validator {
     pub validator_id: Hash, pub owner: Address, pub consensus_key: [u8;32], pub stake:u128,
+    #[serde(default)]
+    pub unbonding_stake:u128,
     pub blocks_proposed:u64, pub blocks_finalized:u64, pub missed_votes:u64,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnbondingEntry {
+    pub unbonding_id: Hash,
+    pub validator_id: Hash,
+    pub owner: Address,
+    pub amount: u128,
+    pub requested_height: u64,
+    pub release_height: u64,
 }
 pub struct ValidatorSetEntry {
     pub validator_id: Hash,
