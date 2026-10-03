@@ -2146,6 +2146,7 @@ impl BitcoinUtxoProof {
             .block_header
             .as_ref()
             .ok_or(BridgeAdapterError::InvalidProof)?;
+        self.verify_bitcoin_chain()?;
         context.verify_header_chain(self.block_height, deposit_header)?;
         Ok(confirmations)
     }
