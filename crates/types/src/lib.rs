@@ -3889,7 +3889,7 @@ mod m145_tron_inclusion_tests {
             block_id: [9;32],
             transaction_index: 4,
             transaction_count: 5,
-            siblings: vec![None, Some(p2), None],
+            siblings: vec![None, None, Some(p2)],
         };
         assert!(proof.verify_against_root(root));
 
