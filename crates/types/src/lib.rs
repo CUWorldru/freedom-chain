@@ -2781,6 +2781,7 @@ pub struct EthereumSyncCommitteeProof {
     pub generalized_index:u64,
     pub merkle_branch:Vec<Hash>,
     pub validator_membership:Option<EthereumValidatorMembershipProof>,
+    pub finalized_checkpoint_root:Hash,
 }
 
 impl EthereumSyncCommitteeProof {
@@ -2791,11 +2792,13 @@ impl EthereumSyncCommitteeProof {
             branch:self.merkle_branch.clone(),
             root:self.committee_root,
         };
-        p.verify() && self.validator_membership.as_ref().map(|v|v.verify()).unwrap_or(true)
+        self.finalized_checkpoint_root!=[0;32]
+            && p.verify() && self.validator_membership.as_ref().map(|v|v.verify()).unwrap_or(true)
     }
     pub fn proof_hash(&self)->Hash{
         let mut b=Vec::new();
         b.extend_from_slice(b"FREEDOM-ETH-SYNC-COMMITTEE-V1");
+        b.extend_from_slice(&self.finalized_checkpoint_root);
         b.extend_from_slice(&self.committee_root);
         b.extend_from_slice(&self.committee_leaf);
         b.extend_from_slice(&self.committee_index.to_le_bytes());
