@@ -123,6 +123,12 @@ impl ChainStore {
         }
         if snapshot.height != height || snapshot.state.height != height { return Err(StorageError::InvalidSnapshot("height mismatch".into())); }
         if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }
+        if let Some(cert) = &snapshot.certificate {
+            let checkpoint = self.get_block(height)?
+                .ok_or_else(|| StorageError::InvalidSnapshot("finality checkpoint block missing".into()))?;
+            freedom_consensus::validate_finality_certificate_for_block(&snapshot.state, &checkpoint, cert)
+                .map_err(StorageError::InvalidSnapshot)?;
+        }
 if snapshot.epoch_transition_certificate.as_ref().map(|c| c.hash())
             != snapshot.state.validator_set_certificate.as_ref().map(|c| c.hash()) {
             return Err(StorageError::InvalidSnapshot("epoch transition certificate mismatch".into()));
