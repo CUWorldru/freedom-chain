@@ -969,3 +969,8 @@ Bitcoin block headers now have deterministic PoW validation: compact `nBits` dec
 ## M101 — Bitcoin Header Chain Verification
 
 Bitcoin bridge verification can now validate a contiguous header sequence. Every header must satisfy PoW and each header must reference the exact SHA-256d hash of its predecessor; the requested starting height must also be representable without overflow. This establishes a deterministic header-chain boundary before adding accumulated-chainwork selection.
+
+
+## M102 — Bitcoin Accumulated Chainwork
+
+Bitcoin header chains now expose deterministic per-header work `floor(2^256 / (target + 1))`, accumulated chainwork, and chainwork comparison for competing validated header sequences. This establishes the basis for selecting the chain with the greatest demonstrated PoW rather than trusting arrival order or raw height alone.
