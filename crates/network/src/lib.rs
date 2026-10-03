@@ -144,12 +144,27 @@ pub fn validate_block_transition(state: &ChainState, block: &freedom_types::Bloc
 
 pub fn validate_proposal(state: &ChainState, proposal: &BlockProposal) -> Result<(), String> {
     if proposal.height != proposal.block.header.height { return Err("proposal height mismatch".into()); }
-    if proposal.round != proposal.block.header.round { return Err("proposal round mismatch".into()); }
+    if proposal.round != proposal.block.header.round {
+        freedom_consensus::validate_valid_round_proof(
+            state,
+            proposal.block_hash,
+            proposal.height,
+            proposal.round,
+            proposal.valid_round,
+            &proposal.valid_precommits,
+        )?;
+        if proposal.valid_round != Some(proposal.block.header.round) {
+            return Err("locked proposal round proof mismatch".into());
+        }
+    }
     if proposal.proposer != proposal.block.header.proposer { return Err("proposal proposer mismatch".into()); }
     let expected = freedom_consensus::proposer_for_height_round(state, proposal.height, proposal.round).ok_or_else(|| "no proposer for round".to_string())?;
     if expected != proposal.proposer { return Err("unexpected proposer for round".into()); }
     if block_hash(&proposal.block) != proposal.block_hash { return Err("proposal block hash mismatch".into()); }
     validate_block_transition(state, &proposal.block)?;
+    if let Some(tc) = &proposal.timeout_certificate {
+        freedom_consensus::validate_timeout_certificate(state, tc, proposal.height, proposal.round)?;
+    }
     let validator = state.validators.values().find(|v| v.owner == proposal.proposer)
         .ok_or_else(|| "unknown proposal proposer".to_string())?;
     if proposal.signature.len() != 64 { return Err("invalid proposal signature length".into()); }
