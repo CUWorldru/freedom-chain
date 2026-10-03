@@ -88,7 +88,13 @@ impl ChainState {
    bridge_id: [0; 32],
    status: AssetStatus::Active,
   };
-  BTreeMap::from([(asset_id, asset)])
+  let mut registry = BTreeMap::from([(asset_id, asset)]);
+  for config in freedom_types::production_profiles() {
+   if let Ok(representation) = config.build() {
+    registry.insert(representation.representation.asset_id, representation.representation);
+   }
+  }
+  registry
  }
  pub fn register_asset(&mut self, asset: AssetDefinition) -> Result<(), StateError> {
   if !asset.validate_identity() || asset.status == AssetStatus::Deprecated {
