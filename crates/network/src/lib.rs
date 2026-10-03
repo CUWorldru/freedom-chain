@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 pub const NETWORK_PROTOCOL: &str = "/freedom/1";
 pub const PROPOSAL_TOPIC: &str = "freedom/1/proposals";
 pub const VOTE_TOPIC: &str = "freedom/1/votes";
+pub const PRECOMMIT_TOPIC: &str = "freedom/1/precommits";
 pub const TIMEOUT_TOPIC: &str = "freedom/1/timeouts";
 pub const SYNC_TOPIC: &str = "freedom/1/sync";
 pub const MAX_SYNC_BLOCKS: u64 = 32;
@@ -52,6 +53,16 @@ pub struct FreedomBehaviour {
     pub ping: ping::Behaviour,
     pub kademlia: libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore>,
     pub sync: request_response::json::Behaviour<SyncWireRequest, SyncWireResponse>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum NetworkMessage {
+    Proposal(BlockProposal),
+    Vote(ValidatorVote),
+    Precommit(freedom_types::ValidatorPrecommit),
+    Timeout(ValidatorTimeout),
+    SyncRequest(SyncRequest),
+    SyncResponse(SyncResponse),
 }
 
 pub enum FreedomEvent {
@@ -162,6 +173,9 @@ pub fn proposal_topic() -> IdentTopic {
     IdentTopic::new(PROPOSAL_TOPIC)
 }
 
+
+pub fn precommit_topic() -> IdentTopic { IdentTopic::new(PRECOMMIT_TOPIC) }
+
 pub fn vote_topic() -> IdentTopic {
     IdentTopic::new(VOTE_TOPIC)
 }
@@ -185,6 +199,7 @@ pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Erro
             ).map_err(|e| format!("gossipsub init: {e}"))?;
             gossipsub.subscribe(&proposal_topic())?;
             gossipsub.subscribe(&vote_topic())?;
+            gossipsub.subscribe(&IdentTopic::new(PRECOMMIT_TOPIC))?;
             gossipsub.subscribe(&IdentTopic::new(TIMEOUT_TOPIC))?;
             gossipsub.subscribe(&sync_topic())?;
             Ok(FreedomBehaviour {
@@ -224,6 +239,7 @@ pub fn publish(
     let (topic, bytes) = match message {
         NetworkMessage::Proposal(_) => (proposal_topic(), encode_message(message)?),
         NetworkMessage::Vote(_) => (vote_topic(), encode_message(message)?),
+        NetworkMessage::Precommit(_) => (IdentTopic::new(PRECOMMIT_TOPIC), encode_message(message)?),
         NetworkMessage::Timeout(_) => (timeout_topic(), encode_message(message)?),
         NetworkMessage::SyncRequest(_) | NetworkMessage::SyncResponse(_) => (sync_topic(), encode_message(message)?),
     };
