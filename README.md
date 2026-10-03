@@ -1146,3 +1146,13 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - The protocol explicitly does not claim that spent membership alone is sufficient to derive the next root.
 - A complete transition still requires enough authenticated Merkle witness material to reconstruct the affected tree state; the current boundary represents that requirement explicitly.
 - This avoids a false compactness claim while leaving the proof format ready for a real Merkle multiproof implementation.
+
+
+## M127 — Fixed-Key Bitcoin UTXO SMT Updates
+
+- Introduces a V2 fixed-key sparse Merkle tree boundary for compact UTXO updates.
+- The key is derived from txid and vout, so deleting one UTXO does not renumber every other leaf.
+- Each update step authenticates its old value against the current root and computes the next root after replacing that value.
+- Both insertion and deletion are represented by old and new entries, including absence proofs through an empty leaf.
+- Steps are verified sequentially, so every intermediate root is authenticated.
+- This is the compact update architecture; the earlier sorted-leaf accumulator remains a legacy V1 format.
