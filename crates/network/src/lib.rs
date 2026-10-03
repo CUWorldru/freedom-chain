@@ -40,6 +40,8 @@ pub struct SnapshotSyncResponse {
     pub state_root: Hash,
     pub checkpoint: freedom_types::Block,
     pub certificate: freedom_types::FinalityCertificate,
+    #[serde(default)]
+    pub epoch_transition_certificate: Option<freedom_types::ValidatorSetCertificate>,
     pub state_json: Vec<u8>,
 }
 
