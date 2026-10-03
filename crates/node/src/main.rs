@@ -156,19 +156,20 @@ fn classify_peer_evidence(
     }
 }
 
-fn record_peer_evidence(
+fn record_peer_evidence_with_confirmations(
     reputations: &mut BTreeMap<libp2p::PeerId, PeerReputation>,
     mut evidence: PeerReputationEvidence,
+    confirming_peers: usize,
 ) {
     let peer = evidence.peer;
     let height = evidence.height;
     let entry = reputations.entry(peer).or_insert(PeerReputation {
         score: 0,
-        cooldown_until_height: 0,
+        cooldown_until_height: height,
         last_decay_height: height,
         evidence: Vec::new(),
     });
-    evidence.severity = classify_peer_evidence(entry, &evidence.kind, 1);
+    evidence.severity = classify_peer_evidence(entry, &evidence.kind, confirming_peers);
     entry.score = entry.score.saturating_add(peer_evidence_weight(
         &evidence.kind,
         evidence.severity,
@@ -179,6 +180,12 @@ fn record_peer_evidence(
     apply_peer_reputation_policy(entry, height);
 }
 
+fn record_peer_evidence(
+    reputations: &mut BTreeMap<libp2p::PeerId, PeerReputation>,
+    evidence: PeerReputationEvidence,
+) {
+    record_peer_evidence_with_confirmations(reputations, evidence, 1);
+}
 fn apply_peer_reputation_policy(reputation: &mut PeerReputation, current_height: u64) {
     if reputation.score >= PEER_REPUTATION_POLICY.misbehavior_threshold {
         reputation.cooldown_until_height = reputation.cooldown_until_height.max(
@@ -1007,31 +1014,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     .map(|(count, _)| *count as usize)
                                                     .max()
                                                     .unwrap_or(1);
-                                                evidence.severity = classify_peer_evidence(
-                                                    peer_reputations.get(&peer).unwrap_or(&PeerReputation {
-                                                        score: 0,
-                                                        cooldown_until_height: 0,
-                                                        last_decay_height: response.from_height,
-                                                        evidence: Vec::new(),
-                                                    }),
-                                                    &evidence.kind,
-                                                    confirming_peers,
-                                                );
-                                                let confirming_peers = snapshot_candidates
+let confirming_peers = snapshot_candidates
                                                     .values()
                                                     .map(|(count, _)| *count as usize)
                                                     .max()
                                                     .unwrap_or(1);
-                                                evidence.severity = classify_peer_evidence(
-                                                    peer_reputations.get(&peer).unwrap_or(&PeerReputation {
-                                                        score: 0,
-                                                        cooldown_until_height: response.height,
-                                                        evidence: Vec::new(),
-                                                    }),
-                                                    &evidence.kind,
+                                                record_peer_evidence_with_confirmations(
+                                                    &mut peer_reputations,
+                                                    evidence,
                                                     confirming_peers,
                                                 );
-                                                record_peer_evidence(&mut peer_reputations, evidence);
                                                 store.save_peer_reputation(&peer_reputations)?;
                                                 eprintln!(
                                                     "SYNC_CONFLICT peer={} from={} fingerprint={} score={:?} existing_candidates={}",
