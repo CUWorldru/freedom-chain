@@ -347,6 +347,9 @@ impl BridgeSecurityPolicy {
 
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeRateLimitUsage { pub period:u64, pub used:u128 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeApproval {
     pub bridge_id: Hash,
     pub request_id: Hash,
