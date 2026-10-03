@@ -2256,7 +2256,6 @@ pub struct BitcoinChainContext {
     pub tip_hash: Hash,
     pub headers: Vec<BitcoinBlockHeader>,
     pub difficulty_windows: Vec<BitcoinDifficultyWindow>,
-    pub expected_chainwork: BitcoinChainWork,
 }
 
 impl BitcoinChainContext {
@@ -2265,6 +2264,21 @@ impl BitcoinChainContext {
             && self.tip_hash != [0u8; 32]
             && !self.headers.is_empty()
             && self.difficulty_windows.iter().all(BitcoinDifficultyWindow::validate)
+    }
+
+    pub fn cumulative_chainwork(&self) -> Result<BitcoinChainWork, BridgeAdapterError> {
+        if !self.validate() {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        let mut work = [0u64; 5];
+        for header in &self.headers {
+            let target = BitcoinBlockHeader::target_from_bits(header.bits)
+                .ok_or(BridgeAdapterError::InvalidProof)?;
+            if !bitcoin_chainwork_add(&mut work, target) {
+                return Err(BridgeAdapterError::InvalidProof);
+            }
+        }
+        Ok(work)
     }
 
     pub fn confirmations_for(&self, block_height: u64) -> Option<u64> {
@@ -2327,17 +2341,7 @@ impl BitcoinChainContext {
             return Err(BridgeAdapterError::InvalidProof);
         }
 
-        let mut chainwork = [0u64; 5];
-        for header in &self.headers {
-            let target = BitcoinBlockHeader::target_from_bits(header.bits)
-                .ok_or(BridgeAdapterError::InvalidProof)?;
-            if !bitcoin_chainwork_add(&mut chainwork, target) {
-                return Err(BridgeAdapterError::InvalidProof);
-            }
-        }
-        if chainwork != self.expected_chainwork {
-            return Err(BridgeAdapterError::InvalidProof);
-        }
+        self.cumulative_chainwork()?;
 
         Ok(())
     }
