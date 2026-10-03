@@ -866,3 +866,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Bitcoin withdrawals use an opaque recipient script/bytes representation and produce a canonical Freedom withdrawal intent without embedding private keys or transaction signing in consensus;
 - the adapter is currently a verification/intent layer: it does not yet connect to Bitcoin RPC, select UTXOs, construct signed transactions, broadcast transactions, or verify a live Merkle proof cryptographically;
 - the same bridge protocol remains reusable for EVM, TRON, TON, Solana, and future adapters.
+
+
+## M84 — Ethereum / EVM Adapter
+
+- added an EVM transfer proof model for ERC-20-style assets, including EVM chain ID, transaction hash, block number, confirmation depth, token contract, sender, recipient, amount, log index, event signature, and proof bytes;
+- the EVM bridge uses `chain_id` to distinguish Ethereum, BNB Chain, Polygon, Arbitrum, Base, and other EVM networks while keeping the adapter implementation shared;
+- `tx_hash + log_index` becomes the external event identity used by the existing bridge replay model;
+- ERC-20 deposits require the configured bridge, chain, token contract, participants, non-zero amount, event signature, proof bytes, and required block finality;
+- EVM withdrawals require a canonical 20-byte recipient and produce a domain-separated withdrawal intent;
+- no EVM RPC, contract execution, private-key custody, or transaction broadcasting is performed by consensus code at this milestone; those operations belong in the external bridge executor/signer layer.
