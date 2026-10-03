@@ -124,22 +124,22 @@ fn compact_peer_evidence(reputation: &mut PeerReputation) -> bool {
     true
 }
 
-fn classify_peer_evidence(reputation: &PeerReputation) -> PeerEvidenceSeverity {
+fn classify_peer_evidence(reputation: &PeerReputation, kind: &PeerEvidenceKind) -> PeerEvidenceSeverity {
     let recent = reputation.evidence.iter().rev().take(PEER_REPUTATION_POLICY.evidence_limit);
     let mut same_kind_recent = 0usize;
     let mut recent_total = 0usize;
     for evidence in recent {
         recent_total += 1;
-        if evidence.kind == reputation.evidence.last().map(|e| e.kind.clone()).unwrap_or(PeerEvidenceKind::SyncConflict) {
+        if &evidence.kind == kind {
             same_kind_recent += 1;
         }
         if recent_total >= 3 {
             break;
         }
     }
-    match same_kind_recent {
-        0 | 1 => PeerEvidenceSeverity::Normal,
-        2 => PeerEvidenceSeverity::Elevated,
+    match same_kind_recent.saturating_add(1) {
+        1 | 2 => PeerEvidenceSeverity::Normal,
+        3 => PeerEvidenceSeverity::Elevated,
         _ => PeerEvidenceSeverity::Critical,
     }
 }
@@ -156,7 +156,7 @@ fn record_peer_evidence(
         last_decay_height: height,
         evidence: Vec::new(),
     });
-    evidence.severity = classify_peer_evidence(entry);
+    evidence.severity = classify_peer_evidence(entry, &evidence.kind);
     entry.score = entry.score.saturating_add(peer_evidence_weight(
         &evidence.kind,
         evidence.severity,
@@ -353,7 +353,7 @@ mod m31_tests {
     fn peer_reputation_severity_scales_policy_weight() {
         let peer = libp2p::PeerId::random();
         let mut reputations = BTreeMap::new();
-        for height in 10..=12 {
+        for height in 10..=13 {
             record_peer_evidence(&mut reputations, PeerReputationEvidence {
                 peer,
                 height,
@@ -369,6 +369,7 @@ mod m31_tests {
             reputation.evidence.iter().map(|e| e.severity).collect::<Vec<_>>(),
             vec![
                 PeerEvidenceSeverity::Normal,
+                PeerEvidenceSeverity::Normal,
                 PeerEvidenceSeverity::Elevated,
                 PeerEvidenceSeverity::Critical,
             ]
@@ -376,6 +377,7 @@ mod m31_tests {
         assert_eq!(
             reputation.score,
             PEER_REPUTATION_POLICY.normal_severity_multiplier
+                + PEER_REPUTATION_POLICY.normal_severity_multiplier
                 + PEER_REPUTATION_POLICY.elevated_severity_multiplier
                 + PEER_REPUTATION_POLICY.critical_severity_multiplier
         );
