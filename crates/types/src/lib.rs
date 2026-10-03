@@ -802,6 +802,17 @@ impl CrossChainAssetRegistry {
         Ok(registry)
     }
 
+    pub fn add_config(
+        &mut self,
+        config: &ExternalAssetConfig,
+    ) -> Result<(), String> {
+        let representation = config.build()?;
+        if representation.canonical_asset_id != self.canonical_asset_id {
+            return Err("CanonicalAssetMismatch".into());
+        }
+        self.add_representation(representation.representation, representation.asset_kind)
+    }
+
     pub fn add_representation(
         &mut self,
         representation: AssetDefinition,
