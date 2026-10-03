@@ -565,3 +565,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - batch metadata is committed once, from the final block in the accepted contiguous batch;
 - the node no longer sends an invalid genesis snapshot request (`height=0`), because snapshot transport explicitly excludes genesis;
 - genesis recovery remains local, while non-genesis snapshot recovery uses checkpoint-backed snapshots.
+
+
+## M52 — Sync Response Trust Binding
+
+- block-sync responses are now bound to both the outstanding request ID and the exact requested starting height;
+- stale or replayed responses for a different height are discarded before execution;
+- the network boundary explicitly requires the first response block to equal `from_height`;
+- the pending sync height is cleared together with the request ID after successful application.
