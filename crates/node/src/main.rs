@@ -378,6 +378,26 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_evidence_is_idempotent() {
+        let peer = libp2p::PeerId::random();
+        let evidence = PeerReputationEvidence {
+            peer,
+            height: 10,
+            request_id: [7u8; 32],
+            fingerprint: [8u8; 32],
+            kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
+            reason: "duplicate".to_string(),
+        };
+        let mut reputations = BTreeMap::new();
+        record_peer_evidence_with_confirmations(&mut reputations, evidence.clone(), 1);
+        record_peer_evidence_with_confirmations(&mut reputations, evidence, 3);
+        let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(reputation.score, PEER_REPUTATION_POLICY.normal_severity_multiplier);
+        assert_eq!(reputation.evidence.len(), 1);
+    }
+
+    #[test]
     fn peer_reputation_recording_uses_confirmation_count() {
         let peer = libp2p::PeerId::random();
         let mut reputations = BTreeMap::new();
