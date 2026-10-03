@@ -434,13 +434,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if timeout.height != state.height + 1 || timeout.round != round { continue; }
                                     if let Some(existing)=protocol.timeouts.get(&timeout.validator_id) {
                                         if existing.signing_bytes() != timeout.signing_bytes() {
-                                            let evidence=freedom_consensus::make_evidence(
-                                                freedom_types::EquivocationKind::DoublePrevote,
-                                                timeout.height,timeout.round,timeout.validator_id,
-                                                existing.signing_bytes(),timeout.signing_bytes());
-                                            state.record_equivocation(evidence.clone())?;
-                                            let msg=make_evidence_message(evidence,validator_id,&consensus_key);
-                                            publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
+                                            eprintln!("timeout equivocation observed validator={}", hex::encode(timeout.validator_id));
                                             continue;
                                         }
                                     }
