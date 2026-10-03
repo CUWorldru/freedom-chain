@@ -1,5 +1,5 @@
 use freedom_state::ChainState;
-use freedom_primitives::CHAIN_ID;
+use freedom_primitives::{CHAIN_ID, Hash};
 use freedom_types::Block;
 use rocksdb::{Options, DB};
 use std::path::Path;
@@ -29,6 +29,8 @@ pub struct StateSnapshot {
     pub state: ChainState,
     #[serde(default)]
     pub certificate: Option<freedom_types::FinalityCertificate>,
+    #[serde(default)]
+    pub finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
     #[serde(default)]
     pub epoch_transition_certificate: Option<freedom_types::ValidatorSetCertificate>,
 }
@@ -108,6 +110,7 @@ impl ChainStore {
             state_root: state.state_root(),
             state: state.clone(),
             certificate,
+            finality_validator_set: state.active_validator_set.clone(),
             epoch_transition_certificate: state.validator_set_certificate.clone(),
         };
         let bytes = serde_json::to_vec(&snapshot).map_err(|e| StorageError::Codec(e.to_string()))?;
