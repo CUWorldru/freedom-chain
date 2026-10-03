@@ -2674,6 +2674,71 @@ impl EthereumTransactionProof {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EthereumSszMerkleProof {
+    pub leaf: Hash,
+    pub generalized_index: u64,
+    pub branch: Vec<Hash>,
+    pub root: Hash,
+}
+
+impl EthereumSszMerkleProof {
+    pub fn hash_pair(left:Hash,right:Hash)->Hash{
+        let mut b=Vec::with_capacity(64);
+        b.extend_from_slice(&left);b.extend_from_slice(&right);
+        ethereum_keccak256(&b)
+    }
+
+    pub fn verify(&self)->bool{
+        if self.generalized_index<1 || self.branch.len()!=64-self.generalized_index.leading_zeros() as usize-1 {return false;}
+        let mut node=self.leaf;
+        let mut index=self.generalized_index;
+        for sibling in &self.branch {
+            node=if index&1==0{Self::hash_pair(node,*sibling)}else{Self::hash_pair(*sibling,node)};
+            index>>=1;
+        }
+        index==1 && node==self.root
+    }
+
+    pub fn signing_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-ETH-SSZ-MERKLE-V1");
+        o.extend_from_slice(&self.leaf);
+        o.extend_from_slice(&self.generalized_index.to_le_bytes());
+        for h in &self.branch{o.extend_from_slice(h);}
+        o.extend_from_slice(&self.root);
+        o
+    }
+    pub fn proof_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+}
+
+fn ethereum_ssz_mix_in_length(root:Hash,length:u64)->Hash{
+    let mut b=[0u8;64];b[..32].copy_from_slice(&root);b[32..40].copy_from_slice(&length.to_le_bytes());
+    ethereum_keccak256(&b)
+}
+
+pub fn ethereum_ssz_chunk(data:&[u8])->Hash{
+    let mut out=[0u8;32];
+    let n=data.len().min(32);out[..n].copy_from_slice(&data[..n]);out
+}
+
+pub fn ethereum_ssz_merkleize(chunks:&[Hash])->Hash{
+    if chunks.is_empty(){return [0;32];}
+    let mut level=chunks.to_vec();
+    let size=level.len().next_power_of_two();
+    level.resize(size,[0;32]);
+    while level.len()>1{
+        let mut next=Vec::with_capacity(level.len()/2);
+        for pair in level.chunks_exact(2){next.push(EthereumSszMerkleProof::hash_pair(pair[0],pair[1]));}
+        level=next;
+    }
+    level[0]
+}
+
+pub fn ethereum_ssz_hash_tree_root_bytes(data:&[u8])->Hash{
+    ethereum_ssz_merkleize(&data.chunks(32).map(ethereum_ssz_chunk).collect::<Vec<_>>())
+}
+
 pub struct EthereumFinalityProof {
     pub finalized_block_number:u64,
     pub finalized_block_hash:Hash,
