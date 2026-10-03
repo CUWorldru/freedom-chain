@@ -544,6 +544,17 @@ impl CrossChainAssetRepresentation {
             && proof.representation_asset_id == self.representation.representation.asset_id
             && proof.asset_kind == self.asset_kind
             && proof.bridge_deposit.source_chain_id == self.representation.source_chain_id
+            && proof.bridge_deposit.bridge_id == self.representation.representation.bridge_id
+    }
+
+    pub fn matches_external_identity(
+        &self,
+        proof: &CrossChainAssetProof,
+        expected_representation_asset_id: Hash,
+    ) -> bool {
+        self.matches_proof(proof)
+            && proof.representation_asset_id == expected_representation_asset_id
+            && self.representation.representation.asset_id == expected_representation_asset_id
     }
 }
 
@@ -599,6 +610,17 @@ impl CrossChainAssetRegistry {
         self.validate()
             && proof.validate(required_confirmations)
             && self.representations.iter().any(|r| r.matches_proof(proof))
+    }
+
+    pub fn verify_representation_binding(
+        &self,
+        proof: &CrossChainAssetProof,
+        expected_representation_asset_id: Hash,
+    ) -> bool {
+        self.validate()
+            && self.representations.iter().any(|r| {
+                r.matches_external_identity(proof, expected_representation_asset_id)
+            })
     }
 }
 
