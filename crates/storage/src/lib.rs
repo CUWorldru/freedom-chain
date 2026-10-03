@@ -324,17 +324,21 @@ impl ChainStore {
         Ok(Some(snapshot))
     }
 
-    pub fn latest_snapshot(&self) -> Result<Option<StateSnapshot>, StorageError> {
+    pub fn latest_snapshot_at_or_below(&self, target_height: u64) -> Result<Option<StateSnapshot>, StorageError> {
         let mut best = None;
         for item in self.db.iterator(rocksdb::IteratorMode::Start) {
             let (key, _) = item.map_err(|e| StorageError::Rocks(e.to_string()))?;
             if key.starts_with(SNAPSHOT_PREFIX) && key.len() == SNAPSHOT_PREFIX.len() + 8 {
                 let mut h=[0u8;8]; h.copy_from_slice(&key[SNAPSHOT_PREFIX.len()..]);
                 let height=u64::from_be_bytes(h);
-                if best.map(|b| height>b).unwrap_or(true) { best=Some(height); }
+                if height <= target_height && best.map(|b| height>b).unwrap_or(true) { best=Some(height); }
             }
         }
         match best { Some(h)=>self.load_snapshot(h), None=>Ok(None) }
+    }
+
+    pub fn latest_snapshot(&self) -> Result<Option<StateSnapshot>, StorageError> {
+        self.latest_snapshot_at_or_below(u64::MAX)
     }
     pub fn range(&self, from: u64, to: u64) -> Result<Vec<Block>, StorageError> {
         if from > to { return Ok(Vec::new()); }
