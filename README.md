@@ -104,3 +104,14 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - winner selection is deterministic and independently verifiable from the protocol seed
 - prize payouts move existing FDM from protocol treasury to winners; no new FDM is minted
 - Ticket allocation is not a burn; true FDM burn remains a separate protocol action
+
+
+## M9 — Protocol Events / Draw Proof
+
+- transaction receipts expose protocol events
+- Ticket creation emits ticket and fund-allocation events
+- draw execution emits a deterministic randomness seed and selection proof
+- prize payouts emit per-winner events
+- the selection proof is `BLAKE3("FREEDOM-DRAW-PROOF-V1" || randomness_seed || ordered_winner_ticket_ids)`
+- Treasury allocation remains explicit: Prize Pool, CU Fund, Annual Reserve
+- draw payouts reduce the protocol-held Prize Pool and do not mint FDM
