@@ -994,3 +994,8 @@ Bitcoin bridge verification now supports a trusted checkpoint containing height,
 ## M104 — Persistent Bitcoin Checkpoints
 
 Bitcoin light-client checkpoints are now stored in `ChainState` per bridge, included in the state root, validated by invariants and protected against height/hash rollback. The serde-defaulted registry is backward compatible with pre-M104 state and therefore survives snapshot/restart serialization.
+
+
+## M105 — Bitcoin Checkpoint / Bridge Policy Binding
+
+Bitcoin checkpoints are now explicitly bound to their bridge security policy and adapter descriptor. The bridge ID, Bitcoin adapter kind, confirmations finality model and required confirmation depth must match the registered policy before the checkpoint can be trusted by the bridge layer.
