@@ -288,8 +288,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 Ok(s) => s,
                                                 Err(e) => { eprintln!("SNAPSHOT_REJECTED invalid state encoding: {e}"); continue; }
                                             };
-                                            if let Err(e) = freedom_consensus::validate_finality_certificate(&snapshot_state, &response.certificate) {
-                                                eprintln!("SNAPSHOT_REJECTED invalid finality certificate: {e}");
+                                            if let Err(e) = freedom_consensus::validate_finality_certificate_for_block(
+                                                &snapshot_state,
+                                                &response.checkpoint,
+                                                &response.certificate,
+                                            ) {
+                                                eprintln!("SNAPSHOT_REJECTED invalid checkpoint finality certificate: {e}");
                                                 continue;
                                             }
                                             if let Some(cert) = &response.epoch_transition_certificate {
