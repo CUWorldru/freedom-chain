@@ -671,3 +671,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - scoring occurs only after transport, checkpoint, finality, validator-set, epoch-transition and state-commitment validation;
 - a single snapshot disagreement does not permanently isolate or slash a peer;
 - snapshot conflict evidence is scoped to the active snapshot round and cleared after successful activation.
+
+
+## M64 — Unified Peer Reputation Layer
+
+- sync and snapshot conflicts now feed one PeerReputation model;
+- evidence is typed as SyncConflict or SnapshotConflict and keeps peer, height, request ID, fingerprint and reason;
+- one score and one cooldown policy determine peer eligibility for sync and snapshot discovery;
+- reputation remains local node evidence and does not change validator membership, stake, consensus weight or slashing;
+- new evidence kinds can be added without duplicating scoring and cooldown logic.
