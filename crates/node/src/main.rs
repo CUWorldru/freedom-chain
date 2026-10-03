@@ -223,7 +223,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         SyncWireRequest::Blocks(req) => {
                                             let latest = state.height;
                                             let to = req.to_height.min(latest).min(req.from_height.saturating_add(freedom_network::MAX_SYNC_BLOCKS.saturating_sub(1)));
-                                            if req.from_height > 0 && req.from_height <= to {
+                                            if freedom_network::validate_sync_request(&req).is_ok() && req.from_height <= to {
                                                 if let Ok(blocks) = store.range(req.from_height, to) {
                                                     let response = SyncWireResponse::Blocks(SyncResponse { request_id: req.request_id, from_height: req.from_height, blocks });
                                                     let _ = swarm.behaviour_mut().sync.send_response(channel, response);
@@ -231,7 +231,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         SyncWireRequest::Snapshot(req) => {
-                                            if let Ok(Some(snapshot)) = if req.height == 0 { store.latest_snapshot() } else { store.load_snapshot(req.height) } {
+                                            if freedom_network::validate_snapshot_request(&req).is_err() { eprintln!("SNAPSHOT_REQUEST_REJECTED height={}", req.height); continue; }
+                                            if let Ok(Some(snapshot)) = store.load_snapshot(req.height) {
                                                 if let (Some(certificate), Ok(Some(checkpoint))) = (snapshot.certificate.clone(), store.get_block(snapshot.height)) {
                                                     if let Ok(state_json) = serde_json::to_vec(&snapshot.state) {
                                                         let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse {
@@ -256,7 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 libp2p::request_response::Message::Response { response, .. } => {
                                     match response {
                                         SyncWireResponse::Blocks(response) => {
-                                            if pending_sync != Some(response.request_id) || response.blocks.is_empty() { continue; }
+                                            if pending_sync != Some(response.request_id) || freedom_network::validate_sync_response(&response).is_err() { continue; }
                                             let mut accepted = 0u64;
                                             for block in response.blocks {
                                                 if block.header.height != state.height + 1 { break; }
@@ -271,7 +272,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             if accepted > 0 { println!("SYNCED blocks={} height={}", accepted, state.height); pending_sync=None; round=0; timeout_round_sent=None; }
                                         }
                                         SyncWireResponse::Snapshot(response) => {
-                                            if response.height <= state.height { continue; }
+                                            if response.height <= state.height || freedom_network::validate_snapshot_response(&response).is_err() { continue; }
                                             if response.chain_id != freedom_primitives::CHAIN_ID {
                                                 eprintln!("SNAPSHOT_REJECTED chain id mismatch");
                                                 continue;
