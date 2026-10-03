@@ -557,3 +557,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - a persistence failure cannot leave a partially persisted sync batch with a corresponding in-memory state transition;
 - invalid members are rejected before any block from the batch is written;
 - sync no longer attempts to create non-finalized snapshots from an ordinary block-sync response; finalized snapshots remain tied to finality certificates.
+
+
+## M51 — Sync Batch Boundary Hardening
+
+- atomic block persistence now rejects zero-height and non-contiguous batches before any RocksDB write;
+- batch metadata is committed once, from the final block in the accepted contiguous batch;
+- the node no longer sends an invalid genesis snapshot request (`height=0`), because snapshot transport explicitly excludes genesis;
+- genesis recovery remains local, while non-genesis snapshot recovery uses checkpoint-backed snapshots.
