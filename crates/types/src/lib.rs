@@ -5206,21 +5206,24 @@ mod m154_bridge_mint_authorization_tests {
     fn signed_approval(
         bridge_id: Hash,
         message_hash: Hash,
-        key: [u8; 32],
-    ) -> BridgeMessageApproval {
-        let validator_id = freedom_primitives::hash_bytes(&key);
+    ) -> (BridgeMessageApproval, [u8; 32]) {
+        let key = freedom_crypto::generate_keypair();
+        let public_key = key.verifying_key().to_bytes();
+        let validator_id = freedom_primitives::hash_bytes(&public_key);
         let unsigned = BridgeMessageApproval {
             bridge_id,
             message_hash,
             validator_id,
             signature: vec![0; 64],
         };
-        let mut signature = [0u8; 64];
-        freedom_crypto::sign(&key, &unsigned.approval_hash(), &mut signature);
-        BridgeMessageApproval {
-            signature: signature.to_vec(),
-            ..unsigned
-        }
+        let signature = freedom_crypto::sign(&key, &unsigned.approval_hash());
+        (
+            BridgeMessageApproval {
+                signature: signature.to_vec(),
+                ..unsigned
+            },
+            public_key,
+        )
     }
 
     fn deposit_and_message() -> (VerifiedDeposit, BridgeMessage) {
@@ -5245,10 +5248,9 @@ mod m154_bridge_mint_authorization_tests {
     #[test]
     fn mint_authorization_requires_authenticated_quorum_and_binds_message() {
         let (deposit, message) = deposit_and_message();
-        let key = [7u8; 32];
-        let approval = signed_approval(message.bridge_id, message.message_hash, key);
+        let (approval, public_key) = signed_approval(message.bridge_id, message.message_hash);
         let mut keys = std::collections::BTreeMap::new();
-        keys.insert(approval.validator_id, key);
+        keys.insert(approval.validator_id, public_key);
         let approvals = BridgeMessageApprovalSet {
             bridge_id: message.bridge_id,
             message_hash: message.message_hash,
@@ -5270,10 +5272,9 @@ mod m154_bridge_mint_authorization_tests {
         let (deposit, mut message) = deposit_and_message();
         message.nonce = 9;
         message.message_hash = message.compute_hash();
-        let key = [7u8; 32];
-        let approval = signed_approval(message.bridge_id, message.message_hash, key);
+        let (approval, public_key) = signed_approval(message.bridge_id, message.message_hash);
         let mut keys = std::collections::BTreeMap::new();
-        keys.insert(approval.validator_id, key);
+        keys.insert(approval.validator_id, public_key);
         let approvals = BridgeMessageApprovalSet {
             bridge_id: message.bridge_id,
             message_hash: message.message_hash,
