@@ -1093,3 +1093,14 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - M121 does not claim that this accumulator root is committed by Bitcoin consensus or by the Bitcoin block header.
 - A production bridge must authenticate the accumulator root through a separately specified commitment source before treating the compact proof as authoritative.
 - M120 remains the fallback correctness proof when no authenticated external UTXO commitment is available.
+
+
+## M122 — Bitcoin UTXO Commitment Attestation
+
+- Adds a signed attestation for an externally maintained UTXO accumulator root.
+- The signed statement binds bridge ID, chain ID, policy ID, sequence, Bitcoin canonical tip height/hash/chainwork and accumulator root.
+- Validator signatures are verified against the current validator key set and the bridge validator quorum.
+- Validator IDs must be unique and authorized by the attestation itself.
+- Attestations are monotonic by sequence per bridge to prevent replay/rollback.
+- The attestation is persisted in ChainState and can be queried after registration.
+- M122 still does not claim that the accumulator root is a Bitcoin consensus commitment; it authenticates the root as a Freedom Chain bridge commitment.
