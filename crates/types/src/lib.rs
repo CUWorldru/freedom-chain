@@ -1267,6 +1267,14 @@ mod m101_bitcoin_header_chain_tests {
 }
 
 #[cfg(test)]
+mod m102_bitcoin_chainwork_tests {
+ use super::*;
+ fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,prev_block_hash:prev,merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0}}
+ #[test] fn chainwork_accumulates(){let a=h([0;32]);let mut b=h(a.block_hash());let mut c=h(b.block_hash());assert!(bitcoin_chainwork(&[a,b,c]).is_ok());b=h([0;32]);assert!(bitcoin_chainwork_cmp(&[h([0;32])],&[h([0;32]),b]).is_ok());}
+ #[test] fn invalid_chain_has_no_work(){let a=h([0;32]);let mut b=h([9;32]);assert_eq!(bitcoin_chainwork(&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
+}
+
+#[cfg(test)]
 mod m100_bitcoin_pow_tests {
  use super::*;
  #[test] fn bits_to_target_rejects_negative_and_zero(){assert!(bitcoin_target_from_bits(0).is_none());assert!(bitcoin_target_from_bits(0x01800001).is_none());}
