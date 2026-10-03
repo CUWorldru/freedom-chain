@@ -152,7 +152,7 @@ mod tests {
         let block = Block {
             header: BlockHeader {
                 height: 1, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
-                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
             },
             transactions: vec![], receipts: vec![],
         };
