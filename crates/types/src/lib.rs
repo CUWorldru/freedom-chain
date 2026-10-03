@@ -2077,6 +2077,52 @@ fn bitcoin_chainwork_add(work: &mut BitcoinChainWork, target: Hash) -> bool {
     borrow == 0
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitcoinChainSelection {
+    CandidateA,
+    CandidateB,
+    EqualWork,
+}
+
+pub fn compare_bitcoin_chainwork(
+    candidate_a: &BitcoinChainWork,
+    candidate_b: &BitcoinChainWork,
+) -> BitcoinChainSelection {
+    for i in (0..candidate_a.len()).rev() {
+        if candidate_a[i] > candidate_b[i] {
+            return BitcoinChainSelection::CandidateA;
+        }
+        if candidate_a[i] < candidate_b[i] {
+            return BitcoinChainSelection::CandidateB;
+        }
+    }
+    BitcoinChainSelection::EqualWork
+}
+
+pub fn select_bitcoin_chain<'a>(
+    candidate_a: &'a BitcoinChainContext,
+    candidate_b: &'a BitcoinChainContext,
+) -> Result<&'a BitcoinChainContext, BridgeAdapterError> {
+    if !candidate_a.validate() || !candidate_b.validate() {
+        return Err(BridgeAdapterError::InvalidProof);
+    }
+
+    match compare_bitcoin_chainwork(
+        &candidate_a.expected_chainwork,
+        &candidate_b.expected_chainwork,
+    ) {
+        BitcoinChainSelection::CandidateA => Ok(candidate_a),
+        BitcoinChainSelection::CandidateB => Ok(candidate_b),
+        BitcoinChainSelection::EqualWork => {
+            if candidate_a.tip_hash == candidate_b.tip_hash {
+                Ok(candidate_a)
+            } else {
+                Err(BridgeAdapterError::InvalidProof)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitcoinDifficultyWindow {
     pub start_height: u64,
