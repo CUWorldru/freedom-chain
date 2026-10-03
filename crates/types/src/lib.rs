@@ -2005,15 +2005,18 @@ impl BitcoinMerkleVerification {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitcoinChainContext {
     pub tip_height: u64,
     pub tip_hash: Hash,
+    pub headers: Vec<BitcoinBlockHeader>,
 }
 
 impl BitcoinChainContext {
     pub fn validate(&self) -> bool {
-        self.tip_height > 0 && self.tip_hash != [0u8; 32]
+        self.tip_height > 0
+            && self.tip_hash != [0u8; 32]
+            && !self.headers.is_empty()
     }
 
     pub fn confirmations_for(&self, block_height: u64) -> Option<u64> {
@@ -2021,6 +2024,39 @@ impl BitcoinChainContext {
             return None;
         }
         Some(self.tip_height - block_height + 1)
+    }
+
+    pub fn verify_header_chain(
+        &self,
+        deposit_height: u64,
+        deposit_header: &BitcoinBlockHeader,
+    ) -> Result<(), BridgeAdapterError> {
+        if !self.validate() || deposit_height == 0 || deposit_height > self.tip_height {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        let expected_count = (self.tip_height - deposit_height + 1) as usize;
+        if self.headers.len() != expected_count {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        if self.headers[0] != *deposit_header {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        let mut previous_hash = deposit_header.block_hash();
+        for header in self.headers.iter().skip(1) {
+            if header.previous_block_hash != previous_hash || !header.validate_pow() {
+                return Err(BridgeAdapterError::InvalidProof);
+            }
+            previous_hash = header.block_hash();
+        }
+
+        if previous_hash != self.tip_hash {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        Ok(())
     }
 }
 
@@ -2106,7 +2142,11 @@ impl BitcoinUtxoProof {
                 BridgeAdapterError::InvalidProof
             });
         }
-        self.verify_bitcoin_chain()?;
+        let deposit_header = self
+            .block_header
+            .as_ref()
+            .ok_or(BridgeAdapterError::InvalidProof)?;
+        context.verify_header_chain(self.block_height, deposit_header)?;
         Ok(confirmations)
     }
 
