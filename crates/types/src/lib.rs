@@ -1578,3 +1578,113 @@ mod m90_bridge_signature_tests {
  #[test] fn tampered_approval_signature_fails(){let k=SigningKey::from_bytes(&[7;32]);let mut a=approval(&k);a.amount+=1;assert!(!a.verify_authenticated(&k.verifying_key().to_bytes()));}
  #[test] fn quorum_counts_only_authenticated_signers(){let k1=SigningKey::from_bytes(&[1;32]);let k2=SigningKey::from_bytes(&[2;32]);let k3=SigningKey::from_bytes(&[3;32]);let a1=approval(&k1);let a2=approval(&k2);let mut bad=approval(&k3);bad.signature[0]^=1;let mut keys=BTreeMap::new();for k in [&k1,&k2,&k3]{let p=k.verifying_key().to_bytes();keys.insert(freedom_primitives::hash_bytes(&p),p);}let set=BridgeApprovalSet{request_id:[2;32],approvals:vec![a1,a2,bad],threshold_signatures:0};assert_eq!(set.authenticated_approvals([1;32],[3;32],[6;32],&keys),2);}
 }
+
+
+#[cfg(test)]
+mod m119_bitcoin_raw_transaction_tests {
+    use super::*;
+
+    fn legacy_tx() -> Vec<u8> {
+        let mut r=Vec::new();
+        r.extend_from_slice(&1i32.to_le_bytes());
+        r.push(1);
+        r.extend_from_slice(&[0x11;32]);
+        r.extend_from_slice(&0u32.to_le_bytes());
+        r.push(0);
+        r.extend_from_slice(&0xffff_ffffu32.to_le_bytes());
+        r.push(1);
+        r.extend_from_slice(&50_000u64.to_le_bytes());
+        r.push(2);
+        r.extend_from_slice(&[0x51,0x21]);
+        r.extend_from_slice(&0u32.to_le_bytes());
+        r
+    }
+
+    fn segwit_tx() -> Vec<u8> {
+        let mut r=Vec::new();
+        r.extend_from_slice(&2i32.to_le_bytes());
+        r.extend_from_slice(&[0,1]);
+        r.push(1);
+        r.extend_from_slice(&[0x22;32]);
+        r.extend_from_slice(&1u32.to_le_bytes());
+        r.push(0);
+        r.extend_from_slice(&0xffff_fffeu32.to_le_bytes());
+        r.push(1);
+        r.extend_from_slice(&75_000u64.to_le_bytes());
+        r.push(2);
+        r.extend_from_slice(&[0x00,0x14]);
+        r.push(1);
+        r.push(2);
+        r.extend_from_slice(&[0xaa,0xbb]);
+        r.extend_from_slice(&0u32.to_le_bytes());
+        r
+    }
+
+    #[test]
+    fn legacy_parser_binds_exact_output() {
+        let raw=legacy_tx();
+        let tx=BitcoinTransaction::parse(&raw).unwrap();
+        assert!(!tx.segwit);
+        assert_eq!(tx.outputs.len(),1);
+        assert_eq!(tx.outputs[0].amount_sat,50_000);
+        assert_eq!(tx.outputs[0].script_pubkey,vec![0x51,0x21]);
+        assert_eq!(tx.txid,bitcoin_sha256d(&raw));
+        assert_eq!(tx.wtxid,tx.txid);
+    }
+
+    #[test]
+    fn segwit_parser_excludes_witness_from_txid() {
+        let raw=segwit_tx();
+        let tx=BitcoinTransaction::parse(&raw).unwrap();
+        assert!(tx.segwit);
+        assert_eq!(tx.outputs[0].amount_sat,75_000);
+        assert_eq!(tx.outputs[0].script_pubkey,vec![0x00,0x14]);
+        assert_eq!(tx.inputs[0].witness,vec![vec![0xaa,0xbb]]);
+        assert_ne!(tx.txid,tx.wtxid);
+        let mut no_witness=Vec::new();
+        no_witness.extend_from_slice(&2i32.to_le_bytes());
+        no_witness.push(1);
+        no_witness.extend_from_slice(&[0x22;32]);
+        no_witness.extend_from_slice(&1u32.to_le_bytes());
+        no_witness.push(0);
+        no_witness.extend_from_slice(&0xffff_fffeu32.to_le_bytes());
+        no_witness.push(1);
+        no_witness.extend_from_slice(&75_000u64.to_le_bytes());
+        no_witness.push(2);
+        no_witness.extend_from_slice(&[0x00,0x14]);
+        no_witness.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(tx.txid,bitcoin_sha256d(&no_witness));
+    }
+
+    #[test]
+    fn parser_rejects_trailing_bytes() {
+        let mut raw=legacy_tx(); raw.push(0);
+        assert_eq!(BitcoinTransaction::parse(&raw),Err(BitcoinTransactionParseError::TrailingBytes));
+    }
+
+    #[test]
+    fn parser_rejects_noncanonical_varint() {
+        let mut raw=legacy_tx();
+        raw[4]=253;
+        raw.insert(5,1);
+        raw.insert(6,0);
+        assert_eq!(BitcoinTransaction::parse(&raw),Err(BitcoinTransactionParseError::NonCanonicalVarInt));
+    }
+
+    #[test]
+    fn output_binding_cannot_be_swapped() {
+        let raw=legacy_tx();
+        let tx=BitcoinTransaction::parse(&raw).unwrap();
+        let mut proof=BitcoinUtxoProof{
+            bridge_id:[9;32],chain_id:8332,tx_hash:tx.txid,vout:0,amount_sat:50_000,
+            block_height:100,confirmations:6,merkle_branch:vec![[2;32]],merkle_index:0,
+            script_pubkey:vec![0x51,0x21],raw_transaction:raw,
+        };
+        assert!(proof.validate_output_binding());
+        proof.amount_sat+=1;
+        assert!(!proof.validate_output_binding());
+        proof.amount_sat=50_000;
+        proof.script_pubkey=vec![0x51,0x22];
+        assert!(!proof.validate_output_binding());
+    }
+}
