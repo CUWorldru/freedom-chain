@@ -2006,11 +2006,117 @@ impl BitcoinMerkleVerification {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitcoinDifficultyWindow {
+    pub start_height: u64,
+    pub headers: Vec<BitcoinBlockHeader>,
+}
+
+impl BitcoinDifficultyWindow {
+    pub const INTERVAL: u64 = 2016;
+    pub const TARGET_TIMESPAN: u64 = 1_209_600;
+    pub const MIN_TIMESPAN: u64 = 302_400;
+    pub const MAX_TIMESPAN: u64 = 4_838_400;
+
+    pub fn validate(&self) -> bool {
+        if self.start_height % Self::INTERVAL != 0 || self.headers.len() != Self::INTERVAL as usize {
+            return false;
+        }
+        if self.headers.iter().any(|h| h.timestamp == 0 || !h.validate_pow()) {
+            return false;
+        }
+        self.headers
+            .windows(2)
+            .all(|pair| pair[1].previous_block_hash == pair[0].block_hash())
+    }
+
+    pub fn next_bits(&self) -> Option<u32> {
+        if !self.validate() {
+            return None;
+        }
+        let first = self.headers.first()?;
+        let last = self.headers.last()?;
+        let mut actual = u64::from(last.timestamp.saturating_sub(first.timestamp));
+        actual = actual.clamp(Self::MIN_TIMESPAN, Self::MAX_TIMESPAN);
+        let old_target = BitcoinBlockHeader::target_from_bits(last.bits)?;
+        let new_target = bitcoin_target_mul_div(old_target, actual, Self::TARGET_TIMESPAN);
+        let pow_limit = BitcoinBlockHeader::target_from_bits(0x1d00_ffff)?;
+        let bounded = bitcoin_target_min(new_target, pow_limit);
+        bitcoin_target_to_compact(&bounded)
+    }
+}
+
+fn bitcoin_target_mul_div(target: Hash, numerator: u64, denominator: u64) -> Hash {
+    let mut product = [0u64; 5];
+    let mut carry = 0u128;
+    for i in 0..4 {
+        let value = target[i * 8..i * 8 + 8]
+            .try_into()
+            .map(u64::from_le_bytes)
+            .unwrap_or(0);
+        let p = u128::from(value) * u128::from(numerator) + carry;
+        product[i] = p as u64;
+        carry = p >> 64;
+    }
+    product[4] = carry as u64;
+
+    let mut quotient = [0u64; 5];
+    let mut remainder = 0u128;
+    for i in (0..5).rev() {
+        let current = (remainder << 64) | u128::from(product[i]);
+        quotient[i] = (current / u128::from(denominator)) as u64;
+        remainder = current % u128::from(denominator);
+    }
+
+    let mut out = [0u8; 32];
+    for i in 0..4 {
+        out[i * 8..i * 8 + 8].copy_from_slice(&quotient[i].to_le_bytes());
+    }
+    out
+}
+
+fn bitcoin_target_min(left: Hash, right: Hash) -> Hash {
+    for i in (0..32).rev() {
+        if left[i] != right[i] {
+            return if left[i] < right[i] { left } else { right };
+        }
+    }
+    left
+}
+
+fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
+    let mut highest = None;
+    for i in (0..32).rev() {
+        if target[i] != 0 {
+            highest = Some(i);
+            break;
+        }
+    }
+    let highest = highest?;
+    let mut exponent = (highest + 1) as u32;
+    let mut mantissa = if exponent <= 3 {
+        let mut value = 0u32;
+        for i in 0..exponent as usize {
+            value |= u32::from(target[i]) << (8 * i);
+        }
+        value
+    } else {
+        u32::from(target[(exponent - 3) as usize])
+            | (u32::from(target[(exponent - 2) as usize]) << 8)
+            | (u32::from(target[(exponent - 1) as usize]) << 16)
+    };
+    if mantissa & 0x0080_0000 != 0 {
+        mantissa >>= 8;
+        exponent += 1;
+    }
+    Some((exponent << 24) | (mantissa & 0x007f_ffff))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitcoinChainContext {
     pub tip_height: u64,
     pub tip_hash: Hash,
     pub headers: Vec<BitcoinBlockHeader>,
-    pub expected_bits: Vec<u32>,
+    pub difficulty_windows: Vec<BitcoinDifficultyWindow>,
 }
 
 impl BitcoinChainContext {
@@ -2018,8 +2124,7 @@ impl BitcoinChainContext {
         self.tip_height > 0
             && self.tip_hash != [0u8; 32]
             && !self.headers.is_empty()
-            && self.expected_bits.len() == self.headers.len()
-            && self.expected_bits.iter().all(|bits| *bits != 0)
+            && self.difficulty_windows.iter().all(BitcoinDifficultyWindow::validate)
     }
 
     pub fn confirmations_for(&self, block_height: u64) -> Option<u64> {
@@ -2027,6 +2132,20 @@ impl BitcoinChainContext {
             return None;
         }
         Some(self.tip_height - block_height + 1)
+    }
+
+    pub fn expected_bits_for_height(&self, height: u64, previous_bits: u32) -> Option<u32> {
+        if height == 0 {
+            return None;
+        }
+        if height % BitcoinDifficultyWindow::INTERVAL != 0 {
+            return Some(previous_bits);
+        }
+        let start_height = height - BitcoinDifficultyWindow::INTERVAL;
+        self.difficulty_windows
+            .iter()
+            .find(|window| window.start_height == start_height)
+            .and_then(BitcoinDifficultyWindow::next_bits)
     }
 
     pub fn verify_header_chain(
@@ -2048,14 +2167,20 @@ impl BitcoinChainContext {
         }
 
         let mut previous_hash = deposit_header.block_hash();
+        let mut previous_bits = deposit_header.bits;
         for (index, header) in self.headers.iter().enumerate() {
-            if header.bits != self.expected_bits[index] || !header.validate_pow() {
+            let height = deposit_height + index as u64;
+            let expected_bits = self
+                .expected_bits_for_height(height, previous_bits)
+                .ok_or(BridgeAdapterError::InvalidProof)?;
+            if header.bits != expected_bits || !header.validate_pow() {
                 return Err(BridgeAdapterError::InvalidProof);
             }
             if index > 0 && header.previous_block_hash != previous_hash {
                 return Err(BridgeAdapterError::InvalidProof);
             }
             previous_hash = header.block_hash();
+            previous_bits = header.bits;
         }
 
         if previous_hash != self.tip_hash {
