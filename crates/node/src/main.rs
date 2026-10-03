@@ -44,6 +44,15 @@ const PEER_MISBEHAVIOR_THRESHOLD: u32 = 3;
 const PEER_SCORE_COOLDOWN_ROUNDS: u64 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SnapshotMisbehaviorEvidence {
+    peer: libp2p::PeerId,
+    height: u64,
+    request_id: Hash,
+    snapshot_fingerprint: Hash,
+    reason: String,
+}
+
 struct PeerSyncScore {
     score: u32,
     cooldown_until_height: u64,
@@ -437,6 +446,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_conflicts = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_misbehavior = Vec::<SyncMisbehaviorEvidence>::new();
     let mut peer_sync_scores = BTreeMap::<libp2p::PeerId, PeerSyncScore>::new();
+    let mut snapshot_misbehavior = Vec::<SnapshotMisbehaviorEvidence>::new();
     let mut pending_snapshot = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
     let mut snapshot_candidates = BTreeMap::<Hash, (u64, freedom_network::SnapshotSyncResponse)>::new();
     let mut snapshot_required = 1usize;
@@ -610,6 +620,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     request_id: response.request_id,
                                                     batch_fingerprint: fingerprint,
                                                     reason: "batch disagrees with another valid sync response".to_string(),
+                                                });
+                                                snapshot_misbehavior.push(SnapshotMisbehaviorEvidence {
+                                                    peer,
+                                                    height: response.height,
+                                                    request_id: response.request_id,
+                                                    snapshot_fingerprint,
+                                                    reason: "snapshot commitment disagrees with another fully validated response".to_string(),
                                                 });
                                                 record_peer_misbehavior(&mut peer_sync_scores, peer, state.height);
                                                 eprintln!(
@@ -797,6 +814,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             state = snapshot_state;
                                             pending_sync.clear();
                                             snapshot_candidates.clear();
+                                            snapshot_misbehavior.clear();
                                             snapshot_required = 1;
                                             pending_snapshot.clear();
                                             round = 0;
