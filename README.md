@@ -949,3 +949,8 @@ Bridge emergency pause is now a consensus-visible, validator-authenticated actio
 ## M96 — Universal Bridge Nonce Registry
 
 Outbound withdrawals now use a persistent nonce registry keyed by bridge, asset and direction. A nonce can only be reserved once for a given bridge/asset outbound lane, preventing replayed or duplicated withdrawal creation even when the withdrawal ID itself differs. Nonce reservations are consensus-visible and included in the state root.
+
+
+## M97 — External Deposit Proof Verification Framework
+
+External bridge deposits now have a domain-separated `ExternalDepositProof` commitment covering bridge, source chain, transaction, event/output index, block/slot, finality and proof bytes. A verifier interface provides a common security boundary for Bitcoin, EVM, TRON, TON and Solana adapters. M97 establishes binding and finality checks; chain-specific Merkle/MPT/receipt/BOC/account-state cryptographic proof engines remain adapter-specific follow-up work.
