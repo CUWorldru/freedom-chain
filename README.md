@@ -661,3 +661,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - when two snapshot peers participate, activation requires matching commitments from both;
 - differing snapshot commitments are recorded as a conflict and never selected arbitrarily;
 - snapshot activation continues to use the atomic checkpoint+snapshot persistence path from M49.
+
+
+## M63 — Snapshot Conflict Evidence & Peer Scoring
+
+- fully validated snapshot responses with different commitments now produce structured snapshot conflict evidence;
+- evidence records peer identity, snapshot height, protocol request ID, commitment fingerprint and reason;
+- the conflicting peer receives the existing bounded sync-misbehavior score and therefore participates in the same temporary cooldown policy;
+- scoring occurs only after transport, checkpoint, finality, validator-set, epoch-transition and state-commitment validation;
+- a single snapshot disagreement does not permanently isolate or slash a peer;
+- snapshot conflict evidence is scoped to the active snapshot round and cleared after successful activation.
