@@ -1019,3 +1019,8 @@ Bitcoin reorg evidence can now be classified as Normal, Elevated, or Critical by
 ## M109 — Bitcoin Reorg Policy Enforcement
 
 Persisted Bitcoin reorg severity now acts as a bridge safety gate. Elevated or Critical evidence blocks Bitcoin checkpoint advancement and deposit acceptance until the evidence state is recovered/cleared by an explicit state transition. Normal evidence does not block operation. No automatic rollback or fork selection is performed.
+
+
+## M110 — Bitcoin Reorg Recovery
+
+A blocked Bitcoin bridge can now be recovered through a persisted recovery authorization bound to the exact evidence fingerprint and a monotonic nonce. Recovery requires at least the bridge policy validator quorum and known validator identities. Evidence is retained for audit; recovery does not erase or rewrite the conflict history.
