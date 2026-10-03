@@ -1011,6 +1011,131 @@ impl DepositReplayRecord {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeMintAuthorization {
+    pub bridge_id: Hash,
+    pub message_hash: Hash,
+    pub replay_key: Hash,
+    pub canonical_asset_id: Hash,
+    pub representation_asset_id: Hash,
+    pub source_chain_id: u32,
+    pub source_tx_hash: Hash,
+    pub source_event_index: u64,
+    pub destination_chain_id: u32,
+    pub nonce: u64,
+    pub amount: u128,
+    pub recipient: Address,
+    pub approval_count: u16,
+    pub authorization_hash: Hash,
+}
+
+impl BridgeMintAuthorization {
+    pub fn compute_hash(&self) -> Hash {
+        freedom_primitives::domain_hash(
+            b"FREEDOM-BRIDGE-MINT-AUTH-V1",
+            &[
+                &self.bridge_id,
+                &self.message_hash,
+                &self.replay_key,
+                &self.canonical_asset_id,
+                &self.representation_asset_id,
+                &self.source_chain_id.to_le_bytes(),
+                &self.source_tx_hash,
+                &self.source_event_index.to_le_bytes(),
+                &self.destination_chain_id.to_le_bytes(),
+                &self.nonce.to_le_bytes(),
+                &self.amount.to_le_bytes(),
+                &self.recipient,
+                &self.approval_count.to_le_bytes(),
+            ],
+        )
+    }
+
+    pub fn validate(&self) -> bool {
+        self.bridge_id != [0; 32]
+            && self.message_hash != [0; 32]
+            && self.replay_key != [0; 32]
+            && self.canonical_asset_id != [0; 32]
+            && self.representation_asset_id != [0; 32]
+            && self.source_chain_id != 0
+            && self.source_tx_hash != [0; 32]
+            && self.destination_chain_id != 0
+            && self.amount > 0
+            && self.recipient != [0; 20]
+            && self.approval_count > 0
+            && self.authorization_hash == self.compute_hash()
+    }
+
+    pub fn from_authenticated_message(
+        message: &BridgeMessage,
+        deposit: &VerifiedDeposit,
+        approvals: &BridgeMessageApprovalSet,
+        policy: &BridgeSecurityPolicy,
+        validator_keys: &std::collections::BTreeMap<Hash, [u8; 32]>,
+    ) -> Result<Self, BridgeAdapterError> {
+        if !message.validate_hash()
+            || !message.matches_verified_deposit(deposit)
+            || deposit.bridge_id != policy.bridge_id
+            || deposit.replay_key == [0; 32]
+            || !policy.nonce_allowed(message.nonce)
+            || !approvals.authorized(policy, validator_keys)
+            || approvals.bridge_id != message.bridge_id
+            || approvals.message_hash != message.message_hash
+        {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        let approval_count = approvals.authenticated_count(validator_keys);
+        if approval_count == 0 {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+
+        let mut authorization = Self {
+            bridge_id: message.bridge_id,
+            message_hash: message.message_hash,
+            replay_key: deposit.replay_key,
+            canonical_asset_id: deposit.canonical_asset_id,
+            representation_asset_id: deposit.representation_asset_id,
+            source_chain_id: message.source_chain_id,
+            source_tx_hash: message.source_tx_hash,
+            source_event_index: message.source_event_index,
+            destination_chain_id: message.destination_chain_id,
+            nonce: message.nonce,
+            amount: message.amount,
+            recipient: message.recipient,
+            approval_count,
+            authorization_hash: [0; 32],
+        };
+        authorization.authorization_hash = authorization.compute_hash();
+        if !authorization.validate() {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        Ok(authorization)
+    }
+
+    pub fn matches_message(&self, message: &BridgeMessage) -> bool {
+        self.validate()
+            && self.bridge_id == message.bridge_id
+            && self.message_hash == message.message_hash
+            && self.source_chain_id == message.source_chain_id
+            && self.source_tx_hash == message.source_tx_hash
+            && self.source_event_index == message.source_event_index
+            && self.destination_chain_id == message.destination_chain_id
+            && self.nonce == message.nonce
+            && self.amount == message.amount
+            && self.recipient == message.recipient
+            && message.validate_hash()
+    }
+
+    pub fn replay_key_matches(&self, deposit: &VerifiedDeposit) -> bool {
+        self.validate()
+            && self.replay_key == deposit.replay_key
+            && self.canonical_asset_id == deposit.canonical_asset_id
+            && self.representation_asset_id == deposit.representation_asset_id
+    }
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeNonceKey {
     pub bridge_id: Hash,
     pub asset_id: Hash,
@@ -5056,6 +5181,134 @@ mod m152_binding_tests {
         assert!(message.matches_verified_deposit(&deposit));
     }
 }
+
+#[cfg(test)]
+mod m154_bridge_mint_authorization_tests {
+    use super::*;
+
+    fn policy() -> BridgeSecurityPolicy {
+        BridgeSecurityPolicy {
+            bridge_id: [3; 32],
+            approval_mode: BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000_000,
+            max_withdrawal_amount: 1_000_000,
+            daily_limit: 1_000_000,
+            emergency_paused: false,
+            nonce_floor: 10,
+        }
+    }
+
+    fn signed_approval(
+        bridge_id: Hash,
+        message_hash: Hash,
+        key: [u8; 32],
+    ) -> BridgeMessageApproval {
+        let validator_id = freedom_primitives::hash_bytes(&key);
+        let unsigned = BridgeMessageApproval {
+            bridge_id,
+            message_hash,
+            validator_id,
+            signature: vec![0; 64],
+        };
+        let mut signature = [0u8; 64];
+        freedom_crypto::sign(&key, &unsigned.approval_hash(), &mut signature);
+        BridgeMessageApproval {
+            signature: signature.to_vec(),
+            ..unsigned
+        }
+    }
+
+    fn deposit_and_message() -> (VerifiedDeposit, BridgeMessage) {
+        let deposit = VerifiedDeposit {
+            canonical_asset_id: [1; 32],
+            representation_asset_id: [2; 32],
+            bridge_id: [3; 32],
+            source_chain_id: 728126428,
+            tx_hash: [4; 32],
+            event_index: 7,
+            block_or_slot: 8,
+            confirmations: 20,
+            amount: 500,
+            recipient: vec![9; 20],
+            replay_key: [10; 32],
+            proof_hash: [11; 32],
+        };
+        let message = deposit.to_bridge_message(1, 42).unwrap();
+        (deposit, message)
+    }
+
+    #[test]
+    fn mint_authorization_requires_authenticated_quorum_and_binds_message() {
+        let (deposit, message) = deposit_and_message();
+        let key = [7u8; 32];
+        let approval = signed_approval(message.bridge_id, message.message_hash, key);
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert(approval.validator_id, key);
+        let approvals = BridgeMessageApprovalSet {
+            bridge_id: message.bridge_id,
+            message_hash: message.message_hash,
+            approvals: vec![approval],
+        };
+
+        let auth = BridgeMintAuthorization::from_authenticated_message(
+            &message, &deposit, &approvals, &policy(), &keys,
+        ).unwrap();
+
+        assert!(auth.validate());
+        assert!(auth.matches_message(&message));
+        assert!(auth.replay_key_matches(&deposit));
+        assert_eq!(auth.approval_count, 1);
+    }
+
+    #[test]
+    fn mint_authorization_rejects_nonce_below_policy_floor() {
+        let (deposit, mut message) = deposit_and_message();
+        message.nonce = 9;
+        message.message_hash = message.compute_hash();
+        let key = [7u8; 32];
+        let approval = signed_approval(message.bridge_id, message.message_hash, key);
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert(approval.validator_id, key);
+        let approvals = BridgeMessageApprovalSet {
+            bridge_id: message.bridge_id,
+            message_hash: message.message_hash,
+            approvals: vec![approval],
+        };
+        assert_eq!(
+            BridgeMintAuthorization::from_authenticated_message(
+                &message, &deposit, &approvals, &policy(), &keys,
+            ),
+            Err(BridgeAdapterError::InvalidProof)
+        );
+    }
+
+    #[test]
+    fn mint_authorization_rejects_tampered_deposit_binding() {
+        let (mut deposit, message) = deposit_and_message();
+        deposit.amount = 501;
+        let key = [7u8; 32];
+        let approval = signed_approval(message.bridge_id, message.message_hash, key);
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert(approval.validator_id, key);
+        let approvals = BridgeMessageApprovalSet {
+            bridge_id: message.bridge_id,
+            message_hash: message.message_hash,
+            approvals: vec![approval],
+        };
+        assert_eq!(
+            BridgeMintAuthorization::from_authenticated_message(
+                &message, &deposit, &approvals, &policy(), &keys,
+            ),
+            Err(BridgeAdapterError::InvalidProof)
+        );
+    }
+}
+
 
 #[cfg(test)]
 mod m153_bridge_message_auth_tests {
