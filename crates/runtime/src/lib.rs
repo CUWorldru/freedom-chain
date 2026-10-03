@@ -153,6 +153,9 @@ pub fn verify_bridge_deposit_with_adapter(
         return Err("UnsupportedBridgeFinalityModel".into());
     }
 
+    if proof.asset_id != registry.canonical_asset_id {
+        return Err("CanonicalAssetRegistryMismatch".into());
+    }
     if !registry.has_representation(proof.representation_asset_id) {
         return Err("UnknownBridgeRepresentation".into());
     }
