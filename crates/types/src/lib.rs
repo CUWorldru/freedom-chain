@@ -2077,6 +2077,23 @@ fn bitcoin_chainwork_add(work: &mut BitcoinChainWork, target: Hash) -> bool {
     borrow == 0
 }
 
+pub fn bitcoin_chain_contains_deposit(
+    chain: &BitcoinChainContext,
+    deposit_height: u64,
+    deposit_header: &BitcoinBlockHeader,
+) -> bool {
+    if !chain.validate() || deposit_height == 0 || deposit_height > chain.tip_height {
+        return false;
+    }
+    let offset = deposit_height
+        .checked_sub(chain.tip_height.saturating_sub(chain.headers.len() as u64 - 1))
+        .unwrap_or(u64::MAX);
+    if offset as usize >= chain.headers.len() {
+        return false;
+    }
+    chain.headers[offset as usize] == *deposit_header
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BitcoinChainSelection {
     CandidateA,
@@ -2414,6 +2431,9 @@ impl BitcoinUtxoProof {
             .ok_or(BridgeAdapterError::InvalidProof)?;
         self.verify_bitcoin_chain()?;
         context.verify_header_chain(self.block_height, deposit_header)?;
+        if !bitcoin_chain_contains_deposit(context, self.block_height, deposit_header) {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
         Ok(confirmations)
     }
 
