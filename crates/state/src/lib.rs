@@ -170,13 +170,18 @@ impl ChainState {
  pub fn register_bitcoin_utxo_commitment_attestation(&mut self,attestation:freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let policy=self.bridge_security_policies.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let canonical=self.bitcoin_canonical_tips.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  let validators=self.validators.iter().map(|v|(v.consensus_key,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
+  let validators=self.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
   if attestation.bridge_id!=policy.bridge_id||!attestation.verify(canonical,&validators,policy.validator_quorum){return Err(StateError::InvalidBridgeWithdrawal);}
   if let Some(previous)=self.bitcoin_utxo_attestations.get(&attestation.bridge_id){if attestation.sequence<=previous.sequence{return Err(StateError::InvalidBridgeWithdrawal);}}
   self.bitcoin_utxo_attestations.insert(attestation.bridge_id,attestation);
   Ok(())
  }
  pub fn bitcoin_utxo_commitment_attestation(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoCommitmentAttestation>{self.bitcoin_utxo_attestations.get(&bridge_id)}
+ pub fn validate_bitcoin_utxo_transition(&self,transition:&freedom_types::BitcoinUtxoAccumulatorTransition,previous:&[freedom_types::BitcoinUtxoStateEntry])->Result<(),StateError>{
+  let canonical=self.bitcoin_canonical_tips.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if transition.previous_tip.block_hash!=canonical.block_hash || transition.previous_tip.height!=canonical.height { return Err(StateError::InvalidBridgeWithdrawal); }
+  transition.verify_transition(previous).map_err(|_|StateError::InvalidBridgeWithdrawal)
+ }
  pub fn validate_bitcoin_utxo_accumulator_proof(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoAccumulatorProof)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if proof.accumulator.bridge_id!=bridge_id||!proof.verify_membership(canonical){return Err(StateError::InvalidBridgeWithdrawal);}
