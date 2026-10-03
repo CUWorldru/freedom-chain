@@ -238,3 +238,83 @@ pub fn validate_valid_round_proof(
         }
     }
 }
+
+
+pub fn make_evidence(
+    kind: freedom_types::EquivocationKind,
+    height: u64,
+    round: u64,
+    validator_id: Hash,
+    first: Vec<u8>,
+    second: Vec<u8>,
+) -> freedom_types::EquivocationEvidence {
+    let mut evidence = freedom_types::EquivocationEvidence {
+        kind,
+        height,
+        round,
+        validator_id,
+        first,
+        second,
+        evidence_hash: [0u8; 32],
+    };
+    evidence.evidence_hash = freedom_primitives::hash_bytes(&evidence.signing_bytes());
+    evidence
+}
+
+pub fn validate_evidence(evidence: &freedom_types::EquivocationEvidence) -> Result<(), String> {
+    if evidence.first.is_empty() || evidence.second.is_empty() {
+        return Err("equivocation evidence payload is empty".into());
+    }
+    if evidence.first == evidence.second {
+        return Err("equivocation evidence contains identical messages".into());
+    }
+    let expected = freedom_primitives::hash_bytes(&evidence.signing_bytes());
+    if evidence.evidence_hash != expected {
+        return Err("equivocation evidence hash mismatch".into());
+    }
+    Ok(())
+}
+
+pub fn detect_prevotes_evidence(
+    votes: &[freedom_types::ValidatorVote],
+) -> Vec<freedom_types::EquivocationEvidence> {
+    let mut first = std::collections::BTreeMap::<(Hash,u64,u64), freedom_types::ValidatorVote>::new();
+    let mut out = Vec::new();
+    for vote in votes {
+        let key = (vote.validator_id, vote.height, vote.round);
+        if let Some(existing) = first.get(&key) {
+            if existing.block_hash != vote.block_hash {
+                out.push(make_evidence(
+                    freedom_types::EquivocationKind::DoublePrevote,
+                    vote.height, vote.round, vote.validator_id,
+                    existing.signing_bytes(), vote.signing_bytes(),
+                ));
+            }
+        } else {
+            first.insert(key, vote.clone());
+        }
+    }
+    out
+}
+
+pub fn detect_precommits_evidence(
+    precommits: &[freedom_types::ValidatorPrecommit],
+) -> Vec<freedom_types::EquivocationEvidence> {
+    let mut first = std::collections::BTreeMap::<(Hash,u64,u64), freedom_types::ValidatorPrecommit>::new();
+    let mut out = Vec::new();
+    for pc in precommits {
+        let key = (pc.validator_id, pc.height, pc.round);
+        if let Some(existing) = first.get(&key) {
+            if existing.block_hash != pc.block_hash {
+                out.push(make_evidence(
+                    freedom_types::EquivocationKind::DoublePrecommit,
+                    pc.height, pc.round, pc.validator_id,
+                    existing.signing_bytes(), pc.signing_bytes(),
+                ));
+            }
+        } else {
+            first.insert(key, pc.clone());
+        }
+    }
+    out
+}
