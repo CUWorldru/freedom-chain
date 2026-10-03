@@ -126,6 +126,7 @@ pub fn sign_proposal(proposal: &mut BlockProposal, consensus_key: &ed25519_dalek
 }
 
 pub fn validate_block_transition(state: &ChainState, block: &freedom_types::Block) -> Result<(), String> {
+    freedom_consensus::validate_epoch_transition_certificate(state, block)?;
     if block.header.height != state.height + 1 { return Err("invalid proposal height".into()); }
     if block.header.previous_hash != state.last_block_hash { return Err("invalid proposal previous hash".into()); }
     if freedom_consensus::tx_root(&block.transactions) != block.header.tx_root { return Err("proposal transaction root mismatch".into()); }
