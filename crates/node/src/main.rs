@@ -249,6 +249,29 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_decays_without_rewriting_cooldown() {
+        let peer = libp2p::PeerId::random();
+        let mut reputations = BTreeMap::new();
+        for _ in 0..3 {
+            record_peer_evidence(&mut reputations, PeerReputationEvidence {
+                peer,
+                height: 10,
+                request_id: [1u8; 32],
+                fingerprint: [2u8; 32],
+                kind: PeerEvidenceKind::SyncConflict,
+                reason: "test".to_string(),
+            });
+        }
+        assert!(!peer_is_eligible(&reputations, peer, 10));
+        assert!(decay_peer_reputation(&mut reputations, 20));
+        let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(reputation.score, 2);
+        assert!(!peer_is_eligible(&reputations, peer, 10));
+        assert!(peer_is_eligible(&reputations, peer, 20));
+        assert_eq!(reputation.cooldown_until_height, 13);
+    }
+
+    #[test]
     fn peer_reputation_accepts_multiple_evidence_kinds() {
         let peer = libp2p::PeerId::random();
         let mut reputations = BTreeMap::new();
@@ -574,6 +597,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = sync_timer.tick() => {
+                if decay_peer_reputation(&mut peer_reputations, state.height) {
+                    store.save_peer_reputation(&peer_reputations)?;
+                }
                 if !connected_peers.is_empty() && pending_sync.is_empty() {
                     let from_height = state.height.saturating_add(1);
                     let peer_count = connected_peers.len().min(2);
