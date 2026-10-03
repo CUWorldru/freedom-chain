@@ -1004,3 +1004,8 @@ Bitcoin checkpoints are now explicitly bound to their bridge security policy and
 ## M106 — Bitcoin Reorg Detection
 
 Checkpoint advancement now has an explicit reorg boundary. A candidate header sequence that does not directly continue the trusted checkpoint is reported as `BitcoinReorgDetected` and cannot mutate checkpoint state. Only a fully validated continuation with increased chainwork advances the persisted checkpoint.
+
+
+## M107 — Persistent Bitcoin Reorg Evidence
+
+Detected Bitcoin reorg conflicts are now stored as bounded, deduplicated evidence per bridge. Each record binds the trusted checkpoint to the candidate tip and candidate chainwork through a domain-separated fingerprint. The journal is capped at 32 entries and is included in the state root, so evidence survives restart/snapshot without unbounded state growth.
