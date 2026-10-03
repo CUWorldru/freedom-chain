@@ -838,7 +838,6 @@ impl BitcoinReorgPolicy {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinCanonicalTipProof { pub start_height:u64, pub headers:Vec<BitcoinBlockHeader>, pub tip_height:u64, pub tip_hash:Hash, pub chainwork:[u8;32] }
 impl BitcoinCanonicalTipProof {
  pub fn verify(&self,checkpoint:&BitcoinChainCheckpoint)->bool{
@@ -2137,7 +2136,6 @@ impl BitcoinUtxoAccumulatorTransition {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinUtxoTransitionWitness {
     pub tx_hash: Hash,
     pub vout: u32,
@@ -2511,7 +2509,6 @@ impl BitcoinUtxoSmtUpdateProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CrossChainProofKind {
     BitcoinUtxo,
     Ethereum,
@@ -2522,7 +2519,6 @@ pub enum CrossChainProofKind {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CrossChainProofError {
     InvalidEnvelope,
     UnsupportedProofKind,
@@ -2671,7 +2667,6 @@ impl EthereumTransactionProof {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumSszMerkleProof {
     pub leaf: Hash,
     pub generalized_index: u64,
@@ -2770,7 +2765,6 @@ impl EthereumValidatorMembershipProof {
     pub fn proof_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumSyncCommitteeSignature {
     pub validator_indices:Vec<u64>,
