@@ -59,6 +59,14 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - purchase records provide an on-chain billing receipt
 - wallet balance remains authoritative on Freedom Chain
 
+## M5 — Freedom Wallet foundation
+
+- wallet abstraction uses the canonical Freedom address format
+- wallet identity is derived from the address and is not a second account type
+- FDM display uses integer mFDM with `100_000 mFDM = 1 FDM`
+- wallet layer does not mint, burn, or alter balances
+- chain state remains the authoritative source of wallet balances
+
 ## Roadmap
 
 - M3: protocol-issued FDM rewards from verified contribution WU
