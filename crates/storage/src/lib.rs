@@ -1,4 +1,5 @@
 use freedom_state::ChainState;
+use freedom_primitives::CHAIN_ID;
 use freedom_types::Block;
 use rocksdb::{Options, DB};
 use std::path::Path;
@@ -20,6 +21,8 @@ impl std::error::Error for StorageError {}
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct StateSnapshot {
+    #[serde(default)]
+    pub chain_id: u64,
     pub height: u64,
     pub block_hash: [u8;32],
     pub state_root: [u8;32],
@@ -99,6 +102,7 @@ impl ChainStore {
         certificate: Option<freedom_types::FinalityCertificate>,
     ) -> Result<(), StorageError> {
         let snapshot = StateSnapshot {
+            chain_id: CHAIN_ID,
             height: state.height,
             block_hash,
             state_root: state.state_root(),
@@ -114,6 +118,9 @@ impl ChainStore {
     pub fn load_snapshot(&self, height: u64) -> Result<Option<StateSnapshot>, StorageError> {
         let Some(bytes) = self.db.get(Self::snapshot_key(height)).map_err(|e| StorageError::Rocks(e.to_string()))? else { return Ok(None); };
         let snapshot: StateSnapshot = serde_json::from_slice(&bytes).map_err(|e| StorageError::Codec(e.to_string()))?;
+        if snapshot.chain_id != CHAIN_ID {
+            return Err(StorageError::InvalidSnapshot("chain id mismatch".into()));
+        }
         if snapshot.height != height || snapshot.state.height != height { return Err(StorageError::InvalidSnapshot("height mismatch".into())); }
         if snapshot.state.state_root() != snapshot.state_root { return Err(StorageError::InvalidSnapshot("state root mismatch".into())); }if snapshot.epoch_transition_certificate.as_ref().map(|c| c.hash())
             != snapshot.state.validator_set_certificate.as_ref().map(|c| c.hash()) {
