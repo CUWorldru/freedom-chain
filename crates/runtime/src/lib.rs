@@ -76,6 +76,20 @@ pub fn execute_transaction(s:&mut ChainState,tx:&Transaction)->Result<Receipt,St
  let events=s.events[before..].to_vec();
  Ok(Receipt{tx_hash:h,success:true,gas_used:1,events})
 }
+fn validate_bridge_mint_block_set(transactions: &[Transaction]) -> Result<(), String> {
+ let mut ids=std::collections::BTreeSet::<Hash>::new();
+ for tx in transactions {
+  if tx.kind != freedom_types::TxKind::BridgeMint { continue; }
+  let p=freedom_types::BridgeMintTransactionPayload::decode(&tx.payload)
+   .map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
+  let canonical=p.encode().map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
+  if canonical!=tx.payload { return Err("InvalidBridgeMintTransaction".into()); }
+  let id=p.canonical_id().map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
+  if !ids.insert(id) { return Err("DuplicateBridgeMintCanonicalId".into()); }
+ }
+ Ok(())
+}
+
 pub fn execute_block(s:&mut ChainState,block:&Block)->Result<Block,String>{
 if block.header.height!=s.height+1{return Err("invalid block height".into())}
 if block.header.previous_hash!=s.last_block_hash{return Err("invalid previous block hash".into())}
@@ -83,6 +97,7 @@ let expected_epoch=if s.epoch_length>0 && block.header.height%s.epoch_length==0{
 if block.header.epoch!=expected_epoch{return Err("invalid block epoch".into())}
 freedom_consensus::validate_epoch_transition_certificate(s, block)?;
 if block.header.tx_root!=tx_root(&block.transactions){return Err("transaction root mismatch".into())}
+validate_bridge_mint_block_set(&block.transactions)?;
 let mut working=s.clone();
 let mut receipts=Vec::with_capacity(block.transactions.len());
 for tx in &block.transactions{receipts.push(execute_transaction(&mut working,tx)?);}
@@ -232,6 +247,7 @@ pub fn build_next_block(
 ) -> Result<Block, String> {
     if proposer == [0; 32] { return Err("invalid proposer".into()); }
     let transactions = mempool.ordered(state, max_transactions);
+    validate_bridge_mint_block_set(&transactions)?;
     let mut working = state.clone();
     let mut receipts = Vec::with_capacity(transactions.len());
     for tx in &transactions {
