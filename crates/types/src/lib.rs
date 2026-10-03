@@ -2254,7 +2254,6 @@ fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
 pub struct BitcoinChainContext {
     pub start_height: u64,
     pub base_start_height: u64,
-    pub base_chainwork: BitcoinChainWork,
     pub base_headers: Vec<BitcoinBlockHeader>,
     pub tip_height: u64,
     pub tip_hash: Hash,
@@ -2286,9 +2285,6 @@ impl BitcoinChainContext {
             if !bitcoin_chainwork_add(&mut work, target) {
                 return Err(BridgeAdapterError::InvalidProof);
             }
-        }
-        if work != self.base_chainwork {
-            return Err(BridgeAdapterError::InvalidProof);
         }
         if self.base_headers.windows(2).any(|pair| {
             pair[1].previous_block_hash != pair[0].block_hash()
