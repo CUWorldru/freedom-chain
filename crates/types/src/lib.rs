@@ -94,6 +94,9 @@ impl ClaimRewardPayload { pub fn encode(&self)->Vec<u8>{self.contribution_id.to_
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ProductId { AiBotConnect = 1 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum BillingStatus { Quoted = 1, Reserved = 2, Captured = 3, Refunded = 4, Cancelled = 5 }
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PurchasePayload {
     pub product_id: u8,
@@ -115,5 +118,27 @@ impl PurchasePayload {
         let mut m=[0u8;32];let mut p=[0u8;16];let mut r=[0u8;32];
         m.copy_from_slice(&b[1..33]);p.copy_from_slice(&b[33..49]);r.copy_from_slice(&b[49..81]);
         Ok(Self{product_id:b[0],merchant:m,price:u128::from_le_bytes(p),reference:r})
+    }
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BillingPayload {
+    pub billing_id: Hash,
+    pub product_id: u8,
+    pub merchant: Address,
+    pub amount: u128,
+    pub reference: Hash,
+}
+impl BillingPayload {
+    pub fn encode(&self)->Vec<u8>{
+        let mut o=Vec::with_capacity(113);o.extend_from_slice(&self.billing_id);o.push(self.product_id);
+        o.extend_from_slice(&self.merchant);o.extend_from_slice(&self.amount.to_le_bytes());o.extend_from_slice(&self.reference);o
+    }
+    pub fn decode(b:&[u8])->Result<Self,String>{
+        if b.len()!=113{return Err("billing payload must be exactly 113 bytes".into())}
+        let mut id=[0u8;32];let mut m=[0u8;32];let mut a=[0u8;16];let mut r=[0u8;32];
+        id.copy_from_slice(&b[0..32]);m.copy_from_slice(&b[33..65]);a.copy_from_slice(&b[65..81]);r.copy_from_slice(&b[81..113]);
+        Ok(Self{billing_id:id,product_id:b[32],merchant:m,amount:u128::from_le_bytes(a),reference:r})
     }
 }
