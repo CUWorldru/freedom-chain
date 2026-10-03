@@ -357,6 +357,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if !protocol.remember_message(vote.message_id()) { continue; }
                                     if vote.height != state.height + 1 || vote.round != round { continue; }
                                     let hash = vote.block_hash;
+                                    if let Some(existing)=protocol.votes.get(&vote.validator_id) {
+                                        if existing.block_hash != vote.block_hash || existing.round != vote.round {
+                                            let evidence=freedom_consensus::make_evidence(
+                                                freedom_types::EquivocationKind::DoublePrevote,
+                                                vote.height,vote.round,vote.validator_id,
+                                                existing.signing_bytes(),vote.signing_bytes());
+                                            state.record_equivocation(evidence.clone())?;
+                                            let msg=make_evidence_message(evidence,validator_id,&consensus_key);
+                                            publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
+                                            continue;
+                                        }
+                                    }
                                     let ready = protocol.receive_vote(&state, vote, hash, state.height + 1, round)?;
                                     if ready {
                                         let block = blocks.get(&hash).ok_or_else(|| "prevote quorum block missing".to_string())?;
