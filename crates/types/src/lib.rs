@@ -2067,6 +2067,10 @@ fn bitcoin_target_mul_div(target: Hash, numerator: u64, denominator: u64) -> Has
         remainder = current % u128::from(denominator);
     }
 
+    if quotient[4] != 0 {
+        return [0xffu8; 32];
+    }
+
     let mut out = [0u8; 32];
     for i in 0..4 {
         out[i * 8..i * 8 + 8].copy_from_slice(&quotient[i].to_le_bytes());
