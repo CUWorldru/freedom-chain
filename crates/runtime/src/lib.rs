@@ -101,6 +101,18 @@ pub fn verify_external_bridge_deposit(
             ).map_err(|e| format!("TronUsdtDeposit:{e:?}"))?,
     };
 
+    if proof.asset_id != registry.canonical_asset_id {
+        return Err("CanonicalAssetRegistryMismatch".into());
+    }
+    let representation = registry
+        .representations
+        .iter()
+        .find(|r| r.representation.asset_id == proof.representation_asset_id)
+        .ok_or_else(|| "UnknownBridgeRepresentation".to_string())?;
+    if !representation.matches_proof(&proof) {
+        return Err("BridgeCanonicalRepresentationMismatch".into());
+    }
+
     verify_bridge_deposit_with_adapter(&proof, registry, policy, descriptor)
 }
 
