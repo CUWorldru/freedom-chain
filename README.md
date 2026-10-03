@@ -959,3 +959,8 @@ External bridge deposits now have a domain-separated `ExternalDepositProof` comm
 ## M99 — Bitcoin Block Header Binding
 
 Bitcoin Merkle proofs are now bound to an 80-byte Bitcoin block header. The header is serialized with Bitcoin little-endian field encoding and hashed with SHA-256d to derive the block hash; the proof requires the header Merkle root to match the verified transaction Merkle root. This prevents a standalone Merkle branch from being treated as a sufficient external inclusion proof.
+
+
+## M100 — Bitcoin Proof-of-Work Boundary
+
+Bitcoin block headers now have deterministic PoW validation: compact `nBits` decoding, rejection of zero/negative/invalid targets, SHA-256d block hashing and hash-to-target comparison. The header model also exposes explicit previous-block linkage for subsequent chain validation. This is a pure consensus-side verifier and does not perform RPC or network discovery.
