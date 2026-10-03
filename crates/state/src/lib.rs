@@ -487,6 +487,14 @@ impl ChainState {
   let status=self.bridge_message_status.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
   if *status != BridgeMessageStatus::Accepted { return Err(StateError::InvalidBridgeMessage); }
   if !self.processed_bridge_messages.contains_key(&replay_key) { return Err(StateError::InvalidBridgeMessage); }
+  let authorization=self.bridge_mint_authorizations.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
+  let replay=self.bridge_deposit_replays.get(&authorization.replay_key).ok_or(StateError::InvalidBridgeMessage)?;
+  let message=self.processed_bridge_messages.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
+  if replay.status != freedom_types::DepositReplayStatus::Consumed
+    || !authorization.validate()
+    || !authorization.matches_message(message) {
+    return Err(StateError::InvalidBridgeMessage);
+  }
   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Minted);
   Ok(())
  }
@@ -912,12 +920,12 @@ mod m80_bridge_state_machine_tests {
   state.accept_bridge_message(key).unwrap();
   assert_eq!(state.bridge_message_status.get(&key),Some(&BridgeMessageStatus::Accepted));
  }
- #[test] fn mint_transition_requires_acceptance(){
+ #[test] fn mint_transition_requires_authenticated_consumed_authorization(){
   let(mut state,key)=setup();
   assert_eq!(state.mark_bridge_message_minted(key),Err(StateError::InvalidBridgeMessage));
   state.accept_bridge_message(key).unwrap();
-  state.mark_bridge_message_minted(key).unwrap();
-  assert_eq!(state.bridge_message_status.get(&key),Some(&BridgeMessageStatus::Minted));
+  assert_eq!(state.mark_bridge_message_minted(key),Err(StateError::InvalidBridgeMessage));
+  assert_eq!(state.bridge_message_status.get(&key),Some(&BridgeMessageStatus::Accepted));
  }
  #[test] fn transitions_are_forward_only(){
   let(mut state,key)=setup();
