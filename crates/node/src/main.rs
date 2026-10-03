@@ -320,6 +320,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                                 Ok(NetworkMessage::Proposal(proposal)) => {
+                                    if !protocol.remember_message(proposal.message_id()) { continue; }
                                     if proposal.height != state.height + 1 || proposal.round != round { continue; }
                                     if let Err(e) = freedom_network::validate_proposal(&state, &proposal) {
                                         eprintln!("proposal rejected: {e}");
@@ -331,6 +332,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     timeout_round_sent = None;
                                 }
                                 Ok(NetworkMessage::Vote(vote)) => {
+                                    if !protocol.remember_message(vote.message_id()) { continue; }
                                     if vote.height != state.height + 1 || vote.round != round { continue; }
                                     let hash = vote.block_hash;
                                     let ready = protocol.receive_vote(&state, vote, hash, state.height + 1, round)?;
@@ -341,6 +343,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                                 Ok(NetworkMessage::Precommit(precommit)) => {
+                                    if !protocol.remember_message(precommit.message_id()) { continue; }
                                     if precommit.height != state.height + 1 || precommit.round != round { continue; }
                                     let hash = precommit.block_hash;
                                     let ready = protocol.receive_precommit(&state, precommit, hash, state.height + 1, round)?;
@@ -375,6 +378,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                                 Ok(NetworkMessage::Timeout(timeout)) => {
+                                    if !protocol.remember_message(timeout.message_id()) { continue; }
                                     if timeout.height != state.height + 1 || timeout.round != round { continue; }
                                     if protocol.receive_timeout(&state, timeout, state.height + 1, round)? {
                                         let timeout_certificate = freedom_types::TimeoutCertificate {
