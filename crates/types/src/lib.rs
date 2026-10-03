@@ -742,12 +742,13 @@ impl BitcoinMerkleProof {
         self.bridge_id!=[0;32]&&self.chain_id!=0&&self.tx_hash!=[0;32]&&self.merkle_root!=[0;32]&&!self.merkle_branch.is_empty()&&self.confirmations>=required_confirmations&&self.block_header.merkle_root==self.merkle_root&&self.block_header.block_hash()!=[0;32]&&bitcoin_merkle_root(self.tx_hash,&self.merkle_branch,self.merkle_index)==self.merkle_root
     }
     pub fn verify_against_canonical_tip(&self,required_confirmations:u64,tip:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->bool{
-        if !self.verify(required_confirmations)||headers.is_empty()||self.block_height>tip.height{return false;}
+        if headers.is_empty()||self.block_height>tip.height{return false;} let computed_confirmations=tip.height.saturating_sub(self.block_height).saturating_add(1); if computed_confirmations<required_confirmations||self.confirmations!=computed_confirmations{return false;} if !self.verify(required_confirmations){return false;}
         if headers[0]!=self.block_header{return false;}
         if headers.len() as u64 != tip.height.saturating_sub(self.block_height).saturating_add(1){return false;}
         if bitcoin_validate_header_chain(self.block_height,headers).ok()!=Some(tip.block_hash){return false;}
         headers.last().map(|h|h.block_hash())==Some(tip.block_hash)
     }
+ pub fn canonical_confirmations(&self,tip:&BitcoinChainCheckpoint)->Option<u64>{if self.block_height>tip.height{return None;}Some(tip.height-self.block_height+1)}
 }
 
 
