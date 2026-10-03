@@ -284,3 +284,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Valid evidence is persisted, slashing is idempotent, and validator stake is reduced by the transaction's explicit slash amount capped at current stake.
 - Slashing emits EquivocationSlashed and the event is committed into the state root.
 - This is the first protocol-level slashing path; stake-weighted quorum and validator-set activation remain M26/M27.
+
+
+## M26 — Stake-Weighted PoS Quorum
+
+- Added stake-weighted quorum accounting alongside the existing validator-count safety check.
+- Votes, precommits and timeout certificates now require at least two-thirds of active validator stake; zero total stake cannot form quorum.
+- Added Stake and Unstake payloads and activated validator-owner stake transitions in state execution.
+- Stake weight is now available to the consensus core; full validator-set lifecycle and epoch activation remain M27.
