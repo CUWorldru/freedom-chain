@@ -345,6 +345,65 @@ impl BridgeSecurityPolicy {
     pub fn nonce_allowed(&self, nonce:u64)->bool { nonce >= self.nonce_floor }
 }
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeApproval {
+    pub bridge_id: Hash,
+    pub request_id: Hash,
+    pub withdrawal_id: Hash,
+    pub validator_id: Hash,
+    pub nonce: u64,
+    pub amount: u128,
+    pub destination_chain_id: u32,
+    pub asset_id: Hash,
+    pub intent_hash: Hash,
+    pub signature: Vec<u8>,
+}
+impl BridgeApproval {
+    pub fn signing_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BRIDGE-APPROVAL-V1");
+        o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.request_id);o.extend_from_slice(&self.withdrawal_id);
+        o.extend_from_slice(&self.validator_id);o.extend_from_slice(&self.nonce.to_le_bytes());
+        o.extend_from_slice(&self.amount.to_le_bytes());o.extend_from_slice(&self.destination_chain_id.to_le_bytes());
+        o.extend_from_slice(&self.asset_id);o.extend_from_slice(&self.intent_hash);o
+    }
+    pub fn approval_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+    pub fn structurally_valid(&self)->bool{
+        self.bridge_id!=[0;32]&&self.request_id!=[0;32]&&self.withdrawal_id!=[0;32]&&self.validator_id!=[0;32]
+        &&self.asset_id!=[0;32]&&self.intent_hash!=[0;32]&&self.amount>0&&!self.signature.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeApprovalSet {
+    pub request_id: Hash,
+    pub approvals: Vec<BridgeApproval>,
+    pub threshold_signatures: u16,
+}
+impl BridgeApprovalSet {
+    pub fn unique_valid_approvals(&self, bridge_id:Hash, withdrawal_id:Hash, intent_hash:Hash)->u16{
+        let mut ids=std::collections::BTreeSet::new();
+        for a in &self.approvals {
+            if a.bridge_id==bridge_id&&a.withdrawal_id==withdrawal_id&&a.request_id==self.request_id
+                &&a.intent_hash==intent_hash&&a.structurally_valid(){ids.insert(a.validator_id);}
+        }
+        ids.len() as u16
+    }
+    pub fn quorum_reached(&self,policy:&BridgeSecurityPolicy,bridge_id:Hash,withdrawal_id:Hash,intent_hash:Hash)->bool{
+        policy.quorum_reached(self.unique_valid_approvals(bridge_id,withdrawal_id,intent_hash))
+    }
+    pub fn threshold_reached(&self,policy:&BridgeSecurityPolicy)->bool{
+        self.threshold_signatures>=policy.threshold_signers
+    }
+    pub fn approved(&self,policy:&BridgeSecurityPolicy,bridge_id:Hash,withdrawal_id:Hash,intent_hash:Hash)->bool{
+        match policy.approval_mode {
+            BridgeApprovalMode::Quorum=>self.quorum_reached(policy,bridge_id,withdrawal_id,intent_hash),
+            BridgeApprovalMode::Threshold=>self.threshold_reached(policy),
+            BridgeApprovalMode::QuorumAndThreshold=>self.quorum_reached(policy,bridge_id,withdrawal_id,intent_hash)&&self.threshold_reached(policy),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeAdapterDescriptor {
     pub bridge_id: Hash,
@@ -875,6 +934,17 @@ mod m88_bridge_security_tests {
  #[test] fn policy_requires_supermajority_quorum(){assert!(p().validate());assert!(p().quorum_reached(7));assert!(!p().quorum_reached(6));}
  #[test] fn threshold_and_pause_are_enforced(){assert!(p().threshold_reached(3));assert!(!p().threshold_reached(2));assert!(p().deposit_allowed(100));assert!(p().withdrawal_allowed(100));let mut x=p();x.emergency_paused=true;assert!(!x.deposit_allowed(100));assert!(!x.withdrawal_allowed(100));}
  #[test] fn limits_and_nonce_are_enforced(){assert!(!p().deposit_allowed(1_000_001));assert!(!p().withdrawal_allowed(500_001));assert!(!p().nonce_allowed(9));assert!(p().nonce_allowed(10));}
+}
+
+
+#[cfg(test)]
+mod m89_bridge_approval_tests {
+ use super::*;
+ fn policy()->BridgeSecurityPolicy{BridgeSecurityPolicy{bridge_id:[1;32],approval_mode:BridgeApprovalMode::QuorumAndThreshold,validator_quorum:3,validator_total:4,threshold_signers:2,threshold_total:3,min_external_confirmations:12,max_deposit_amount:1_000_000,max_withdrawal_amount:500_000,daily_limit:2_000_000,emergency_paused:false,nonce_floor:1}}
+ fn approval(v:u8)->BridgeApproval{BridgeApproval{bridge_id:[1;32],request_id:[2;32],withdrawal_id:[3;32],validator_id:[v;32],nonce:4,amount:100,destination_chain_id:728126428,asset_id:[5;32],intent_hash:[6;32],signature:vec![7]}}
+ #[test] fn duplicate_validator_does_not_count_twice(){let mut x=BridgeApprovalSet{request_id:[2;32],approvals:vec![approval(1),approval(1),approval(2),approval(3)],threshold_signatures:2};assert_eq!(x.unique_valid_approvals([1;32],[3;32],[6;32]),3);assert!(x.approved(&policy(),[1;32],[3;32],[6;32]));}
+ #[test] fn wrong_intent_is_not_counted(){let mut a=approval(1);a.intent_hash=[9;32];let x=BridgeApprovalSet{request_id:[2;32],approvals:vec![a,approval(2),approval(3)],threshold_signatures:2};assert_eq!(x.unique_valid_approvals([1;32],[3;32],[6;32]),2);assert!(!x.approved(&policy(),[1;32],[3;32],[6;32]));}
+ #[test] fn threshold_and_quorum_are_both_required(){let x=BridgeApprovalSet{request_id:[2;32],approvals:vec![approval(1),approval(2),approval(3)],threshold_signatures:1};assert!(!x.approved(&policy(),[1;32],[3;32],[6;32]));}
 }
 
 #[cfg(test)]
