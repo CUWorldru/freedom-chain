@@ -894,3 +894,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - deposits require the configured bridge and chain, non-zero transaction/Jetton/participants/amount, event signature, proof bytes, and the adapter's configured finality threshold;
 - withdrawals preserve the canonical TON recipient bytes in a domain-separated withdrawal intent;
 - no TON RPC, BOC/TVM proof verification, private-key custody, or transaction broadcasting is performed by consensus code at this milestone; those belong in the external bridge executor/verifier layer.
+
+
+## M87 — Solana / SPL Token Adapter
+
+- added a Solana transfer proof model for SPL-style assets with Solana chain ID, transaction signature/hash, slot, slot-finality depth, token mint, source/destination accounts, amount, instruction index, program ID, and proof bytes;
+- SPL transfer replay identity maps `transaction + instruction_index` into the existing bridge replay domain;
+- deposits require the configured bridge and chain, non-zero transaction/token/accounts/amount, program ID, proof bytes, and the adapter's configured slot-finality threshold;
+- withdrawals require a canonical 32-byte Solana recipient representation and produce the existing domain-separated withdrawal intent;
+- the adapter model is also suitable as the foundation for native SOL once the external verifier distinguishes native transfers from SPL token transfers;
+- no Solana RPC, transaction/message decoding, Merkle/account proof verification, private-key custody, or transaction broadcasting is performed by consensus code at this milestone.
