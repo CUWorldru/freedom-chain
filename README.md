@@ -147,3 +147,13 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - the block builder simulates execution before producing transaction and receipt commitments
 - committed transactions are removed from the mempool
 - M13 still uses the local deterministic proposer from M12; network propagation and real BFT voting remain future work
+
+
+## M14 — Signed validator quorum
+
+- validators sign votes over the canonical FREEDOM-VOTE-V1 domain.
+- votes are bound to block hash, height and validator ID.
+- unknown validators, invalid signatures, wrong block hashes/heights and duplicate votes are rejected.
+- quorum uses floor(2N/3) + 1; with 3 validators this requires all 3 votes.
+- block finalization checks quorum before executing and committing the block.
+- M14 is still a local quorum simulation; network transport and timeout/view-change logic are future work.
