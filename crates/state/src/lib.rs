@@ -58,7 +58,27 @@ impl ChainState {
  pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis FDM must be zero");let validators=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators,nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_mfdm:0,annual_reserve_mfdm:0,draw_prize_pool_mfdm:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch_issuance:0,epoch_cap:1_000_000,evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
  pub fn insert_account(&mut self,a:Account){self.accounts.insert(a.address,a);}
  pub fn drain_events(&mut self)->Vec<Event>{std::mem::take(&mut self.events)}
- pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>self.claim_reward(tx),TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
+ pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>self.claim_reward(tx),TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
+ fn stake(&mut self,tx:&Transaction)->Result<(),StateError>{
+  let p=freedom_types::StakePayload::decode(&tx.payload).map_err(|_|StateError::UnsupportedTransaction)?;
+  let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  if a.balance<p.amount{return Err(StateError::InsufficientBalance)}
+  a.balance-=p.amount;a.staked=a.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let id=self.validators.values().find(|v|v.owner==tx.sender).map(|v|v.validator_id).ok_or(StateError::InvalidEvidence)?;
+  let v=self.validators.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
+  v.stake=v.stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  self.advance_nonce(tx.sender)
+ }
+ fn unstake(&mut self,tx:&Transaction)->Result<(),StateError>{
+  let p=freedom_types::UnstakePayload::decode(&tx.payload).map_err(|_|StateError::UnsupportedTransaction)?;
+  let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  if a.staked<p.amount{return Err(StateError::InsufficientBalance)}
+  let id=self.validators.values().find(|v|v.owner==tx.sender).map(|v|v.validator_id).ok_or(StateError::InvalidEvidence)?;
+  let v=self.validators.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
+  if v.stake<p.amount{return Err(StateError::InsufficientBalance)}
+  a.staked-=p.amount;a.balance=a.balance.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;v.stake-=p.amount;
+  self.advance_nonce(tx.sender)
+ }
  fn submit_evidence(&mut self,tx:&Transaction)->Result<(),StateError>{
   let p=decode_submit_evidence(&tx.payload).ok_or(StateError::InvalidEvidence)?;
   if !self.evidence.contains_key(&p.evidence.evidence_hash){ self.record_equivocation(p.evidence.clone())?; }
