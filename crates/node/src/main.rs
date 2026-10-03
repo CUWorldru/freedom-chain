@@ -492,20 +492,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 eprintln!("SNAPSHOT_REJECTED state commitment mismatch at {}", response.height);
                                                 continue;
                                             }
-                                            state = snapshot_state;
-                                            if let Err(e) = store.put_block(&response.checkpoint) {
-                                                eprintln!("snapshot checkpoint persistence error: {e}");
-                                                continue;
-                                            }
-                                            if let Err(e) = store.save_snapshot_with_certificate_and_validator_set(
-                                                &state,
-                                                response.block_hash,
+                                            if let Err(e) = store.put_block_and_snapshot(
+                                                &response.checkpoint,
+                                                &snapshot_state,
                                                 response.certificate.clone(),
                                                 response.finality_validator_set.clone(),
                                             ) {
-                                                eprintln!("snapshot persistence error: {e}");
+                                                eprintln!("snapshot activation persistence error: {e}");
                                                 continue;
                                             }
+                                            state = snapshot_state;
                                             pending_sync = None;
                                             round = 0;
                                             timeout_round_sent = None;
