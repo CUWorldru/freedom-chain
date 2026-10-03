@@ -254,7 +254,19 @@ pub struct SubmitEvidencePayload {
 }
 impl SubmitEvidencePayload {
     pub fn encode(&self) -> Vec<u8> {
-        let mut out = self.evidence.signing_bytes();
+        let mut out = Vec::new();
+        out.push(match self.evidence.kind {
+            EquivocationKind::DoublePrevote => 1,
+            EquivocationKind::DoublePrecommit => 2,
+            EquivocationKind::DoubleProposal => 3,
+        });
+        out.extend_from_slice(&self.evidence.height.to_le_bytes());
+        out.extend_from_slice(&self.evidence.round.to_le_bytes());
+        out.extend_from_slice(&self.evidence.validator_id);
+        out.extend_from_slice(&(self.evidence.first.len() as u32).to_le_bytes());
+        out.extend_from_slice(&self.evidence.first);
+        out.extend_from_slice(&(self.evidence.second.len() as u32).to_le_bytes());
+        out.extend_from_slice(&self.evidence.second);
         out.extend_from_slice(&self.evidence.evidence_hash);
         out.extend_from_slice(&self.slash_amount.to_le_bytes());
         out
