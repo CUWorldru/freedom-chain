@@ -313,3 +313,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Conflicting timeout messages from the same validator are rejected as equivocation instead of being overwritten.
 - Timeout certificates remain composed of individually signed timeout messages and are validated against the earlier round.
 - Full peer-level evidence gossip, persistent anti-replay envelopes, and production-grade transport rate limiting remain future hardening work.
+
+
+## M29 — Consensus Message Anti-Replay
+
+- Added canonical message IDs for proposals, prevotes, precommits and timeouts.
+- Added bounded consensus-message deduplication at validator runtime ingress.
+- Replayed messages are rejected before entering the consensus state machine.
+- Deduplication is bounded to avoid unbounded memory growth.
+- Added a runtime test covering duplicate rejection and bounded eviction.
+- Message IDs are derived from the existing signed canonical message bytes; no second signing format was introduced.
