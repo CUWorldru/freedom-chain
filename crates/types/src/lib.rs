@@ -2256,6 +2256,7 @@ pub struct BitcoinChainContext {
     pub base_headers: Vec<BitcoinBlockHeader>,
     pub tip_height: u64,
     pub tip_hash: Hash,
+    pub max_future_timestamp: u32,
     pub headers: Vec<BitcoinBlockHeader>,
     pub difficulty_windows: Vec<BitcoinDifficultyWindow>,
 }
@@ -2268,9 +2269,46 @@ impl BitcoinChainContext {
             && self.base_start_height + self.base_headers.len() as u64 == self.start_height
             && self.start_height <= self.tip_height
             && self.tip_hash != [0u8; 32]
+            && self.max_future_timestamp > 0
             && !self.base_headers.is_empty()
             && !self.headers.is_empty()
             && self.difficulty_windows.iter().all(BitcoinDifficultyWindow::validate)
+            && self.validate_timestamp_rules()
+    }
+
+    fn median_time_past(headers: &[BitcoinBlockHeader], index: usize) -> Option<u32> {
+        if index < 11 {
+            return None;
+        }
+        let mut times: Vec<u32> = headers[index - 11..index]
+            .iter()
+            .map(|header| header.timestamp)
+            .collect();
+        times.sort_unstable();
+        Some(times[5])
+    }
+
+    fn validate_timestamp_rules(&self) -> bool {
+        let mut all = Vec::with_capacity(self.base_headers.len() + self.headers.len());
+        all.extend_from_slice(&self.base_headers);
+        all.extend_from_slice(&self.headers);
+        if all.len() < 12 {
+            return false;
+        }
+        for (index, header) in all.iter().enumerate() {
+            if header.timestamp == 0 || header.timestamp > self.max_future_timestamp {
+                return false;
+            }
+            if index >= 11 {
+                let Some(mtp) = Self::median_time_past(&all, index) else {
+                    return false;
+                };
+                if header.timestamp <= mtp {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     pub fn cumulative_chainwork(&self) -> Result<BitcoinChainWork, BridgeAdapterError> {
