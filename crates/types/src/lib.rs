@@ -1011,6 +1011,75 @@ impl TronTransactionInclusionProof {
     }
 }
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TronUsdtDepositProof {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub confirmations: u64,
+    pub usdt_contract: Vec<u8>,
+    pub header: TronBlockHeaderProof,
+    pub inclusion: TronTransactionInclusionProof,
+    pub event: TronTransactionEventProof,
+}
+
+impl TronUsdtDepositProof {
+    pub const TRON_MAINNET_CHAIN_ID: u32 = 728126428;
+
+    pub fn validate(&self, required_confirmations: u64) -> bool {
+        self.validate_with_contract(required_confirmations, &self.usdt_contract)
+    }
+
+    pub fn validate_with_contract(
+        &self,
+        required_confirmations: u64,
+        expected_usdt_contract: &[u8],
+    ) -> bool {
+        self.bridge_id != [0; 32]
+            && self.chain_id == Self::TRON_MAINNET_CHAIN_ID
+            && self.confirmations >= required_confirmations
+            && self.usdt_contract.len() == 20
+            && self.usdt_contract == expected_usdt_contract
+            && self.header.validate()
+            && self.inclusion.verify_binding(
+                &self.header,
+                self.header.tx_trie_root().unwrap_or([0; 32]),
+            )
+            && self.inclusion.tx_hash == self.event.tx_hash
+            && self.inclusion.transaction_index == self.event.transaction_index
+            && self.event.block_number == self.header.block_number().unwrap_or(0)
+            && self.event.block_id == self.header.block_id
+            && self.event.contract_address == self.usdt_contract
+            && self.event.validate_transfer_event()
+    }
+
+    pub fn sender(&self) -> Result<[u8; 20], String> {
+        self.event.from_topic()
+    }
+
+    pub fn recipient(&self) -> Result<[u8; 20], String> {
+        self.event.to_topic()
+    }
+
+    pub fn amount(&self) -> Result<u128, String> {
+        self.event.amount()
+    }
+
+    pub fn proof_hash(&self) -> Hash {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"FREEDOM-TRON-USDT-DEPOSIT-V1");
+        bytes.extend_from_slice(&self.bridge_id);
+        bytes.extend_from_slice(&self.chain_id.to_le_bytes());
+        bytes.extend_from_slice(&self.confirmations.to_le_bytes());
+        bytes.extend_from_slice(&(self.usdt_contract.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&self.usdt_contract);
+        bytes.extend_from_slice(&self.header.block_id);
+        bytes.extend_from_slice(&self.inclusion.proof_hash());
+        bytes.extend_from_slice(&self.event.proof_hash());
+        freedom_primitives::hash_bytes(&bytes)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TronTransactionEventProof {
     pub raw_data: Vec<u8>,
