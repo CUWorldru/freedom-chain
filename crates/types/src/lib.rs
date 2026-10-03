@@ -698,6 +698,13 @@ impl BitcoinReorgPolicy {
   else { BitcoinReorgSeverity::Normal }
  }
 }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinReorgRecovery { pub bridge_id:Hash, pub evidence_fingerprint:Hash, pub nonce:u64, pub validator_ids:Vec<Hash>, pub recovery_hash:Hash }
+impl BitcoinReorgRecovery {
+ pub fn signing_bytes(&self)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BITCOIN-REORG-RECOVERY-V1");o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.evidence_fingerprint);o.extend_from_slice(&self.nonce.to_le_bytes());for v in &self.validator_ids{o.extend_from_slice(v);}o}
+ pub fn compute_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+ pub fn validate(&self)->bool{self.bridge_id!=[0;32]&&self.evidence_fingerprint!=[0;32]&&self.nonce>0&&!self.validator_ids.is_empty()&&self.recovery_hash==self.compute_hash()}
+}
 pub struct BitcoinReorgReport { pub checkpoint_height:u64, pub checkpoint_hash:Hash, pub candidate_tip_height:u64, pub candidate_tip_hash:Hash, pub candidate_chainwork:[u8;32] }
 pub fn bitcoin_evaluate_reorg(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinReorgReport,BitcoinCheckpointError>{
  if !checkpoint.validate(){return Err(BitcoinCheckpointError::InvalidCheckpoint);} if headers.is_empty(){return Err(BitcoinCheckpointError::EmptyHeaders);}
