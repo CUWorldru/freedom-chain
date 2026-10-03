@@ -17,6 +17,22 @@ pub fn wallet_id(address: &Address) -> Hash {
     freedom_primitives::hash_bytes(&[b"FREEDOM-WALLET-V1".as_slice(), address].concat())
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WalletSnapshot {
+    pub address: Address,
+    pub balance_mfdm: u128,
+    pub balance_fdm: String,
+}
+
+pub fn snapshot(state: &freedom_state::ChainState, address: &Address) -> Option<WalletSnapshot> {
+    let account = state.accounts.get(address)?;
+    Some(WalletSnapshot { address:*address, balance_mfdm:account.balance, balance_fdm:format_mfdm(account.balance) })
+}
+
+pub fn history(state: &freedom_state::ChainState, address: &Address) -> Vec<freedom_state::LedgerEntry> {
+    state.ledger.iter().filter(|e| &e.sender == address).cloned().collect()
+}
+
 pub fn format_mfdm(amount: u128) -> String {
     let whole = amount / freedom_primitives::FDM_SCALE;
     let frac = amount % freedom_primitives::FDM_SCALE;
@@ -32,6 +48,16 @@ mod tests {
         let w = create_wallet();
         assert_eq!(w.address, address_from_public_key(&w.public_key));
         assert_ne!(wallet_id(&w.address), [0u8;32]);
+    }
+
+    #[test]
+    fn snapshot_reads_chain_balance() {
+        let w = create_wallet();
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
+        state.insert_account(freedom_state::Account::new(w.public_key, 12345));
+        let s = snapshot(&state, &w.address).unwrap();
+        assert_eq!(s.balance_mfdm, 12345);
+        assert_eq!(s.balance_fdm, "0.12345");
     }
 
     #[test]
