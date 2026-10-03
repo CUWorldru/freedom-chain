@@ -761,3 +761,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - repeated evidence from one peer still cannot create independent confirmation;
 - sync and snapshot paths now share the same quorum-aware reputation policy;
 - the existing one-peer path remains Normal, while a two-peer independent confirmation becomes Elevated and three or more becomes Critical.
+
+
+## M74 — Reputation Evidence Deduplication
+
+- identical evidence is idempotent and cannot increase reputation score more than once;
+- the deduplication identity is `(peer, height, request_id, fingerprint, evidence kind)`;
+- repeated processing of the same fact does not append another journal entry;
+- distinct fingerprints remain independently countable;
+- deduplication happens before severity classification and score mutation.
