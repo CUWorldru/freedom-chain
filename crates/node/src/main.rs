@@ -422,6 +422,31 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_dedup_survives_evidence_compaction() {
+        let peer = libp2p::PeerId::random();
+        let make_evidence = |height| PeerReputationEvidence {
+            peer,
+            height,
+            request_id: [height as u8; 32],
+            fingerprint: [9u8; 32],
+            kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
+            reason: "compaction".to_string(),
+        };
+        let mut reputations = BTreeMap::new();
+        for height in 1..=(PEER_EVIDENCE_LIMIT as u64 + 5) {
+            record_peer_evidence(&mut reputations, make_evidence(height));
+        }
+        let before = reputations.get(&peer).unwrap().score;
+        assert_eq!(reputations.get(&peer).unwrap().evidence.len(), PEER_EVIDENCE_LIMIT);
+        record_peer_evidence(&mut reputations, make_evidence(1));
+        let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(reputation.score, before);
+        assert_eq!(reputation.evidence.len(), PEER_EVIDENCE_LIMIT);
+        assert_eq!(reputation.dedup_index.len(), PEER_EVIDENCE_LIMIT + 5);
+    }
+
+    #[test]
     fn peer_reputation_evidence_is_idempotent() {
         let peer = libp2p::PeerId::random();
         let evidence = PeerReputationEvidence {
