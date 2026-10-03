@@ -422,6 +422,43 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_legacy_state_rebuilds_dedup_index() {
+        let peer = libp2p::PeerId::random();
+        let evidence = PeerReputationEvidence {
+            peer,
+            height: 7,
+            request_id: [3u8; 32],
+            fingerprint: [4u8; 32],
+            kind: PeerEvidenceKind::SnapshotConflict,
+            severity: PeerEvidenceSeverity::Normal,
+            reason: "legacy".to_string(),
+        };
+        let mut reputation = PeerReputation {
+            score: 1,
+            cooldown_until_height: 10,
+            last_decay_height: 7,
+            evidence: vec![evidence.clone()],
+            dedup_index: BTreeSet::new(),
+        };
+        let mut legacy = serde_json::to_value(&reputation).unwrap();
+        legacy.as_object_mut().unwrap().remove("dedup_index");
+        let decoded: PeerReputation = serde_json::from_value(legacy).unwrap();
+        assert!(decoded.dedup_index.is_empty());
+
+        let mut reputations = BTreeMap::new();
+        reputations.insert(peer, decoded);
+        assert!(rebuild_peer_reputation_dedup_index(&mut reputations));
+        assert_eq!(
+            reputations.get(&peer).unwrap().dedup_index.len(),
+            1
+        );
+
+        record_peer_evidence(&mut reputations, evidence);
+        assert_eq!(reputations.get(&peer).unwrap().score, 1);
+        assert_eq!(reputations.get(&peer).unwrap().evidence.len(), 1);
+    }
+
+    #[test]
     fn peer_reputation_dedup_survives_evidence_compaction() {
         let peer = libp2p::PeerId::random();
         let make_evidence = |height| PeerReputationEvidence {
