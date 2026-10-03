@@ -11,3 +11,7 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 freedom-primitives = { path = "../primitives" }
+freedom-consensus = { path = "../consensus" }
+freedom-crypto = { path = "../crypto" }
+freedom-state = { path = "../state" }
+ed25519-dalek.workspace = true

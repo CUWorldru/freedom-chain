@@ -10,3 +10,5 @@ freedom-crypto = { path = "../crypto" }
 freedom-primitives = { path = "../primitives" }
 freedom-state = { path = "../state" }
 freedom-types = { path = "../types" }
+freedom-network = { path = "../network" }
+ed25519-dalek.workspace = true
