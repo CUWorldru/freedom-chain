@@ -944,3 +944,8 @@ Bridge withdrawal rate limits are now reserved atomically with authenticated app
 ## M95 — Authenticated Bridge Emergency Pause
 
 Bridge emergency pause is now a consensus-visible, validator-authenticated action. A `BridgePauseAuthorizationSet` binds bridge ID, pause state and a monotonic nonce; each authorization is Ed25519-authenticated against the validator identity. The configured validator quorum must approve a uniform pause/unpause state. Older or replayed authorization sets are rejected, and the latest authorization set is persisted in the state root.
+
+
+## M96 — Universal Bridge Nonce Registry
+
+Outbound withdrawals now use a persistent nonce registry keyed by bridge, asset and direction. A nonce can only be reserved once for a given bridge/asset outbound lane, preventing replayed or duplicated withdrawal creation even when the withdrawal ID itself differs. Nonce reservations are consensus-visible and included in the state root.
