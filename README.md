@@ -342,3 +342,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - The observing validator signs an EvidenceMessage and broadcasts it through the dedicated evidence topic.
 - Evidence is recorded locally before broadcast and remains subject to the existing anti-replay and peer validation path.
 - Timeout conflicts are intentionally not mapped to a slashable evidence kind because Timeout is not currently an EquivocationKind.
+
+
+## M32 — Deterministic Evidence Slashing
+
+- SubmitEvidence now accepts only the protocol-defined slash amount for the evidence kind and current validator stake.
+- DoubleProposal slashing is 5% of current validator stake; DoublePrevote and DoublePrecommit are 10%.
+- Slashing is capped by the validator's current stake and is idempotent per evidence hash.
+- The validator's owner account staked balance is reduced together with validator stake.
+- Slashing remains a deterministic state transition triggered by SubmitEvidence; merely receiving gossip evidence does not slash funds.
