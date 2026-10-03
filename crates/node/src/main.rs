@@ -533,12 +533,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     sync_candidates.clear();
                     sync_round_peers.clear();
                     sync_conflicts.clear();
-                    for _ in 0..peer_count {
+                    let mut selected = 0usize;
+                    let max_attempts = connected_peers.len();
+                    while selected < peer_count && selected < max_attempts {
                         let peer = match select_sync_peer(&connected_peers, &mut sync_peer_cursor) {
-
                             Some(peer) => peer,
                             None => break,
                         };
+                        if !peer_is_eligible(&peer_reputations, peer, state.height) {
+                            continue;
+                        }
                         let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
                         pending_sync.push((peer, sync_outbound_id, sync_id, from_height));
                         sync_round_peers.insert(peer, from_height);
@@ -660,27 +664,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let fingerprint = hash_bytes(&serde_json::to_vec(&response.blocks)?);
                                             if sync_required > 1 && !sync_candidates.is_empty() && !sync_candidates.contains_key(&fingerprint) {
                                                 sync_conflicts.insert(peer, response.from_height);
-                                                sync_misbehavior.push(SyncMisbehaviorEvidence {
+                                                let evidence = PeerReputationEvidence {
                                                     peer,
-                                                    from_height: response.from_height,
+                                                    height: response.from_height,
                                                     request_id: response.request_id,
-                                                    batch_fingerprint: fingerprint,
+                                                    fingerprint,
+                                                    kind: PeerEvidenceKind::SyncConflict,
                                                     reason: "batch disagrees with another valid sync response".to_string(),
+                                                };
+                                                sync_misbehavior.push(SyncMisbehaviorEvidence {
+                                                    peer: evidence.peer,
+                                                    from_height: evidence.height,
+                                                    request_id: evidence.request_id,
+                                                    batch_fingerprint: evidence.fingerprint,
+                                                    reason: evidence.reason.clone(),
                                                 });
-                                                snapshot_misbehavior.push(SnapshotMisbehaviorEvidence {
-                                                    peer,
-                                                    height: response.height,
-                                                    request_id: response.request_id,
-                                                    snapshot_fingerprint,
-                                                    reason: "snapshot commitment disagrees with another fully validated response".to_string(),
-                                                });
-                                                record_peer_misbehavior(&mut peer_sync_scores, peer, state.height);
+                                                record_peer_evidence(&mut peer_reputations, evidence);
                                                 eprintln!(
                                                     "SYNC_CONFLICT peer={} from={} fingerprint={} score={:?} existing_candidates={}",
                                                     peer,
                                                     response.from_height,
                                                     hex::encode(fingerprint),
-                                                    peer_sync_scores.get(&peer),
+                                                    peer_reputations.get(&peer).map(|r| r.score),
                                                     sync_candidates.len()
                                                 );
                                             }
