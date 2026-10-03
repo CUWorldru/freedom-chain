@@ -1085,7 +1085,7 @@ impl TronUsdtDepositProof {
             bridge_id: self.bridge_id,
             source_chain_id: self.chain_id,
             tx_hash: self.event.tx_hash,
-            event_index: self.event.transaction_index as u64,
+            event_index: self.event.event_index as u64,
             block_or_slot: self.header.block_number().map_err(|_| BridgeAdapterError::InvalidProof)?,
             confirmations: self.confirmations,
             proof: self.proof_hash().to_vec(),
@@ -1118,6 +1118,7 @@ pub struct TronTransactionEventProof {
     pub block_number: u64,
     pub block_id: Hash,
     pub transaction_index: u32,
+    pub event_index: u32,
     /// TRON log address is the 20-byte contract address without the 0x41 prefix.
     pub contract_address: Vec<u8>,
     /// topics[0] is the Solidity event signature; topics[1]/topics[2] are indexed addresses.
