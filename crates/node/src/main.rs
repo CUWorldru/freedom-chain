@@ -329,6 +329,34 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_severity_scales_policy_weight() {
+        let peer = libp2p::PeerId::random();
+        let mut reputations = BTreeMap::new();
+        for (height, severity) in [
+            (10, PeerEvidenceSeverity::Normal),
+            (11, PeerEvidenceSeverity::Elevated),
+            (12, PeerEvidenceSeverity::Critical),
+        ] {
+            record_peer_evidence(&mut reputations, PeerReputationEvidence {
+                peer,
+                height,
+                request_id: [height as u8; 32],
+                fingerprint: [5u8; 32],
+                kind: PeerEvidenceKind::SyncConflict,
+                severity,
+                reason: "severity".to_string(),
+            });
+        }
+        let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(
+            reputation.score,
+            PEER_REPUTATION_POLICY.normal_severity_multiplier
+                + PEER_REPUTATION_POLICY.elevated_severity_multiplier
+                + PEER_REPUTATION_POLICY.critical_severity_multiplier
+        );
+    }
+
+    #[test]
     fn peer_reputation_evidence_kinds_use_policy_weights() {
         let peer = libp2p::PeerId::random();
         let mut reputations = BTreeMap::new();
