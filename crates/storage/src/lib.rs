@@ -639,4 +639,16 @@ mod tests {
         let err = store.load_snapshot(0).unwrap_err();
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "genesis snapshot hash linkage mismatch"));
     }
+    #[test]
+    fn peer_reputation_roundtrip_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut value = std::collections::BTreeMap::<String, u64>::new();
+        value.insert("peer".to_string(), 3);
+        store.save_peer_reputation(&value).unwrap();
+        let loaded: std::collections::BTreeMap<String, u64> = store.load_peer_reputation().unwrap();
+        assert_eq!(loaded, value);
+    }
+
+
 }
