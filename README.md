@@ -989,3 +989,8 @@ Bitcoin header chains now expose deterministic per-header work `floor(2^256 / (t
 ## M103 — Bitcoin Light-Client Checkpoint
 
 Bitcoin bridge verification now supports a trusted checkpoint containing height, block hash and accumulated chainwork. New headers must directly continue the checkpoint, preserve height continuity and increase total chainwork. This creates a deterministic light-client trust anchor before checkpoint persistence and reorg policy.
+
+
+## M104 — Persistent Bitcoin Checkpoints
+
+Bitcoin light-client checkpoints are now stored in `ChainState` per bridge, included in the state root, validated by invariants and protected against height/hash rollback. The serde-defaulted registry is backward compatible with pre-M104 state and therefore survives snapshot/restart serialization.
