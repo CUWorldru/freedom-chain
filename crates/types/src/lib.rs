@@ -2673,19 +2673,42 @@ impl EthereumTransactionProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumFinalityProof {
-    pub finalized_block_number: u64,
-    pub finalized_block_hash: Hash,
-    pub state_root: Hash,
-    pub block_hash_chain: Vec<Hash>,
+    pub finalized_block_number:u64,
+    pub finalized_block_hash:Hash,
+    pub state_root:Hash,
+    pub block_hash_chain:Vec<Hash>,
+    pub validator_root:Hash,
+    pub finality_signature:Vec<u8>,
 }
 
 impl EthereumFinalityProof {
-    pub fn validate_structure(&self)->bool {
+    pub fn signing_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-ETH-FINALITY-V1");
+        o.extend_from_slice(&self.finalized_block_number.to_le_bytes());
+        o.extend_from_slice(&self.finalized_block_hash);
+        o.extend_from_slice(&self.state_root);
+        o.extend_from_slice(&self.validator_root);
+        o.extend_from_slice(&(self.block_hash_chain.len() as u32).to_le_bytes());
+        for h in &self.block_hash_chain{o.extend_from_slice(h);}
+        o
+    }
+    pub fn proof_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+    pub fn validate_structure(&self)->bool{
         self.finalized_block_number>0
             && self.finalized_block_hash!=[0;32]
             && self.state_root!=[0;32]
+            && self.validator_root!=[0;32]
             && !self.block_hash_chain.is_empty()
+            && self.finality_signature.len()==96
+    }
+    pub fn verify_chain_anchor(&self,expected_block_hash:Hash,expected_state_root:Hash)->bool{
+        self.validate_structure()
+            && self.finalized_block_hash==expected_block_hash
+            && self.state_root==expected_state_root
+            && self.block_hash_chain.last().copied()==Some(expected_block_hash)
     }
 }
 
