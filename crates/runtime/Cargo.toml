@@ -1,0 +1,11 @@
+[package]
+name = "freedom-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+freedom-consensus = { path = "../consensus" }
+freedom-primitives = { path = "../primitives" }
+freedom-state = { path = "../state" }
+freedom-types = { path = "../types" }
