@@ -330,6 +330,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pending_sync = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
     let mut sync_candidates = BTreeMap::<Hash, (u64, SyncResponse)>::new();
     let mut sync_required = 1usize;
+    let mut sync_round_peers = BTreeMap::<libp2p::PeerId, u64>::new();
+    let mut sync_conflicts = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut pending_snapshot = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut sync_peer_cursor = 0usize;
@@ -372,6 +374,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         };
                         let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
                         pending_sync.push((peer, sync_outbound_id, sync_id, from_height));
+                        sync_round_peers.insert(peer, from_height);
                     }
                 }
             }
@@ -391,6 +394,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             sync_required = 1;
                             let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer_id, validator_id, state.height);
                             pending_sync.push((peer_id, sync_outbound_id, sync_id, state.height.saturating_add(1)));
+                            sync_round_peers.insert(peer_id, state.height.saturating_add(1));
                         }
                         let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
                         pending_snapshot = Some((peer_id, snapshot_outbound_id, snapshot_request_id, u64::MAX));
