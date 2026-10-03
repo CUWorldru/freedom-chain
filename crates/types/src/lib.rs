@@ -205,8 +205,8 @@ impl VerifiedDeposit {
         if self.recipient.len() != 20 {
             return Err(BridgeAdapterError::InvalidIntent);
         }
-        let mut recipient = [0u8; 20];
-        recipient.copy_from_slice(&self.recipient);
+        let mut recipient = [0u8; 32];
+        recipient[..20].copy_from_slice(&self.recipient);
         let mut message = BridgeMessage {
             protocol_version: BRIDGE_MESSAGE_PROTOCOL_VERSION,
             source_chain_id: self.source_chain_id,
@@ -261,7 +261,8 @@ impl BridgeMessage {
             && self.source_tx_hash == deposit.tx_hash
             && self.source_event_index == deposit.event_index
             && self.amount == deposit.amount
-            && self.recipient.as_slice() == deposit.recipient.as_slice()
+            && self.recipient[..20] == deposit.recipient[..]
+            && self.recipient[20..].iter().all(|b| *b == 0)
             && self.validate_hash()
     }
 
@@ -1060,7 +1061,7 @@ impl BridgeMintAuthorization {
             && self.source_tx_hash != [0; 32]
             && self.destination_chain_id != 0
             && self.amount > 0
-            && self.recipient != [0; 20]
+            && self.recipient != [0; 32]
             && self.approval_count > 0
             && self.authorization_hash == self.compute_hash()
     }
