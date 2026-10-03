@@ -167,6 +167,22 @@ impl ChainState {
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
  }
+ pub fn validate_bitcoin_utxo_attestation_for_commitment(&self,bridge_id:Hash,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
+  let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let validators=self.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
+  if commitment.block_height!=canonical.height+1
+    || attestation.bridge_id!=bridge_id
+    || attestation.bitcoin_tip_height!=commitment.block_height
+    || attestation.bitcoin_tip_hash!=commitment.block_hash
+    || attestation.previous_utxo_root!=commitment.previous_root
+    || attestation.accumulator_root!=commitment.next_root
+    || !commitment.verify()
+    || !attestation.verify(&freedom_types::BitcoinChainCheckpoint{height:commitment.block_height,block_hash:commitment.block_hash,chainwork:[0;32]},&validators,policy.validator_quorum) {
+      return Err(StateError::InvalidBridgeWithdrawal);
+  }
+  Ok(())
+ }
  pub fn register_bitcoin_utxo_commitment_attestation(&mut self,attestation:freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let policy=self.bridge_security_policies.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let canonical=self.bitcoin_canonical_tips.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
