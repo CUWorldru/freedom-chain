@@ -2553,41 +2553,122 @@ impl CrossChainProofAdapter for BitcoinUtxoFinalityAdapter {
 
 #[derive(Clone, Debug, Default)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+fn ethereum_keccak256(data:&[u8])->Hash {
+    use sha3::{Digest,Keccak256};
+    let mut h=Keccak256::new();
+    h.update(data);
+    h.finalize().into()
+}
+
+fn ethereum_rlp_decode_list(input:&[u8])->Result<Vec<&[u8]>,String>{
+    if input.is_empty(){return Err("empty RLP".into());}
+    let (start,len)=match input[0] {
+        0xc0..=0xf7 => (1,(input[0]-0xc0) as usize),
+        0xf8..=0xff => {let n=(input[0]-0xf7) as usize;if input.len()<1+n{return Err("RLP length".into());}let mut l=0usize;for b in &input[1..1+n]{l=(l<<8)|*b as usize;}(1+n,l)}
+        _=>return Err("RLP node is not list".into()),
+    };
+    if start+len!=input.len(){return Err("RLP list length mismatch".into());}
+    let mut out=Vec::new();let mut i=start;let stop=start+len;
+    while i<stop {
+        let (next,payload)=ethereum_rlp_item(input,i)?;
+        out.push(payload);i=next;
+    }
+    if i!=stop{Err("RLP list parse mismatch".into())}else{Ok(out)}
+}
+
+fn ethereum_rlp_item(input:&[u8],i:usize)->Result<(usize,&[u8]),String>{
+    if i>=input.len(){return Err("RLP item out of bounds".into());}
+    let b=input[i];
+    if b<=0x7f{return Ok((i+1,&input[i..i+1]));}
+    if b<=0xb7{let n=(b-0x80) as usize;let s=i+1;let e=s+n;if e>input.len(){return Err("RLP string bounds".into());}return Ok((e,&input[s..e]));}
+    if b<=0xbf{let n=(b-0xb7) as usize;if i+1+n>input.len(){return Err("RLP long string length".into());}let mut l=0usize;for x in &input[i+1..i+1+n]{l=(l<<8)|*x as usize;}let s=i+1+n;let e=s+l;if e>input.len(){return Err("RLP long string bounds".into());}return Ok((e,&input[s..e]));}
+    if b<=0xf7{let n=(b-0xc0) as usize;let s=i+1;let e=s+n;if e>input.len(){return Err("RLP short list bounds".into());}return Ok((e,&input[s..e]));}
+    let n=(b-0xf7) as usize;if i+1+n>input.len(){return Err("RLP long list length".into());}let mut l=0usize;for x in &input[i+1..i+1+n]{l=(l<<8)|*x as usize;}let s=i+1+n;let e=s+l;if e>input.len(){return Err("RLP long list bounds".into());}Ok((e,&input[s..e]))
+}
+
+fn ethereum_compact_path(bytes:&[u8])->Result<(bool,Vec<u8>),String>{
+    if bytes.is_empty(){return Err("empty compact path".into());}
+    let flag=bytes[0]>>4;let leaf=flag>=2;
+    let odd=(flag&1)!=0;let mut nibbles=Vec::new();
+    if odd {nibbles.push(bytes[0]&0x0f);}
+    let start=if odd{1}else{1};
+    if !odd && (flag!=0 && flag!=2){return Err("invalid compact path flags".into());}
+    for b in &bytes[start..]{nibbles.push(b>>4);nibbles.push(b&0x0f);}
+    Ok((leaf,nibbles))
+}
+
+fn ethereum_mpt_verify(root:Hash,key_nibbles:&[u8],nodes:&[Vec<u8>],expected_value:&[u8])->Result<(),String>{
+    if nodes.is_empty(){return Err("empty MPT proof".into());}
+    let mut expected_ref=root;let mut depth=0usize;
+    for raw in nodes {
+        if ethereum_keccak256(raw)!=expected_ref {
+            return Err("MPT node hash mismatch".into());
+        }
+        let items=ethereum_rlp_decode_list(raw)?;
+        match items.len() {
+            17=>{
+                if depth>key_nibbles.len(){return Err("MPT depth overflow".into());}
+                if depth==key_nibbles.len(){if items[16]!=expected_value{return Err("MPT value mismatch".into());}return Ok(());}
+                let idx=key_nibbles[depth] as usize;
+                if idx>15{return Err("invalid nibble".into());}
+                if items[idx].is_empty(){return Err("missing MPT child".into());}
+                expected_ref=if items[idx].len()==32{items[idx].try_into().unwrap()}else{ethereum_keccak256(ethereum_rlp_encode_bytes(items[idx]))};
+                depth+=1;
+            },
+            2=>{
+                let (leaf,path)=ethereum_compact_path(items[0])?;
+                if key_nibbles.len()<depth+path.len() || key_nibbles[depth..depth+path.len()]!=path[..]{return Err("MPT path mismatch".into());}
+                depth+=path.len();
+                if leaf {if depth!=key_nibbles.len()||items[1]!=expected_value{return Err("MPT leaf mismatch".into());}return Ok(());}
+                if depth>=key_nibbles.len(){return Err("MPT extension overflow".into());}
+                expected_ref=if items[1].len()==32{items[1].try_into().unwrap()}else{ethereum_keccak256(ethereum_rlp_encode_bytes(items[1]))};
+            },
+            _=>return Err("invalid MPT node arity".into()),
+        }
+    }
+    Err("MPT proof ended before leaf".into())
+}
+
+fn ethereum_rlp_encode_bytes(payload:&[u8])->Vec<u8>{
+    if payload.len()==1 && payload[0]<0x80{return payload.to_vec();}
+    if payload.len()<56{let mut o=vec![0x80+payload.len() as u8];o.extend_from_slice(payload);o}
+    else {let mut len=payload.len();let mut b=Vec::new();while len>0{b.push((len&0xff) as u8);len>>=8;}b.reverse();let mut o=vec![0xb7+b.len() as u8];o.extend_from_slice(&b);o.extend_from_slice(payload);o}
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumTransactionProof {
-    pub block_number: u64,
-    pub block_hash: Hash,
-    pub transaction_hash: Hash,
-    pub transaction_index: u32,
-    pub receipt_root: Hash,
-    pub proof_nodes: Vec<Hash>,
+    pub block_number:u64,
+    pub block_hash:Hash,
+    pub transaction_hash:Hash,
+    pub transaction_index:u32,
+    pub receipt_root:Hash,
+    pub proof_nodes:Vec<Vec<u8>>,
+    pub receipt_value:Vec<u8>,
 }
 
 impl EthereumTransactionProof {
-    pub fn signing_bytes(&self) -> Vec<u8> {
-        let mut o=Vec::new();
-        o.extend_from_slice(b"FREEDOM-ETH-TX-PROOF-V1");
-        o.extend_from_slice(&self.block_number.to_le_bytes());
-        o.extend_from_slice(&self.block_hash);
-        o.extend_from_slice(&self.transaction_hash);
-        o.extend_from_slice(&self.transaction_index.to_le_bytes());
-        o.extend_from_slice(&self.receipt_root);
-        for n in &self.proof_nodes { o.extend_from_slice(n); }
-        o
+    pub fn signing_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-ETH-TX-PROOF-V2");
+        o.extend_from_slice(&self.block_number.to_le_bytes());o.extend_from_slice(&self.block_hash);
+        o.extend_from_slice(&self.transaction_hash);o.extend_from_slice(&self.transaction_index.to_le_bytes());
+        o.extend_from_slice(&self.receipt_root);o.extend_from_slice(&(self.proof_nodes.len() as u32).to_le_bytes());
+        for n in &self.proof_nodes{o.extend_from_slice(&(n.len() as u32).to_le_bytes());o.extend_from_slice(n);}
+        o.extend_from_slice(&(self.receipt_value.len() as u32).to_le_bytes());o.extend_from_slice(&self.receipt_value);o
     }
-    pub fn proof_hash(&self)->Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
-    pub fn validate_structure(&self)->bool {
-        self.block_number>0 && self.block_hash!=[0;32] && self.transaction_hash!=[0;32]
-            && self.receipt_root!=[0;32] && !self.proof_nodes.is_empty()
+    pub fn proof_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+    pub fn validate_structure(&self)->bool{self.block_number>0&&self.block_hash!=[0;32]&&self.transaction_hash!=[0;32]&&self.receipt_root!=[0;32]&&!self.proof_nodes.is_empty()&&!self.receipt_value.is_empty()}
+    pub fn verify_receipt_mpt(&self)->bool{
+        if !self.validate_structure(){return false;}
+        let key_rlp=ethereum_rlp_encode_bytes(&self.transaction_index.to_be_bytes().into_iter().skip_while(|b|*b==0).collect::<Vec<_>>());
+        let key=ethereum_rlp_decode_list(&ethereum_rlp_encode_bytes(&key_rlp)).ok();
+        let _=key;
+        let mut n=self.transaction_index as u64;let mut nibbles=Vec::new();
+        let mut bytes=Vec::new();while n>0{bytes.push((n&0xff) as u8);n>>=8;}if bytes.is_empty(){bytes.push(0);}bytes.reverse();
+        for b in bytes{nibbles.push(b>>4);nibbles.push(b&0x0f);}
+        ethereum_mpt_verify(self.receipt_root,&nibbles,&self.proof_nodes,&self.receipt_value).is_ok()
     }
+    pub fn verify_binding(&self,envelope:&CrossChainFinalityEnvelope)->bool{self.validate_structure()&&envelope.proof_kind==CrossChainProofKind::Ethereum&&envelope.finalized_height==self.block_number&&envelope.finalized_hash==self.block_hash&&envelope.proof_hash==self.proof_hash()}
 }
-
-    pub fn verify_binding(&self, envelope:&CrossChainFinalityEnvelope)->bool {
-        self.validate_structure()
-            && envelope.proof_kind==CrossChainProofKind::Ethereum
-            && envelope.finalized_height==self.block_number
-            && envelope.finalized_hash==self.block_hash
-            && envelope.proof_hash==self.proof_hash()
-    }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumFinalityProof {
