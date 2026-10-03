@@ -14,6 +14,7 @@ use tokio::time::{interval, Duration};
 
 const ROUND_TIMEOUT_SECS: u64 = 5;
 const SYNC_INTERVAL_SECS: u64 = 10;
+const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1000;
 
 fn request_id(validator_id: Hash, from_height: u64) -> Hash {
     hash_bytes(&[b"FREEDOM-SYNC-V1", &validator_id, &from_height.to_le_bytes()].concat())
@@ -58,8 +59,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = std::env::var("FREEDOM_DB_PATH").unwrap_or_else(|_| "./data/freedom".to_string());
     let store = ChainStore::open(&db_path)?;
     let stored_height = store.latest_height()?;
-    if stored_height > 0 {
-        for block in store.range(1, stored_height)? {
+    let snapshot_interval = std::env::var("FREEDOM_SNAPSHOT_INTERVAL").ok()
+        .and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_SNAPSHOT_INTERVAL);
+    let replay_from = if let Some(snapshot) = store.latest_snapshot()? {
+        let checkpoint = store.get_block(snapshot.height)?.ok_or("snapshot checkpoint block missing")?;
+        if block_hash(&checkpoint) != snapshot.block_hash || checkpoint.header.state_root != snapshot.state_root {
+            return Err(format!("snapshot checkpoint mismatch at {}", snapshot.height).into());
+        }
+        state = snapshot.state;
+        if state.last_block_hash != snapshot.block_hash || state.height != snapshot.height {
+            return Err(format!("snapshot state linkage mismatch at {}", snapshot.height).into());
+        }
+        snapshot.height.saturating_add(1)
+    } else {
+        store.save_snapshot(&state, [0;32])?;
+        1
+    };
+    if stored_height >= replay_from {
+        for block in store.range(replay_from, stored_height)? {
             if block.header.height != state.height + 1 {
                 return Err(format!("stored chain height gap at {}", block.header.height).into());
             }
@@ -215,6 +233,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         if let Some(block) = blocks.get(&hash).cloned() {
                                             let committed = protocol.finalize_if_quorum(&mut state, &block, round)?;
                                             store.put_block(&committed)?;
+                                            if committed.header.height % snapshot_interval == 0 {
+                                                store.save_snapshot(&state, block_hash(&committed))?;
+                                            }
                                             println!("FINALIZED height={} round={} hash={}", committed.header.height, round, hex::encode(block_hash(&committed)));
                                             protocol.reset_round();
                                             blocks.clear();
