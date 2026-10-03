@@ -30,26 +30,32 @@ pub struct Transaction {
     pub signature: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TxKind {
-    Transfer,
-    RegisterNode,
-    SubmitContribution,
-    ClaimReward,
-    Stake,
-    Unstake,
-    CreateTicket,
-    Burn,
-    Governance,
+    Transfer = 1,
+    RegisterNode = 2,
+    SubmitContribution = 3,
+    ClaimReward = 4,
+    Stake = 5,
+    Unstake = 6,
+    CreateTicket = 7,
+    Burn = 8,
+    Governance = 9,
+}
+
+impl TxKind {
+    pub fn code(self) -> u8 { self as u8 }
 }
 
 impl Transaction {
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
+        out.extend_from_slice(b"FREEDOM-TX-V1");
         out.extend_from_slice(&self.chain_id.to_le_bytes());
         out.extend_from_slice(&self.sender);
         out.extend_from_slice(&self.nonce.to_le_bytes());
-        out.push(self.kind as u8);
+        out.push(self.kind.code());
         out.extend_from_slice(&(self.payload.len() as u64).to_le_bytes());
         out.extend_from_slice(&self.payload);
         out.extend_from_slice(&self.fee.to_le_bytes());
@@ -57,7 +63,10 @@ impl Transaction {
     }
 
     pub fn hash(&self) -> Hash {
-        freedom_primitives::hash_bytes(&self.signing_bytes())
+        let mut bytes = self.signing_bytes();
+        bytes.extend_from_slice(&(self.signature.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&self.signature);
+        freedom_primitives::hash_bytes(&bytes)
     }
 }
 
