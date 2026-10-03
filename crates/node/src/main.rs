@@ -158,6 +158,31 @@ mod m31_tests {
     }
 
     #[test]
+    fn snapshot_commitment_fingerprint_changes_when_state_root_changes() {
+        let base = hash_bytes(
+            &[
+                &7u64.to_le_bytes(),
+                &[1u8; 32],
+                &[2u8; 32],
+                &[3u8; 32],
+                &[4u8; 32],
+                &[0u8; 32],
+            ].concat(),
+        );
+        let changed = hash_bytes(
+            &[
+                &7u64.to_le_bytes(),
+                &[1u8; 32],
+                &[9u8; 32],
+                &[3u8; 32],
+                &[4u8; 32],
+                &[0u8; 32],
+            ].concat(),
+        );
+        assert_ne!(base, changed);
+    }
+
+    #[test]
     fn peer_sync_score_enters_and_exits_cooldown() {
         let peer = libp2p::PeerId::random();
         let mut scores = BTreeMap::new();
@@ -734,13 +759,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .entry(snapshot_fingerprint)
                                                 .or_insert((0, response.clone()));
                                             snapshot_entry.0 += 1;
-                                            if snapshot_required > 1 && snapshot_candidates.len() > 1 {
+                                            let snapshot_candidate_count = snapshot_candidates.len();
+                                            if snapshot_required > 1 && snapshot_candidate_count > 1 {
                                                 eprintln!(
                                                     "SNAPSHOT_CONFLICT peer={} height={} fingerprint={} candidates={}",
                                                     peer,
                                                     response.height,
                                                     hex::encode(snapshot_fingerprint),
-                                                    snapshot_candidates.len()
+                                                    snapshot_candidate_count
                                                 );
                                             }
                                             if snapshot_entry.0 < snapshot_required {
