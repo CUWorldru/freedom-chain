@@ -1,8 +1,7 @@
 use freedom_consensus::{block_hash, proposer_for_height};
-use freedom_crypto::generate_keypair;
-use freedom_network::{build_swarm, decode_message, encode_message, make_proposal, publish, NetworkMessage};
+use freedom_network::{build_swarm, decode_message, make_proposal, publish, NetworkMessage};
 use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_SUPPLY, Hash};
-use freedom_runtime::{build_next_block, execute_block, initialize, Mempool, ValidatorProtocol};
+use freedom_runtime::{build_next_block, initialize, Mempool, ValidatorProtocol};
 use freedom_types::{Genesis, Validator};
 use libp2p::{Multiaddr, SwarmEvent};
 use libp2p::futures::StreamExt;
@@ -80,6 +79,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if let Some(block) = blocks.get(&hash).cloned() {
                                     let committed = protocol.finalize_if_quorum(&mut state, &block)?;
                                     println!("FINALIZED height={} hash={}", committed.header.height, hex::encode(block_hash(&committed)));
+                                    protocol.reset_round();
+                                    blocks.clear();
+                                    let next_height = state.height + 1;
+                                    if let Some(next_proposer) = proposer_for_height(&state, next_height) {
+                                        if next_proposer == state.validators.get(&validator_id).unwrap().owner {
+                                            let mempool = Mempool::new();
+                                            let next_block = build_next_block(&state, &mempool, next_proposer, next_height, next_height, 100)?;
+                                            let next_proposal = make_proposal(next_block.clone(), &consensus_key);
+                                            blocks.insert(next_proposal.block_hash, next_block);
+                                            println!("proposing height={} hash={}", next_height, hex::encode(next_proposal.block_hash));
+                                            publish(&mut swarm, &NetworkMessage::Proposal(next_proposal))?;
+                                        }
+                                    }
                                 }
                             }
                         }
