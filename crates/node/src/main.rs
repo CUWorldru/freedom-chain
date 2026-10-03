@@ -20,6 +20,21 @@ fn request_id(validator_id: Hash, from_height: u64) -> Hash {
     hash_bytes(&[b"FREEDOM-SYNC-V1", &validator_id, &from_height.to_le_bytes()].concat())
 }
 
+fn send_snapshot_request(
+    swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
+    peer: libp2p::PeerId,
+    validator_id: Hash,
+    height: u64,
+) -> Hash {
+    let request_id = hash_bytes(&[b"FREEDOM-SNAPSHOT-V1", &validator_id, &height.to_le_bytes()].concat());
+    swarm.behaviour_mut().sync.send_request(
+        &peer,
+        SyncWireRequest::Snapshot(freedom_network::SnapshotSyncRequest { request_id, height }),
+    );
+    println!("snapshot_request peer={} height={} request_id={}", peer, height, hex::encode(request_id));
+    request_id
+}
+
 fn send_sync_request(
     swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
     peer: libp2p::PeerId,
@@ -189,6 +204,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = swarm.behaviour_mut().kademlia.bootstrap();
                         if !connected_peers.contains(&peer_id) { connected_peers.push(peer_id); }
                         pending_sync = Some(send_sync_request(&mut swarm, peer_id, validator_id, state.height));
+                        if state.height == 0 {
+                            let _ = send_snapshot_request(&mut swarm, peer_id, validator_id, 0);
+                        }
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => { connected_peers.retain(|p| *p != peer_id); println!("peer_disconnected={peer_id}"); },
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
