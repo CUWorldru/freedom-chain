@@ -107,6 +107,8 @@ pub struct UnbondingEntry {
     pub requested_height: u64,
     pub release_height: u64,
 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ValidatorLifecycle { Active, Unbonding, Exited }
 pub struct ValidatorSetEntry {
     pub validator_id: Hash,
     pub owner: Address,
