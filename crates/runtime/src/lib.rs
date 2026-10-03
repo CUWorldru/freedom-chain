@@ -37,7 +37,41 @@ pub fn commit_validator_set_certificate(
 }
 
 pub fn initialize(g:&Genesis)->Result<ChainState,String>{if g.chain_id!=CHAIN_ID{return Err("invalid chain id".into())}let s=ChainState::genesis(g);validate_genesis(&s,&ConsensusConfig::default())?;s.assert_invariants();Ok(s)}
-pub fn execute_transaction(s:&mut ChainState,tx:&Transaction)->Result<Receipt,String>{if tx.chain_id!=CHAIN_ID{return Err("invalid chain id".into())}let a=s.accounts.get(&tx.sender).ok_or_else(||"sender account not found".to_string())?;if tx.signature.len()!=64{return Err("invalid signature length".into())}let mut sig=[0u8;64];sig.copy_from_slice(&tx.signature);if !verify(&a.public_key,&tx.signing_bytes(),&sig){return Err("invalid transaction signature".into())}let h:Hash=tx.hash();let before=s.events.len();s.execute_transaction(tx).map_err(format_state_error)?;s.assert_invariants();let events=s.events[before..].to_vec();Ok(Receipt{tx_hash:h,success:true,gas_used:1,events})}
+pub fn validate_transaction_admission(s:&ChainState,tx:&Transaction)->Result<(),String>{
+ if tx.chain_id!=CHAIN_ID{return Err("invalid chain id".into())}
+ let a=s.accounts.get(&tx.sender).ok_or_else(||"sender account not found".to_string())?;
+ if tx.nonce < a.nonce{return Err("stale transaction nonce".into())}
+ if tx.signature.len()!=64{return Err("invalid signature length".into())}
+ let mut sig=[0u8;64];sig.copy_from_slice(&tx.signature);
+ if !verify(&a.public_key,&tx.signing_bytes(),&sig){return Err("invalid transaction signature".into())}
+ match tx.kind {
+  freedom_types::TxKind::BridgeMint => validate_bridge_mint_admission(s,tx)?,
+  _ => {}
+ }
+ Ok(())
+}
+
+fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),String>{
+ let p=freedom_types::BridgeMintTransactionPayload::decode(&tx.payload).map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
+ let policy=s.bridge_security_policies.get(&p.message.bridge_id).ok_or_else(||"InvalidBridgeMintTransaction".to_string())?;
+ let keys=s.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<freedom_primitives::Hash,[u8;32]>>();
+ let expected=freedom_types::BridgeMintAuthorization::from_authenticated_message(&p.message,&p.deposit,&p.approvals,policy,&keys)
+   .map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
+ if expected!=p.authorization{return Err("InvalidBridgeMintTransaction".into())}
+ if p.message.destination_chain_id!=CHAIN_ID{return Err("InvalidBridgeMintTransaction".into())}
+ if !p.message.validate_hash() || !p.message.matches_verified_deposit(&p.deposit){return Err("InvalidBridgeMintTransaction".into())}
+ if s.bridge_message_status.contains_key(&p.message.replay_key()){return Err("DuplicateBridgeMessage".into())}
+ Ok(())
+}
+
+pub fn execute_transaction(s:&mut ChainState,tx:&Transaction)->Result<Receipt,String>{
+ validate_transaction_admission(s,tx)?;
+ let h:Hash=tx.hash();let before=s.events.len();
+ s.execute_transaction(tx).map_err(format_state_error)?;
+ s.assert_invariants();
+ let events=s.events[before..].to_vec();
+ Ok(Receipt{tx_hash:h,success:true,gas_used:1,events})
+}
 pub fn execute_block(s:&mut ChainState,block:&Block)->Result<Block,String>{
 if block.header.height!=s.height+1{return Err("invalid block height".into())}
 if block.header.previous_hash!=s.last_block_hash{return Err("invalid previous block hash".into())}
@@ -78,15 +112,7 @@ impl Mempool {
     pub fn is_empty(&self) -> bool { self.transactions.is_empty() }
 
     pub fn submit(&mut self, state: &ChainState, tx: Transaction) -> Result<Hash, String> {
-        if tx.chain_id != CHAIN_ID { return Err("invalid chain id".into()); }
-        let account = state.accounts.get(&tx.sender).ok_or_else(|| "sender account not found".to_string())?;
-        if tx.nonce < account.nonce { return Err("stale transaction nonce".into()); }
-        if tx.signature.len() != 64 { return Err("invalid signature length".into()); }
-        let mut sig = [0u8; 64];
-        sig.copy_from_slice(&tx.signature);
-        if !verify(&account.public_key, &tx.signing_bytes(), &sig) {
-            return Err("invalid transaction signature".into());
-        }
+        validate_transaction_admission(state, &tx)?;
         let hash = tx.hash();
         if self.transactions.contains_key(&hash) { return Err("duplicate transaction".into()); }
         self.transactions.insert(hash, tx);
