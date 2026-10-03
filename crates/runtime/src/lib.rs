@@ -275,6 +275,70 @@ mod tests {
         assert_eq!(execute_transaction(&mut state,&tx),Err("InvalidBridgeMintTransaction".into()));
     }
 
+
+    #[test]
+    fn mempool_rejects_invalid_bridge_mint_before_admission() {
+        let mut state=test_state();
+        let sender=state.accounts.keys().next().copied().unwrap();
+        let signing_key=ed25519_dalek::SigningKey::from_bytes(&[42u8;32]);
+        let payload=freedom_types::BridgeMintTransactionPayload{
+            message:freedom_types::BridgeMessage{
+                protocol_version:1,source_chain_id:2,destination_chain_id:CHAIN_ID,
+                bridge_id:[1;32],asset_id:[2;32],source_tx_hash:[3;32],
+                source_event_index:0,nonce:1,amount:1,recipient:[4;32],message_hash:[5;32]},
+            deposit:freedom_types::VerifiedDeposit{
+                canonical_asset_id:[2;32],representation_asset_id:[6;32],bridge_id:[1;32],
+                source_chain_id:2,tx_hash:[3;32],event_index:0,block_or_slot:0,
+                confirmations:1,amount:1,recipient:vec![4;20],replay_key:[7;32],proof_hash:[8;32]},
+            authorization:freedom_types::BridgeMintAuthorization{
+                bridge_id:[1;32],message_hash:[5;32],replay_key:[7;32],canonical_asset_id:[2;32],
+                representation_asset_id:[6;32],source_chain_id:2,source_tx_hash:[3;32],
+                source_event_index:0,destination_chain_id:CHAIN_ID,nonce:1,amount:1,
+                recipient:[4;32],approval_count:1,authorization_hash:[9;32]},
+            approvals:freedom_types::BridgeMessageApprovalSet{bridge_id:[1;32],message_hash:[5;32],approvals:vec![]}
+        }.encode().unwrap();
+        let mut tx=Transaction{chain_id:CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload,fee:0,signature:Vec::new()};
+        tx.signature=sign(&signing_key,&tx.signing_bytes()).to_vec();
+        let mut mempool=Mempool::new();
+        assert_eq!(mempool.submit(&state,tx),Err("InvalidBridgeMintTransaction".into()));
+        assert!(mempool.is_empty());
+    }
+
+    #[test]
+    fn mempool_rejects_bridge_mint_replay_before_block_build() {
+        let mut state=test_state();
+        let sender=state.accounts.keys().next().copied().unwrap();
+        let signing_key=ed25519_dalek::SigningKey::from_bytes(&[42u8;32]);
+        let bridge=[1;32];
+        let policy=freedom_types::BridgeSecurityPolicy{bridge_id:bridge,approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,
+            max_deposit_amount:1000,max_withdrawal_amount:1000,daily_limit:1000,emergency_paused:false,nonce_floor:0};
+        state.bridge_security_policies.insert(bridge,policy);
+        let msg=freedom_types::BridgeMessage{protocol_version:1,source_chain_id:2,destination_chain_id:CHAIN_ID,
+            bridge_id:bridge,asset_id:[2;32],source_tx_hash:[3;32],source_event_index:0,nonce:1,amount:1,
+            recipient:[4;32],message_hash:[0;32]};
+        let mut msg=msg;msg.message_hash=msg.compute_hash();
+        state.bridge_message_status.insert(msg.replay_key(),freedom_types::BridgeMessageStatus::Minted);
+        let dep=freedom_types::VerifiedDeposit{canonical_asset_id:[2;32],representation_asset_id:[6;32],bridge_id:bridge,
+            source_chain_id:2,tx_hash:[3;32],event_index:0,block_or_slot:0,confirmations:1,amount:1,
+            recipient:vec![4;20],replay_key:[7;32],proof_hash:[8;32]};
+        let unsigned=freedom_types::BridgeMessageApproval{bridge_id:bridge,message_hash:msg.message_hash,
+            validator_id:state.validators.keys().next().copied().unwrap(),signature:vec![0;64]};
+        let key=ed25519_dalek::SigningKey::from_bytes(&[1u8;32]);
+        let sig=sign(&key,&unsigned.approval_hash());
+        let approvals=freedom_types::BridgeMessageApprovalSet{bridge_id:bridge,message_hash:msg.message_hash,
+            approvals:vec![freedom_types::BridgeMessageApproval{signature:sig.to_vec(),..unsigned}]};
+        let mut tx=Transaction{chain_id:CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,
+            payload:freedom_types::BridgeMintTransactionPayload{message:msg.clone(),deposit:dep.clone(),
+                authorization:freedom_types::BridgeMintAuthorization{
+                    bridge_id:bridge,message_hash:msg.message_hash,replay_key:[7;32],canonical_asset_id:[2;32],
+                    representation_asset_id:[6;32],source_chain_id:2,source_tx_hash:[3;32],source_event_index:0,
+                    destination_chain_id:CHAIN_ID,nonce:1,amount:1,recipient:[4;32],approval_count:1,authorization_hash:[9;32]},
+                approvals}.encode().unwrap(),fee:0,signature:Vec::new()};
+        tx.signature=sign(&signing_key,&tx.signing_bytes()).to_vec();
+        let mut mempool=Mempool::new();
+        assert!(mempool.submit(&state,tx).is_err());
+    }
     #[test]
     fn mempool_orders_and_block_builder_commits_transfer() {
         let mut state = test_state();
