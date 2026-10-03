@@ -186,7 +186,7 @@ M2 establishes the evidence layer for useful network work without minting 321M y
 
 - libp2p Kademlia is enabled alongside Identify, Ping and Gossipsub.
 - Identify listen addresses are fed into Kademlia so discovered peers can enter the routing table.
-- FREEDOM_PEERS remains a bootstrap mechanism; Kademlia then maintains discovery beyond the initial peers.
+- NETWORK_321MORE_PEERS remains a bootstrap mechanism; the legacy FREEDOM_PEERS name is accepted for compatibility. Kademlia then maintains discovery beyond the initial peers.
 - Block proposals and validator votes are bound to an explicit consensus round.
 - proposer selection is deterministic for `(height, round)`.
 - validators emit signed timeout messages when a round exceeds the local timeout.
@@ -219,8 +219,8 @@ Implemented:
 - Snapshot loading rejects height/state-root mismatches.
 - Validator startup restores the latest snapshot, verifies it against the corresponding stored block, then replays only the tail blocks.
 - Genesis state is checkpointed automatically when no snapshot exists.
-- Finalized and synced blocks create snapshots at `FREEDOM_SNAPSHOT_INTERVAL` (default `1000`).
-- `FREEDOM_DB_PATH` remains configurable.
+- Finalized and synced blocks create snapshots at `NETWORK_321MORE_SNAPSHOT_INTERVAL` (default `1000`). The legacy FREEDOM_SNAPSHOT_INTERVAL name is accepted for compatibility.
+- `NETWORK_321MORE_DB_PATH` remains configurable; the legacy FREEDOM_DB_PATH name is accepted for compatibility.
 
 Current limitation: snapshot transfer between peers is not yet implemented. Network sync is still block-based; dedicated request/response snapshot transport and fast-state activation are planned for the next networking milestone.
 
@@ -839,9 +839,9 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - external recipient addresses are stored as opaque bytes, allowing UTXO addresses, EVM/TRON contract addresses, TON/Solana addresses, and other network-specific formats to be handled by separate adapters;
 - outbound lifecycle is consensus-visible and forward-only: Requested → Validated → Approved → Signing → Broadcast → ExternalConfirmed → Finalized, with controlled rejection from the early stages;
 - withdrawal identity is bound to bridge, asset, destination chain, sender, and nonce, while the request hash commits to the complete withdrawal payload including the external recipient;
-- bidirectional bridge accounting tracks verified external locked, Freedom minted, Freedom burned, and external released amounts;
+- bidirectional bridge accounting tracks verified external locked, 321M minted, 321M burned, and external released amounts;
 - accounting enforces the conservation invariant minted - burned == external_locked - external_released, plus monotonic safety bounds preventing mint above verified lock, burn above minted, or release above burned;
-- final external release cannot be finalized until the corresponding Freedom-side representation has been burned;
+- final external release cannot be finalized until the corresponding 321MORE-side representation has been burned;
 - bridge withdrawals, lifecycle status, and accounting are included in the deterministic state root and survive serde-defaulted state migration;
 - M81 is the protocol accounting/state-machine foundation only: it does not yet broadcast real Bitcoin/EVM/TRON/TON/Solana transactions or hold private bridge signing keys;
 - network-specific adapters will be implemented separately, with Bitcoin using a UTXO model and EVM/TRON/TON/Solana using their respective transaction/finality models.
@@ -863,7 +863,7 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - added a Bitcoin-specific UTXO deposit model with transaction hash, vout, satoshi amount, block height, confirmation depth, Merkle branch/index, and scriptPubKey;
 - Bitcoin deposit identity uses `tx_hash + vout`, matching the UTXO/output model and feeding the existing bridge replay identity through the event index;
 - deposits require the configured bridge ID, Bitcoin chain ID, non-zero amount, scriptPubKey, Merkle proof, and required confirmation depth;
-- Bitcoin withdrawals use an opaque recipient script/bytes representation and produce a canonical Freedom withdrawal intent without embedding private keys or transaction signing in consensus;
+- Bitcoin withdrawals use an opaque recipient script/bytes representation and produce a canonical 321MORE withdrawal intent without embedding private keys or transaction signing in consensus;
 - the adapter is currently a verification/intent layer: it does not yet connect to Bitcoin RPC, select UTXOs, construct signed transactions, broadcast transactions, or verify a live Merkle proof cryptographically;
 - the same bridge protocol remains reusable for EVM, TRON, TON, Solana, and future adapters.
 
