@@ -1206,3 +1206,12 @@ It atomically:
 5. advances the canonical Bitcoin checkpoint and persisted UTXO attestation together.
 
 The block transition remains adapter-specific: a Bitcoin block hash is never treated as an SMT root.
+
+
+## M133 — Cross-Chain Finality Envelope
+
+Introduces a chain-neutral `CrossChainFinalityEnvelope` carrying bridge/chain identity, sequence, finalized block or checkpoint identity, previous/current state roots, proof kind, and a domain-separated proof hash.
+
+Supported proof kinds currently include Bitcoin UTXO, Ethereum, Tron, TON, Solana and a generic finality adapter. The envelope is deliberately only a common boundary: each chain must provide its own proof construction and verification rules.
+
+Bitcoin validation additionally requires the candidate finality height to be the successor of the persisted canonical tip and rejects unchanged state roots and sequence replay.
