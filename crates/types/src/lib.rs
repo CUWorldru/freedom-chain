@@ -376,7 +376,10 @@ pub fn expected_asset_kind_for_mainnet(
 ) -> bool {
     match chain_id {
         BITCOIN_MAINNET_CHAIN_ID => kind == CrossChainAssetKind::BitcoinUtxo,
-        ETHEREUM_MAINNET_CHAIN_ID => kind == CrossChainAssetKind::Erc20,
+        ETHEREUM_MAINNET_CHAIN_ID => matches!(
+            kind,
+            CrossChainAssetKind::EthereumNative | CrossChainAssetKind::Erc20
+        ),
         TRON_MAINNET_CHAIN_ID => kind == CrossChainAssetKind::Trc20,
         _ => false,
     }
@@ -591,6 +594,11 @@ impl CrossChainAssetRepresentation {
             CrossChainAssetKind::BitcoinUtxo => {
                 self.representation.asset_type == AssetType::Native
                     && self.representation.contract_address.as_slice() == b"BTC"
+            }
+            CrossChainAssetKind::EthereumNative => {
+                self.representation.asset_type == AssetType::Native
+                    && self.representation.source_chain_id == ETHEREUM_MAINNET_CHAIN_ID
+                    && self.representation.contract_address.as_slice() == b"ETH"
             }
             CrossChainAssetKind::Erc20
             | CrossChainAssetKind::Trc20
@@ -1125,6 +1133,7 @@ pub struct BridgeDepositProof {
 #[repr(u8)]
 pub enum CrossChainAssetKind {
     BitcoinUtxo = 1,
+    EthereumNative = 6,
     Erc20 = 2,
     Trc20 = 3,
     TonJetton = 4,
