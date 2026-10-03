@@ -1137,3 +1137,12 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - The header parent hash must equal the persisted canonical Bitcoin tip hash.
 - The resulting block hash must equal the transition next_tip.
 - UTXO root and leaf count are recomputed from the transaction set only after header binding succeeds.
+
+
+## M126 — Compact Bitcoin UTXO Transition Boundary
+
+- Adds transition witnesses and a multiproof boundary so bridge proofs do not inherently require transmitting the complete previous UTXO set.
+- Spent outputs are authenticated against the previous UTXO root.
+- The protocol explicitly does not claim that spent membership alone is sufficient to derive the next root.
+- A complete transition still requires enough authenticated Merkle witness material to reconstruct the affected tree state; the current boundary represents that requirement explicitly.
+- This avoids a false compactness claim while leaving the proof format ready for a real Merkle multiproof implementation.
