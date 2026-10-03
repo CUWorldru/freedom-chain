@@ -724,3 +724,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - reputation policy assigns a weight to each evidence class;
 - current weights remain neutral at 1 for both classes, preserving existing behavior;
 - future policy changes can increase or decrease the score impact of a specific evidence class without changing the evidence journal format.
+
+
+## M70 — Reputation Evidence Severity
+
+- reputation evidence now carries explicit severity: Normal, Elevated, or Critical;
+- policy applies a severity multiplier after the evidence-kind weight;
+- current production evidence remains Normal, preserving existing scoring behavior;
+- policy multipliers are 1x Normal, 2x Elevated, and 3x Critical;
+- severity is persisted with evidence, so later policy inspection can distinguish ordinary and elevated incidents.
