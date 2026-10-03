@@ -335,10 +335,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     continue;
                                                 }
                                             }
-                                            let snapshot_state: freedom_state::ChainState = snapshot_state;
-                                                Ok(s) => s,
-                                                Err(e) => { eprintln!("SNAPSHOT_REJECTED invalid state encoding: {e}"); continue; }
-                                            };
+
                                             if snapshot_state.height != response.height
                                                 || snapshot_state.last_block_hash != response.block_hash
                                                 || snapshot_state.state_root() != response.state_root {
@@ -350,7 +347,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 eprintln!("snapshot checkpoint persistence error: {e}");
                                                 continue;
                                             }
-                                            if let Err(e) = store.save_snapshot_with_certificate(&state, response.block_hash, response.certificate.clone()) {
+                                            if let Err(e) = store.save_snapshot_with_certificate_and_validator_set(
+                                                &state,
+                                                response.block_hash,
+                                                response.certificate.clone(),
+                                                response.finality_validator_set.clone(),
+                                            ) {
                                                 eprintln!("snapshot persistence error: {e}");
                                                 continue;
                                             }
