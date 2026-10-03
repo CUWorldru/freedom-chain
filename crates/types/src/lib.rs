@@ -2022,3 +2022,87 @@ impl BitcoinUtxoAccumulatorProof {
             && self.verify_membership(canonical_tip)
     }
 }
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoCommitmentAttestation {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub policy_id: Hash,
+    pub sequence: u64,
+    pub bitcoin_tip_height: u64,
+    pub bitcoin_tip_hash: Hash,
+    pub bitcoin_tip_chainwork: [u8; 32],
+    pub accumulator_root: Hash,
+    pub validator_ids: Vec<Hash>,
+    pub signatures: Vec<BitcoinReorgRecoverySignature>,
+    pub attestation_hash: Hash,
+}
+
+impl BitcoinUtxoCommitmentAttestation {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-BITCOIN-UTXO-ATTESTATION-V1");
+        o.extend_from_slice(&self.bridge_id);
+        o.extend_from_slice(&self.chain_id.to_le_bytes());
+        o.extend_from_slice(&self.policy_id);
+        o.extend_from_slice(&self.sequence.to_le_bytes());
+        o.extend_from_slice(&self.bitcoin_tip_height.to_le_bytes());
+        o.extend_from_slice(&self.bitcoin_tip_hash);
+        o.extend_from_slice(&self.bitcoin_tip_chainwork);
+        o.extend_from_slice(&self.accumulator_root);
+        for id in &self.validator_ids { o.extend_from_slice(id); }
+        o
+    }
+
+    pub fn compute_hash(&self) -> Hash {
+        freedom_primitives::hash_bytes(&self.signing_bytes())
+    }
+
+    pub fn validate_structure(&self) -> bool {
+        self.bridge_id != [0;32]
+            && self.chain_id != 0
+            && self.policy_id != [0;32]
+            && self.sequence > 0
+            && self.bitcoin_tip_height > 0
+            && self.bitcoin_tip_hash != [0;32]
+            && self.bitcoin_tip_chainwork != [0;32]
+            && self.accumulator_root != [0;32]
+            && !self.validator_ids.is_empty()
+            && self.validator_ids.len() == self.signatures.len()
+            && self.attestation_hash == self.compute_hash()
+    }
+
+    pub fn authenticated_count(&self, validators: &std::collections::BTreeMap<Hash,[u8;32]>) -> u16 {
+        let mut seen=std::collections::BTreeSet::new();
+        for sig in &self.signatures {
+            if sig.signature.len()!=64 || seen.contains(&sig.validator_id) {
+                continue;
+            }
+            if !self.validator_ids.contains(&sig.validator_id) {
+                continue;
+            }
+            if let Some(key)=validators.get(&sig.validator_id) {
+                let Ok(signature)=sig.signature.as_slice().try_into() else { continue };
+                if freedom_crypto::verify(key,&self.signing_bytes(),signature) {
+                    seen.insert(sig.validator_id);
+                }
+            }
+        }
+        seen.len() as u16
+    }
+
+    pub fn verify(
+        &self,
+        canonical_tip: &BitcoinChainCheckpoint,
+        validators: &std::collections::BTreeMap<Hash,[u8;32]>,
+        quorum: u16,
+    ) -> bool {
+        self.validate_structure()
+            && quorum > 0
+            && self.bitcoin_tip_height == canonical_tip.height
+            && self.bitcoin_tip_hash == canonical_tip.block_hash
+            && self.bitcoin_tip_chainwork == canonical_tip.chainwork
+            && self.authenticated_count(validators) >= quorum
+    }
+}
