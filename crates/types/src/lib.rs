@@ -1460,6 +1460,23 @@ pub enum DepositVerificationError {
     ReplayDetected,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CryptographicDepositVerification {
+    pub proof_hash: Hash,
+}
+
+impl CryptographicDepositVerification {
+    pub fn verify(proof: &CrossChainAssetProof) -> Result<Self, DepositVerificationError> {
+        if !proof.validate(proof.bridge_deposit.confirmations) {
+            return Err(DepositVerificationError::InvalidProof);
+        }
+        if proof.proof_hash != proof.compute_hash() {
+            return Err(DepositVerificationError::InvalidProof);
+        }
+        Ok(Self { proof_hash: proof.proof_hash })
+    }
+}
+
 pub struct DepositVerifier;
 
 impl DepositVerifier {
