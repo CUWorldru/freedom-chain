@@ -3866,3 +3866,60 @@ mod m144_tron_event_tests {
         assert!(!p.validate_transfer_event());
     }
 }
+
+#[cfg(test)]
+mod m145_tron_inclusion_tests {
+    use super::*;
+
+    fn pair(a: Hash, b: Hash) -> Hash {
+        TronTransactionInclusionProof::sha256_pair(a, b)
+    }
+
+    #[test]
+    fn tron_tx_inclusion_matches_java_tron_merkle_rules() {
+        let txs = vec![[1;32], [2;32], [3;32], [4;32], [5;32]];
+        let p0 = pair(txs[0], txs[1]);
+        let p1 = pair(txs[2], txs[3]);
+        let p2 = pair(p0, p1);
+        let root = pair(p2, txs[4]);
+
+        let proof = TronTransactionInclusionProof {
+            tx_hash: txs[4],
+            block_number: 42,
+            block_id: [9;32],
+            transaction_index: 4,
+            transaction_count: 5,
+            siblings: vec![None, Some(p2), None],
+        };
+        assert!(proof.verify_against_root(root));
+
+        let proof0 = TronTransactionInclusionProof {
+            tx_hash: txs[0],
+            block_number: 42,
+            block_id: [9;32],
+            transaction_index: 0,
+            transaction_count: 5,
+            siblings: vec![Some(txs[1]), Some(p1), Some(txs[4])],
+        };
+        assert!(proof0.verify_against_root(root));
+    }
+
+    #[test]
+    fn tron_tx_inclusion_rejects_wrong_sibling_and_count() {
+        let txs = vec![[1;32], [2;32]];
+        let root = pair(txs[0], txs[1]);
+        let mut proof = TronTransactionInclusionProof {
+            tx_hash: txs[0],
+            block_number: 42,
+            block_id: [9;32],
+            transaction_index: 0,
+            transaction_count: 2,
+            siblings: vec![Some(txs[1])],
+        };
+        assert!(proof.verify_against_root(root));
+        proof.siblings[0] = Some([7;32]);
+        assert!(!proof.verify_against_root(root));
+        proof.transaction_count = 3;
+        assert!(!proof.verify_against_root(root));
+    }
+}
