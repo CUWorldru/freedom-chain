@@ -2124,10 +2124,9 @@ pub fn select_bitcoin_chain<'a>(
         return Err(BridgeAdapterError::InvalidProof);
     }
 
-    match compare_bitcoin_chainwork(
-        &candidate_a.expected_chainwork,
-        &candidate_b.expected_chainwork,
-    ) {
+    let work_a = candidate_a.cumulative_chainwork()?;
+    let work_b = candidate_b.cumulative_chainwork()?;
+    match compare_bitcoin_chainwork(&work_a, &work_b) {
         BitcoinChainSelection::CandidateA => Ok(candidate_a),
         BitcoinChainSelection::CandidateB => Ok(candidate_b),
         BitcoinChainSelection::EqualWork => {
