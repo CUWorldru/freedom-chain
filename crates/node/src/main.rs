@@ -31,6 +31,15 @@ fn select_sync_peer(peers: &[libp2p::PeerId], cursor: &mut usize) -> Option<libp
     Some(peer)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SyncMisbehaviorEvidence {
+    peer: libp2p::PeerId,
+    from_height: u64,
+    request_id: Hash,
+    batch_fingerprint: Hash,
+    reason: String,
+}
+
 fn send_snapshot_request(
     swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
     peer: libp2p::PeerId,
@@ -341,6 +350,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_required = 1usize;
     let mut sync_round_peers = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_conflicts = BTreeMap::<libp2p::PeerId, u64>::new();
+    let mut sync_misbehavior = Vec::<SyncMisbehaviorEvidence>::new();
     let mut pending_snapshot = None::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut sync_peer_cursor = 0usize;
