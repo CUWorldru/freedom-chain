@@ -69,17 +69,25 @@ impl ChainStore {
         if blocks.is_empty() {
             return Ok(());
         }
+        let mut expected_height = blocks[0].header.height;
+        if expected_height == 0 {
+            return Err(StorageError::InvalidMetadata);
+        }
+
         let mut batch = WriteBatch::default();
         for block in blocks {
-            if block.header.height == 0 {
+            if block.header.height != expected_height {
                 return Err(StorageError::InvalidMetadata);
             }
             let bytes = serde_json::to_vec(block)
                 .map_err(|e| StorageError::Codec(e.to_string()))?;
             batch.put(Self::height_key(block.header.height), bytes);
-            batch.put(META_HEIGHT, block.header.height.to_be_bytes());
-            batch.put(META_HASH, block_hash(block));
+            expected_height = expected_height.saturating_add(1);
         }
+
+        let tip = blocks.last().expect("non-empty batch");
+        batch.put(META_HEIGHT, tip.header.height.to_be_bytes());
+        batch.put(META_HASH, block_hash(tip));
         self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))?;
         Ok(())
     }
@@ -407,6 +415,26 @@ mod tests {
         store.validate_tip_metadata().unwrap();
         store.db.put(META_HASH, [9u8;32]).unwrap();
         assert!(matches!(store.validate_tip_metadata(), Err(StorageError::InvalidMetadata)));
+    }
+
+    #[test]
+    fn atomic_block_batch_rejects_non_contiguous_members_without_writing() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let make = |height| Block {
+            header: BlockHeader {
+                height, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: height, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        assert!(matches!(
+            store.put_blocks_atomic(&[make(1), make(3)]),
+            Err(StorageError::InvalidMetadata)
+        ));
+        assert!(store.get_block(1).unwrap().is_none());
+        assert!(store.get_block(3).unwrap().is_none());
+        assert_eq!(store.latest_height().unwrap(), 0);
     }
 
     #[test]
