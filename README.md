@@ -67,6 +67,14 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - wallet layer does not mint, burn, or alter balances
 - chain state remains the authoritative source of wallet balances
 
+## M6 — Wallet read API / transaction history
+
+- wallet snapshot reads the authoritative chain balance
+- balance is exposed in mFDM and human-readable FDM form
+- successful transactions are recorded in the chain ledger
+- wallet history is derived from chain ledger entries, not a separate balance database
+- no wallet API can mint or modify FDM
+
 ## Roadmap
 
 - M3: protocol-issued FDM rewards from verified contribution WU
