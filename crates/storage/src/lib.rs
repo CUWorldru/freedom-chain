@@ -1,7 +1,7 @@
 use freedom_state::ChainState;
 use freedom_primitives::{CHAIN_ID, Hash};
 use freedom_types::Block;
-use rocksdb::{Options, DB};
+use rocksdb::{Options, DB, WriteBatch};
 use std::path::Path;
 
 const BLOCK_PREFIX: &[u8] = b"block:";
@@ -53,13 +53,32 @@ impl ChainStore {
     }
 
     pub fn put_block(&self, block: &Block) -> Result<(), StorageError> {
+        if block.header.height == 0 {
+            return Err(StorageError::InvalidMetadata);
+        }
         let bytes = serde_json::to_vec(block).map_err(|e| StorageError::Codec(e.to_string()))?;
-        self.db.put(Self::height_key(block.header.height), bytes)
-            .map_err(|e| StorageError::Rocks(e.to_string()))?;
-        self.db.put(META_HEIGHT, block.header.height.to_be_bytes())
-            .map_err(|e| StorageError::Rocks(e.to_string()))?;
-        self.db.put(META_HASH, block_hash(block))
-            .map_err(|e| StorageError::Rocks(e.to_string()))?;
+        let mut batch = WriteBatch::default();
+        batch.put(Self::height_key(block.header.height), bytes);
+        batch.put(META_HEIGHT, block.header.height.to_be_bytes());
+        batch.put(META_HASH, block_hash(block));
+        self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn validate_tip_metadata(&self) -> Result<(), StorageError> {
+        let height = self.latest_height()?;
+        let hash = self.latest_hash()?;
+        if height == 0 {
+            if hash != [0; 32] {
+                return Err(StorageError::InvalidMetadata);
+            }
+            return Ok(());
+        }
+        let block = self.get_block(height)?
+            .ok_or(StorageError::MissingBlock(height))?;
+        if block_hash(&block) != hash {
+            return Err(StorageError::InvalidMetadata);
+        }
         Ok(())
     }
 
