@@ -37,7 +37,7 @@ pub fn total_active_stake(state: &ChainState) -> u128 {
 
 pub fn stake_quorum_reached(state: &ChainState, signers: &std::collections::BTreeSet<Hash>) -> bool {
     let total = total_active_stake(state);
-    if total == 0 { return false; }
+    if total == 0 { return signers.len() >= quorum_threshold(state.active_validator_set.len()); }
     let signed = signers.iter()
         .filter_map(|id| state.active_validator_set.get(id))
         .map(|v| v.stake)
