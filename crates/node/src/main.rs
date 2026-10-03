@@ -453,17 +453,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 libp2p::request_response::Message::Response { request_id: outbound_id, response } => {
                                     match response {
                                         SyncWireResponse::Blocks(response) => {
-                                            if pending_sync.map(|(expected_peer, expected_outbound_id, expected_request_id, expected_from)| {
-                                                expected_peer == peer
-                                                    && expected_outbound_id == outbound_id
-                                                    && expected_request_id == response.request_id
-                                                    && expected_from == response.from_height
-                                            }) != Some(true)
-                                                || freedom_network::validate_sync_response(&response).is_err()
-                                            { continue; }
+                                            let pending_index = pending_sync.iter().position(|(expected_peer, expected_outbound_id, expected_request_id, expected_from)| {
+                                                *expected_peer == peer
+                                                    && *expected_outbound_id == outbound_id
+                                                    && *expected_request_id == response.request_id
+                                                    && *expected_from == response.from_height
+                                            });
+                                            if pending_index.is_none() || freedom_network::validate_sync_response(&response).is_err() {
+                                                continue;
+                                            }
+                                            pending_sync.remove(pending_index.unwrap());
+
+                                            let fingerprint = hash_bytes(&serde_json::to_vec(&response.blocks)?);
+                                            let entry = sync_candidates.entry(fingerprint).or_insert((0, response.clone()));
+                                            entry.0 += 1;
+                                            let required = if pending_sync.len() + entry.0 >= 2 { 2 } else { 1 };
+                                            if entry.0 < required {
+                                                continue;
+                                            }
+
                                             let mut working_state = state.clone();
                                             let mut accepted_blocks = Vec::new();
-                                            for block in response.blocks {
+                                            for block in entry.1.blocks.clone() {
                                                 if block.header.height != working_state.height + 1 { break; }
                                                 let expected = match proposer_for_height_round(&working_state, block.header.height, block.header.round) { Some(v) => v, None => break };
                                                 if expected != block.header.proposer { break; }
@@ -471,7 +482,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 let committed = match execute_block(&mut working_state, &block) { Ok(b) => b, Err(e) => { eprintln!("sync execution rejected at {}: {e}", block.header.height); break; } };
                                                 accepted_blocks.push(committed);
                                             }
-                                            let accepted = accepted_blocks.len() as u64;
                                             if accepted > 0 {
                                                 if let Err(e) = store.put_blocks_atomic(&accepted_blocks) {
                                                     eprintln!("sync persistence error: {e}");
@@ -479,7 +489,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                                 state = working_state;
                                                 println!("SYNCED blocks={} height={}", accepted, state.height);
-                                                pending_sync=None;
+                                                pending_sync.clear();
+                                                sync_candidates.clear();
                                                 round=0;
                                                 timeout_round_sent=None;
                                                 if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
