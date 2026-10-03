@@ -1774,7 +1774,17 @@ impl BitcoinSpendScanBlock {
             }
         }
         Ok(false)
+    }    pub fn verify_against_parent(&self, parent_hash: Hash, expected_height: u64) -> Result<(), String> {
+        self.verify_structure()?;
+        if self.height != expected_height {
+            return Err("bitcoin block height mismatch".into());
+        }
+        if self.header.prev_block_hash != parent_hash {
+            return Err("bitcoin block parent hash mismatch".into());
+        }
+        Ok(())
     }
+
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -2209,6 +2219,14 @@ impl BitcoinUtxoCommitmentAttestation {
     }
 }
 impl BitcoinUtxoAccumulatorTransition {
+    pub fn verify_block_against_header(
+        previous: &[BitcoinUtxoStateEntry],
+        block: &BitcoinSpendScanBlock,
+    ) -> Result<(Hash,u64), String> {
+        block.verify_structure()?;
+        Self::verify_block_delta(previous, &block.raw_transactions)
+    }
+
     pub fn derive_block_delta(
         raw_transactions: &[Vec<u8>],
     ) -> Result<(Vec<(Hash,u32)>,Vec<BitcoinUtxoStateEntry>), String> {
