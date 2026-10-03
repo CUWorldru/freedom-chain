@@ -837,7 +837,6 @@ impl BitcoinReorgPolicy {
  }
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinCanonicalTipProof { pub start_height:u64, pub headers:Vec<BitcoinBlockHeader>, pub tip_height:u64, pub tip_hash:Hash, pub chainwork:[u8;32] }
 impl BitcoinCanonicalTipProof {
  pub fn verify(&self,checkpoint:&BitcoinChainCheckpoint)->bool{
