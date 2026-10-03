@@ -508,6 +508,113 @@ impl BridgePauseAuthorizationSet {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeMessageApproval {
+    pub bridge_id: Hash,
+    pub message_hash: Hash,
+    pub validator_id: Hash,
+    pub signature: Vec<u8>,
+}
+
+impl BridgeMessageApproval {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"FREEDOM-BRIDGE-MESSAGE-APPROVAL-V1");
+        b.extend_from_slice(&self.bridge_id);
+        b.extend_from_slice(&self.message_hash);
+        b.extend_from_slice(&self.validator_id);
+        b
+    }
+
+    pub fn approval_hash(&self) -> Hash {
+        freedom_primitives::hash_bytes(&self.signing_bytes())
+    }
+
+    pub fn structurally_valid(&self) -> bool {
+        self.bridge_id != [0; 32]
+            && self.message_hash != [0; 32]
+            && self.validator_id != [0; 32]
+            && self.signature.len() == 64
+    }
+
+    pub fn validator_identity_matches(&self, public_key: &[u8; 32]) -> bool {
+        freedom_primitives::hash_bytes(public_key) == self.validator_id
+    }
+
+    pub fn verify_authenticated(&self, public_key: &[u8; 32]) -> bool {
+        if !self.structurally_valid() || !self.validator_identity_matches(public_key) {
+            return false;
+        }
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(&self.signature);
+        freedom_crypto::verify(public_key, &self.approval_hash(), &sig)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeMessageApprovalSet {
+    pub bridge_id: Hash,
+    pub message_hash: Hash,
+    pub approvals: Vec<BridgeMessageApproval>,
+}
+
+impl BridgeMessageApprovalSet {
+    pub fn authenticated_count(
+        &self,
+        validator_keys: &std::collections::BTreeMap<Hash, [u8; 32]>,
+    ) -> u16 {
+        self.approvals
+            .iter()
+            .filter(|a| a.bridge_id == self.bridge_id && a.message_hash == self.message_hash)
+            .filter_map(|a| validator_keys.get(&a.validator_id).map(|k| (a, k)))
+            .filter(|(a, k)| a.verify_authenticated(k))
+            .map(|(a, _)| a.validator_id)
+            .collect::<std::collections::BTreeSet<Hash>>()
+            .len() as u16
+    }
+
+    pub fn quorum_reached(&self, policy: &BridgeSecurityPolicy) -> bool {
+        policy.quorum_reached(self.authenticated_count(&std::collections::BTreeMap::new()))
+    }
+
+    pub fn quorum_reached_authenticated(
+        &self,
+        policy: &BridgeSecurityPolicy,
+        validator_keys: &std::collections::BTreeMap<Hash, [u8; 32]>,
+    ) -> bool {
+        policy.quorum_reached(self.authenticated_count(validator_keys))
+    }
+
+    pub fn threshold_reached(
+        &self,
+        policy: &BridgeSecurityPolicy,
+        validator_keys: &std::collections::BTreeMap<Hash, [u8; 32]>,
+    ) -> bool {
+        policy.threshold_reached(self.authenticated_count(validator_keys))
+    }
+
+    pub fn authorized(
+        &self,
+        policy: &BridgeSecurityPolicy,
+        validator_keys: &std::collections::BTreeMap<Hash, [u8; 32]>,
+    ) -> bool {
+        if !policy.validate()
+            || self.bridge_id != policy.bridge_id
+            || self.message_hash == [0; 32]
+        {
+            return false;
+        }
+        match policy.approval_mode {
+            BridgeApprovalMode::Quorum => self.quorum_reached_authenticated(policy, validator_keys),
+            BridgeApprovalMode::Threshold => self.threshold_reached(policy, validator_keys),
+            BridgeApprovalMode::QuorumAndThreshold => {
+                self.quorum_reached_authenticated(policy, validator_keys)
+                    && self.threshold_reached(policy, validator_keys)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeApproval {
     pub bridge_id: Hash,
     pub request_id: Hash,
@@ -4939,5 +5046,44 @@ mod m152_binding_tests {
         };
         let message = deposit.to_bridge_message(2, 42).unwrap();
         assert!(message.matches_verified_deposit(&deposit));
+    }
+}
+
+#[cfg(test)]
+mod m153_bridge_message_auth_tests {
+    use super::*;
+
+    #[test]
+    fn message_approval_requires_unique_authenticated_validators() {
+        let message_hash = [4;32];
+        let bridge_id = [3;32];
+        let key = [7u8;32];
+        let validator_id = freedom_primitives::hash_bytes(&key);
+        let mut approval = BridgeMessageApproval {
+            bridge_id, message_hash, validator_id, signature: vec![0;64]
+        };
+        assert!(approval.structurally_valid());
+        approval.signature[0] = 1;
+        let set = BridgeMessageApprovalSet {
+            bridge_id, message_hash, approvals: vec![approval.clone(), approval]
+        };
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert(validator_id, key);
+        assert_eq!(set.authenticated_count(&keys), 0);
+    }
+
+    #[test]
+    fn message_approval_rejects_wrong_bridge() {
+        let policy = BridgeSecurityPolicy {
+            bridge_id:[3;32], approval_mode:BridgeApprovalMode::Quorum,
+            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:1000,
+            max_withdrawal_amount:1000, daily_limit:1000, emergency_paused:false, nonce_floor:0,
+        };
+        let set = BridgeMessageApprovalSet {
+            bridge_id:[4;32], message_hash:[5;32], approvals:vec![]
+        };
+        let keys = std::collections::BTreeMap::new();
+        assert!(!set.authorized(&policy, &keys));
     }
 }
