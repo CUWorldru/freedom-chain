@@ -1264,3 +1264,10 @@ This milestone proves tree membership only. It does not yet verify validator sig
 Adds BLS12-381 verification through `blst`, including aggregate verification for participating sync-committee public keys. `EthereumSyncCommitteeSignature` commits to the finalized signing root, validator indices and participation bits, rejects malformed/duplicate indices and requires a 96-byte aggregate signature.
 
 The state boundary additionally requires the signature signing root to equal the expected finalized checkpoint signing root. Committee membership/validator-set authorization remains a separate SSZ proof boundary.
+
+
+## M141 — Ethereum End-to-End Proof Pipeline
+
+Adds `EthereumEndToEndProof`, composing the Ethereum consensus and execution proof layers into one verification boundary: finalized checkpoint metadata, SSZ committee membership, BLS aggregate signature, execution block binding, receipt MPT inclusion, and exact envelope binding.
+
+State exposes `validate_ethereum_end_to_end_proof(...)` as the unified validation entry point. The layers remain independently verifiable so execution proofs and consensus proofs cannot silently substitute for one another.
