@@ -63,10 +63,37 @@ pub fn sign_proposal(proposal: &mut BlockProposal, consensus_key: &ed25519_dalek
     proposal.signature = sign(consensus_key, &proposal.signing_bytes()).to_vec();
 }
 
+pub fn validate_block_transition(state: &ChainState, block: &freedom_types::Block) -> Result<(), String> {
+    if block.header.height != state.height + 1 { return Err("invalid proposal height".into()); }
+    if block.header.previous_hash != state.last_block_hash { return Err("invalid proposal previous hash".into()); }
+    if freedom_consensus::tx_root(&block.transactions) != block.header.tx_root { return Err("proposal transaction root mismatch".into()); }
+
+    let mut working = state.clone();
+    let mut receipts = Vec::with_capacity(block.transactions.len());
+    for tx in &block.transactions {
+        let account = working.accounts.get(&tx.sender).ok_or_else(|| "proposal sender not found".to_string())?;
+        if tx.signature.len() != 64 { return Err("proposal transaction signature length invalid".into()); }
+        let mut sig = [0u8;64]; sig.copy_from_slice(&tx.signature);
+        if !freedom_crypto::verify(&account.public_key, &tx.signing_bytes(), &sig) {
+            return Err("proposal transaction signature invalid".into());
+        }
+        let before = working.events.len();
+        working.execute_transaction(tx).map_err(|e| format!("proposal transaction rejected: {e:?}"))?;
+        let events = working.events[before..].to_vec();
+        receipts.push(freedom_types::Receipt { tx_hash: tx.hash(), success: true, gas_used: 1, events });
+    }
+    if receipts != block.receipts { return Err("proposal receipts mismatch".into()); }
+    if freedom_consensus::receipts_root(&receipts) != block.header.receipts_root { return Err("proposal receipts root mismatch".into()); }
+    working.height = block.header.height;
+    if working.state_root() != block.header.state_root { return Err("proposal state root mismatch".into()); }
+    Ok(())
+}
+
 pub fn validate_proposal(state: &ChainState, proposal: &BlockProposal) -> Result<(), String> {
     if proposal.height != proposal.block.header.height { return Err("proposal height mismatch".into()); }
     if proposal.proposer != proposal.block.header.proposer { return Err("proposal proposer mismatch".into()); }
     if block_hash(&proposal.block) != proposal.block_hash { return Err("proposal block hash mismatch".into()); }
+    validate_block_transition(state, &proposal.block)?;
     let validator = state.validators.values().find(|v| v.owner == proposal.proposer)
         .ok_or_else(|| "unknown proposal proposer".to_string())?;
     if proposal.signature.len() != 64 { return Err("invalid proposal signature length".into()); }
