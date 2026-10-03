@@ -115,3 +115,16 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - the selection proof is `BLAKE3("FREEDOM-DRAW-PROOF-V1" || randomness_seed || ordered_winner_ticket_ids)`
 - Treasury allocation remains explicit: Prize Pool, CU Fund, Annual Reserve
 - draw payouts reduce the protocol-held Prize Pool and do not mint FDM
+
+
+## M11 — Transactional block execution / commitments
+
+- Blocks carry ordered receipts alongside ordered transactions.
+- Transaction root commits to ordered transaction hashes.
+- Receipts root commits to canonical receipt encodings and protocol events.
+- Block execution validates height and previous block hash before execution.
+- Every transaction is signature-checked and executed before state commitment.
+- State root is calculated after block execution and height advancement.
+- The committed block hash becomes the next state's last block hash.
+- last_block_hash is excluded from state_root to avoid a circular state-root/block-hash dependency.
+- A block is accepted only when transaction, receipt and state commitments match.

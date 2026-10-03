@@ -7,7 +7,7 @@ pub struct BlockHeader {
     pub receipts_root: Hash, pub timestamp: u64, pub epoch: u64, pub proposer: Address,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Block { pub header: BlockHeader, pub transactions: Vec<Transaction> }
+pub struct Block { pub header: BlockHeader, pub transactions: Vec<Transaction>, pub receipts: Vec<Receipt> }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Transaction {
