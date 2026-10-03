@@ -123,6 +123,86 @@ pub fn validate_timeout_quorum(state:&ChainState,height:u64,round:u64,timeouts:&
 }
 
 
-pub fn validate_finality_certificate(state:&ChainState, cert:&freedom_types::FinalityCertificate)->Result<(),String>{
-    validate_quorum(state, cert.block_hash, cert.height, cert.round, &cert.votes)
+
+pub fn validate_precommit(
+    state: &ChainState,
+    precommit: &freedom_types::ValidatorPrecommit,
+    expected_block_hash: Hash,
+    expected_height: u64,
+    expected_round: u64,
+) -> Result<(), String> {
+    if precommit.block_hash != expected_block_hash { return Err("precommit block hash mismatch".into()); }
+    if precommit.height != expected_height { return Err("precommit height mismatch".into()); }
+    if precommit.round != expected_round { return Err("precommit round mismatch".into()); }
+    let validator = state.validators.get(&precommit.validator_id).ok_or_else(|| "unknown validator".to_string())?;
+    if precommit.signature.len() != 64 { return Err("invalid precommit signature length".into()); }
+    let mut sig = [0u8; 64];
+    sig.copy_from_slice(&precommit.signature);
+    if !verify(&validator.consensus_key, &precommit.signing_bytes(), &sig) {
+        return Err("invalid precommit signature".into());
+    }
+    Ok(())
+}
+
+pub fn validate_precommit_quorum(
+    state: &ChainState,
+    block_hash: Hash,
+    height: u64,
+    round: u64,
+    precommits: &[freedom_types::ValidatorPrecommit],
+) -> Result<(), String> {
+    let threshold = quorum_threshold(state.validators.len());
+    let mut seen = std::collections::BTreeSet::new();
+    for precommit in precommits {
+        validate_precommit(state, precommit, block_hash, height, round)?;
+        if !seen.insert(precommit.validator_id) {
+            return Err("duplicate validator precommit".into());
+        }
+    }
+    if seen.len() < threshold {
+        return Err(format!("precommit quorum not reached: {}/{}", seen.len(), threshold));
+    }
+    Ok(())
+}
+
+pub fn detect_prevote_equivocation(
+    votes: &[freedom_types::ValidatorVote],
+) -> Vec<(Hash, Hash, u64, u64)> {
+    let mut first = std::collections::BTreeMap::<(Hash,u64,u64), Hash>::new();
+    let mut evidence = Vec::new();
+    for vote in votes {
+        let key = (vote.validator_id, vote.height, vote.round);
+        if let Some(existing) = first.insert(key, vote.block_hash) {
+            if existing != vote.block_hash {
+                evidence.push((vote.validator_id, existing, vote.block_hash, vote.height));
+            }
+        }
+    }
+    evidence
+}
+
+pub fn detect_precommit_equivocation(
+    precommits: &[freedom_types::ValidatorPrecommit],
+) -> Vec<(Hash, Hash, u64, u64)> {
+    let mut first = std::collections::BTreeMap::<(Hash,u64,u64), Hash>::new();
+    let mut evidence = Vec::new();
+    for precommit in precommits {
+        let key = (precommit.validator_id, precommit.height, precommit.round);
+        if let Some(existing) = first.insert(key, precommit.block_hash) {
+            if existing != precommit.block_hash {
+                evidence.push((precommit.validator_id, existing, precommit.block_hash, precommit.height));
+            }
+        }
+    }
+    evidence
+}
+
+pub fn validate_finality_certificate(
+    state: &ChainState,
+    cert: &freedom_types::FinalityCertificate,
+) -> Result<(), String> {
+    if !detect_precommit_equivocation(&cert.precommits).is_empty() {
+        return Err("finality certificate contains equivocation".into());
+    }
+    validate_precommit_quorum(state, cert.block_hash, cert.height, cert.round, &cert.precommits)
 }
