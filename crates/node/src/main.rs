@@ -348,6 +348,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if !connected_peers.contains(&peer_id) { connected_peers.push(peer_id); }
                         pending_sync = Some(send_sync_request(&mut swarm, peer_id, validator_id, state.height));
                         pending_sync_from = Some(state.height.saturating_add(1));
+                        let snapshot_request_id = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
+                        pending_snapshot = Some((snapshot_request_id, u64::MAX));
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => { connected_peers.retain(|p| *p != peer_id); println!("peer_disconnected={peer_id}"); },
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
