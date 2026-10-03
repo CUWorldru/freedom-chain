@@ -743,3 +743,12 @@ pub mod bridge_adapter {
  adapter!(TonAdapter,BridgeAdapterKind::Ton,BridgeFinalityModel::BlockFinality);
  adapter!(SolanaAdapter,BridgeAdapterKind::Solana,BridgeFinalityModel::SlotFinality);
 }
+
+
+#[cfg(test)]
+mod m82_adapter_tests { use super::*; use super::bridge_adapter::*;
+ fn d(k:BridgeAdapterKind,m:BridgeFinalityModel)->BridgeAdapterDescriptor{BridgeAdapterDescriptor{bridge_id:[9;32],chain_id:1,kind:k,finality_model:m,required_confirmations:2,native_asset:false,enabled:true}}
+ #[test] fn major_adapters_are_distinct(){assert!(BitcoinAdapter::new(d(BridgeAdapterKind::Bitcoin,BridgeFinalityModel::Confirmations)).is_ok());assert!(EvmAdapter::new(d(BridgeAdapterKind::Evm,BridgeFinalityModel::BlockFinality)).is_ok());assert!(TronAdapter::new(d(BridgeAdapterKind::Tron,BridgeFinalityModel::BlockFinality)).is_ok());assert!(TonAdapter::new(d(BridgeAdapterKind::Ton,BridgeFinalityModel::BlockFinality)).is_ok());assert!(SolanaAdapter::new(d(BridgeAdapterKind::Solana,BridgeFinalityModel::SlotFinality)).is_ok());}
+ #[test] fn bitcoin_requires_confirmations(){let a=BitcoinAdapter::new(d(BridgeAdapterKind::Bitcoin,BridgeFinalityModel::Confirmations)).unwrap();let p=BridgeDepositProof{bridge_id:[9;32],source_chain_id:1,tx_hash:[1;32],event_index:0,block_or_slot:10,confirmations:1,proof:vec![1]};assert_eq!(a.verify_deposit(&p),Err(BridgeAdapterError::InsufficientFinality));}
+ #[test] fn withdrawal_intent_is_canonical(){let a=EvmAdapter::new(d(BridgeAdapterKind::Evm,BridgeFinalityModel::BlockFinality)).unwrap();let x=a.build_withdrawal_intent([1;32],[2;32],100,b"0xrecipient".to_vec(),7).unwrap();assert!(x.validate_hash());}
+}
