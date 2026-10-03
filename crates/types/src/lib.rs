@@ -918,6 +918,99 @@ impl EvmTransferProof {
 
 
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TronTransactionInclusionProof {
+    pub tx_hash: Hash,
+    pub block_number: u64,
+    pub block_id: Hash,
+    pub transaction_index: u32,
+    pub transaction_count: u32,
+    pub siblings: Vec<Option<Hash>>,
+}
+
+impl TronTransactionInclusionProof {
+    fn sha256_pair(left: Hash, right: Hash) -> Hash {
+        use sha2::{Digest, Sha256};
+        let mut bytes = [0u8; 64];
+        bytes[..32].copy_from_slice(&left);
+        bytes[32..].copy_from_slice(&right);
+        Sha256::digest(bytes).into()
+    }
+
+    fn expected_levels(mut count: usize) -> usize {
+        let mut levels = 0usize;
+        while count > 1 {
+            count = (count + 1) / 2;
+            levels += 1;
+        }
+        levels
+    }
+
+    pub fn verify_against_root(&self, tx_trie_root: Hash) -> bool {
+        if self.tx_hash == [0; 32]
+            || self.block_id == [0; 32]
+            || self.block_number == 0
+            || self.transaction_count == 0
+            || self.transaction_index >= self.transaction_count
+            || self.siblings.len() != Self::expected_levels(self.transaction_count as usize)
+        {
+            return false;
+        }
+
+        let mut hash = self.tx_hash;
+        let mut index = self.transaction_index as usize;
+        let mut level_count = self.transaction_count as usize;
+
+        for sibling in &self.siblings {
+            if level_count > 1 {
+                if index & 1 == 1 {
+                    let Some(right) = sibling else { return false; };
+                    hash = Self::sha256_pair(*right, hash);
+                } else if let Some(right) = sibling {
+                    hash = Self::sha256_pair(hash, *right);
+                } else if index + 1 < level_count {
+                    return false;
+                }
+                index /= 2;
+                level_count = (level_count + 1) / 2;
+            } else {
+                return false;
+            }
+        }
+
+        hash == tx_trie_root
+    }
+
+    pub fn verify_binding(
+        &self,
+        header: &TronBlockHeaderProof,
+        tx_trie_root: Hash,
+    ) -> bool {
+        self.block_number == header.block_number().unwrap_or(0)
+            && self.block_id == header.block_id
+            && self.verify_against_root(tx_trie_root)
+            && header.tx_trie_root().ok() == Some(tx_trie_root)
+    }
+
+    pub fn proof_hash(&self) -> Hash {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"FREEDOM-TRON-TX-INCLUSION-V1");
+        bytes.extend_from_slice(&self.tx_hash);
+        bytes.extend_from_slice(&self.block_number.to_le_bytes());
+        bytes.extend_from_slice(&self.block_id);
+        bytes.extend_from_slice(&self.transaction_index.to_le_bytes());
+        bytes.extend_from_slice(&self.transaction_count.to_le_bytes());
+        for sibling in &self.siblings {
+            match sibling {
+                Some(hash) => { bytes.push(1); bytes.extend_from_slice(hash); }
+                None => bytes.push(0),
+            }
+        }
+        freedom_primitives::hash_bytes(&bytes)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TronTransactionEventProof {
     pub raw_data: Vec<u8>,
