@@ -685,6 +685,19 @@ impl BitcoinReorgEvidence {
  pub fn compute_fingerprint(&self)->Hash{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BITCOIN-REORG-V1");o.extend_from_slice(&self.checkpoint_height.to_le_bytes());o.extend_from_slice(&self.checkpoint_hash);o.extend_from_slice(&self.candidate_tip_height.to_le_bytes());o.extend_from_slice(&self.candidate_tip_hash);o.extend_from_slice(&self.candidate_chainwork);freedom_primitives::hash_bytes(&o)}
  pub fn validate(&self)->bool{self.checkpoint_hash!=[0;32]&&self.candidate_tip_hash!=[0;32]&&self.candidate_chainwork!=[0;32]&&self.fingerprint==self.compute_fingerprint()}
 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BitcoinReorgSeverity { Normal=1, Elevated=2, Critical=3 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinReorgPolicy { pub elevated_confirmations:u64, pub critical_chainwork_margin:[u8;32] }
+impl BitcoinReorgPolicy {
+ pub fn validate(&self)->bool{self.elevated_confirmations>0&&self.critical_chainwork_margin!=[0;32]}
+ pub fn classify(&self,checkpoint:&BitcoinChainCheckpoint,e:&BitcoinReorgEvidence)->BitcoinReorgSeverity{
+  if e.candidate_chainwork>checkpoint.chainwork { BitcoinReorgSeverity::Critical }
+  else if e.candidate_tip_height>=checkpoint.height.saturating_add(self.elevated_confirmations) { BitcoinReorgSeverity::Elevated }
+  else { BitcoinReorgSeverity::Normal }
+ }
+}
 pub struct BitcoinReorgReport { pub checkpoint_height:u64, pub checkpoint_hash:Hash, pub candidate_tip_height:u64, pub candidate_tip_hash:Hash, pub candidate_chainwork:[u8;32] }
 pub fn bitcoin_evaluate_reorg(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinReorgReport,BitcoinCheckpointError>{
  if !checkpoint.validate(){return Err(BitcoinCheckpointError::InvalidCheckpoint);} if headers.is_empty(){return Err(BitcoinCheckpointError::EmptyHeaders);}
