@@ -474,3 +474,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Snapshot storage validates that certificate against the stored checkpoint and historical validator set.
 - Snapshot transport carries that historical validator set, and the receiving node verifies its canonical set hash against the known epoch-transition proof or snapshot active set before accepting the certificate.
 - At epoch boundaries the finality proof is therefore checked against the previous epoch validator set rather than the already-activated next epoch set.
+
+
+## M42 — Snapshot Checkpoint Finality
+
+- Non-genesis snapshots are now required to carry a FinalityCertificate.
+- Stored snapshots verify that the certificate block hash/height exactly match the snapshot checkpoint.
+- The stored checkpoint block hash and state root are independently checked against the snapshot envelope.
+- At an epoch transition, the finality validator set must hash to the transition certificate's previous_set_hash; after the transition, the snapshot active set may be the new set.
+- Remote snapshot activation applies the same checkpoint/finality binding and rejects genesis as a remote finalized checkpoint.
+- This closes the boundary between a valid state snapshot and a merely self-consistent state dump.
