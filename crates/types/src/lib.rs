@@ -418,6 +418,35 @@ impl BitcoinUtxoProof {
     }
 }
 
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EvmTransferProof {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub tx_hash: Hash,
+    pub block_number: u64,
+    pub confirmations: u64,
+    pub token_contract: Vec<u8>,
+    pub from: Vec<u8>,
+    pub to: Vec<u8>,
+    pub amount: u128,
+    pub log_index: u32,
+    pub event_signature: Hash,
+    pub proof: Vec<u8>,
+}
+impl EvmTransferProof {
+    pub fn event_index(&self)->u64 { self.log_index as u64 }
+    pub fn proof_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-EVM-TRANSFER-PROOF-V1");
+        o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.chain_id.to_le_bytes());
+        o.extend_from_slice(&self.tx_hash);o.extend_from_slice(&self.block_number.to_le_bytes());
+        o.extend_from_slice(&self.confirmations.to_le_bytes());
+        for x in [&self.token_contract,&self.from,&self.to]{o.extend_from_slice(&(x.len() as u64).to_le_bytes());o.extend_from_slice(x);}
+        o.extend_from_slice(&self.amount.to_le_bytes());o.extend_from_slice(&self.log_index.to_le_bytes());
+        o.extend_from_slice(&self.event_signature);o.extend_from_slice(&(self.proof.len() as u64).to_le_bytes());o.extend_from_slice(&self.proof);o
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:Vec<Validator> }
 
@@ -788,4 +817,13 @@ mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn bitcoin_utxo_requires_six_confirmations(){let a=BitcoinAdapter::new(d()).unwrap();assert_eq!(a.verify_utxo_deposit(&p(5)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_utxo_deposit(&p(6)).is_ok());}
  #[test] fn bitcoin_vout_is_replay_event_identity(){assert_eq!(p(6).event_index(),2);}
  #[test] fn bitcoin_withdrawal_uses_script_bytes(){let a=BitcoinAdapter::new(d()).unwrap();let x=a.build_utxo_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();assert!(x.validate_hash());}
+}
+
+#[cfg(test)]
+mod m84_evm_tests { use super::*; use super::bridge_adapter::*;
+ fn d()->BridgeAdapterDescriptor{BridgeAdapterDescriptor{bridge_id:[7;32],chain_id:1,kind:BridgeAdapterKind::Evm,finality_model:BridgeFinalityModel::BlockFinality,required_confirmations:12,native_asset:false,enabled:true}}
+ fn p(c:u64)->EvmTransferProof{EvmTransferProof{bridge_id:[7;32],chain_id:1,tx_hash:[1;32],block_number:200,confirmations:c,token_contract:vec![0xaa;20],from:vec![0xbb;20],to:vec![0xcc;20],amount:1_000_000,log_index:3,event_signature:[4;32],proof:vec![5]}}
+ #[test] fn erc20_transfer_requires_finality(){let a=EvmAdapter::new(d()).unwrap();assert_eq!(a.verify_erc20_transfer(&p(11)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_erc20_transfer(&p(12)).is_ok());}
+ #[test] fn log_index_is_event_identity(){assert_eq!(p(12).event_index(),3);}
+ #[test] fn erc20_recipient_is_20_bytes(){let a=EvmAdapter::new(d()).unwrap();assert!(a.build_erc20_withdrawal_intent([1;32],[2;32],10,vec![3;20],1).is_ok());assert_eq!(a.build_erc20_withdrawal_intent([1;32],[2;32],10,vec![3;19],1),Err(BridgeAdapterError::InvalidIntent));}
 }
