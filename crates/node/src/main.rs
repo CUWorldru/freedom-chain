@@ -158,6 +158,18 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_sync_score_enters_and_exits_cooldown() {
+        let peer = libp2p::PeerId::random();
+        let mut scores = BTreeMap::new();
+        record_peer_misbehavior(&mut scores, peer, 10);
+        assert!(peer_is_sync_eligible(&scores, peer, 10));
+        record_peer_misbehavior(&mut scores, peer, 10);
+        record_peer_misbehavior(&mut scores, peer, 10);
+        assert!(!peer_is_sync_eligible(&scores, peer, 10));
+        assert!(peer_is_sync_eligible(&scores, peer, 13));
+    }
+
+    #[test]
     fn sync_misbehavior_evidence_carries_request_and_fingerprint() {
         let peer = libp2p::PeerId::random();
         let fingerprint = hash_bytes(b"offending-batch");
