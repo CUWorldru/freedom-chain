@@ -295,6 +295,60 @@ pub enum BridgeWithdrawalStatus {
     Broadcast = 5, ExternalConfirmed = 6, Finalized = 7, Rejected = 8,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BridgeAdapterKind { Bitcoin = 1, Evm = 2, Tron = 3, Ton = 4, Solana = 5, Other = 255 }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BridgeFinalityModel { Confirmations = 1, BlockFinality = 2, SlotFinality = 3, Other = 255 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeAdapterDescriptor {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub kind: BridgeAdapterKind,
+    pub finality_model: BridgeFinalityModel,
+    pub required_confirmations: u64,
+    pub native_asset: bool,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeDepositProof {
+    pub bridge_id: Hash,
+    pub source_chain_id: u32,
+    pub tx_hash: Hash,
+    pub event_index: u64,
+    pub block_or_slot: u64,
+    pub confirmations: u64,
+    pub proof: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BridgeWithdrawalIntent {
+    pub withdrawal_id: Hash,
+    pub bridge_id: Hash,
+    pub destination_chain_id: u32,
+    pub asset_id: Hash,
+    pub amount: u128,
+    pub recipient: Vec<u8>,
+    pub nonce: u64,
+    pub intent_hash: Hash,
+}
+impl BridgeWithdrawalIntent {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-BRIDGE-ADAPTER-INTENT-V1");
+        o.extend_from_slice(&self.withdrawal_id); o.extend_from_slice(&self.bridge_id);
+        o.extend_from_slice(&self.destination_chain_id.to_le_bytes()); o.extend_from_slice(&self.asset_id);
+        o.extend_from_slice(&self.amount.to_le_bytes()); o.extend_from_slice(&(self.recipient.len() as u64).to_le_bytes());
+        o.extend_from_slice(&self.recipient); o.extend_from_slice(&self.nonce.to_le_bytes()); o
+    }
+    pub fn compute_hash(&self)->Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
+    pub fn validate_hash(&self)->bool { self.intent_hash==self.compute_hash() }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BridgeWithdrawal {
     pub withdrawal_id: Hash,
