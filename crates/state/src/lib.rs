@@ -160,9 +160,9 @@ impl ChainState {
   if !journal.iter().any(|e|e.fingerprint==recovery.evidence_fingerprint){return Err(StateError::BitcoinReorgDetected);}
   let policy=self.bitcoin_reorg_policy.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
   let mut ids=recovery.validator_ids.clone();ids.sort();ids.dedup();
-  if ids.len() as u16 < policy.validator_quorum{return Err(StateError::BitcoinReorgDetected);}
-  let validators=self.validators.iter().map(|v|v.consensus_key).collect::<std::collections::BTreeSet<_>>();
-  if ids.iter().any(|id|!validators.contains(id)){return Err(StateError::BitcoinReorgDetected);}
+  if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
+  let validators=self.validators.iter().map(|v|(v.consensus_key, v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
+  if recovery.authenticated_count(&validators) < policy.validator_quorum{return Err(StateError::BitcoinReorgDetected);}
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
  }
