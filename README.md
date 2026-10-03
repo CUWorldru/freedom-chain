@@ -885,3 +885,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - deposits require the configured bridge and chain, non-zero transaction/token/participants/amount, event signature, proof bytes, and the adapter's configured block-finality threshold;
 - withdrawals require a canonical TRON recipient byte representation and produce the existing domain-separated withdrawal intent;
 - this milestone does not perform TRON RPC calls, ABI/event decoding, private-key custody, proof cryptography, or transaction broadcasting; those remain outside consensus state and belong to the bridge executor/signer layer.
+
+
+## M86 — TON / Jetton Adapter
+
+- added a dedicated TON Jetton transfer proof model with TON chain ID, transaction hash, block/sequence number, confirmation depth, Jetton master, sender, recipient, amount, event index, event signature, and proof bytes;
+- Jetton deposits bind `tx_hash + event_index` into the existing bridge replay identity;
+- deposits require the configured bridge and chain, non-zero transaction/Jetton/participants/amount, event signature, proof bytes, and the adapter's configured finality threshold;
+- withdrawals preserve the canonical TON recipient bytes in a domain-separated withdrawal intent;
+- no TON RPC, BOC/TVM proof verification, private-key custody, or transaction broadcasting is performed by consensus code at this milestone; those belong in the external bridge executor/verifier layer.
