@@ -8,6 +8,7 @@ const BLOCK_PREFIX: &[u8] = b"block:";
 const META_HEIGHT: &[u8] = b"meta:height";
 const META_HASH: &[u8] = b"meta:last_hash";
 const SNAPSHOT_PREFIX: &[u8] = b"snapshot:";
+const REPUTATION_KEY: &[u8] = b"meta:peer_reputation";
 
 #[derive(Debug)]
 pub enum StorageError { Rocks(String), Codec(String), MissingBlock(u64), InvalidMetadata, InvalidSnapshot(String) }
@@ -38,6 +39,20 @@ pub struct StateSnapshot {
 pub struct ChainStore { db: DB }
 
 impl ChainStore {
+    pub fn load_peer_reputation<T: serde::de::DeserializeOwned>(&self) -> Result<T, StorageError> {
+        match self.db.get(REPUTATION_KEY).map_err(|e| StorageError::Rocks(e.to_string()))? {
+            Some(bytes) => serde_json::from_slice(&bytes).map_err(|e| StorageError::Codec(e.to_string())),
+            None => Err(StorageError::InvalidMetadata),
+        }
+    }
+
+    pub fn save_peer_reputation<T: serde::Serialize>(&self, reputation: &T) -> Result<(), StorageError> {
+        let bytes = serde_json::to_vec(reputation).map_err(|e| StorageError::Codec(e.to_string()))?;
+        let mut batch = WriteBatch::default();
+        batch.put(REPUTATION_KEY, bytes);
+        self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         let mut opts = Options::default();
         opts.create_if_missing(true);
