@@ -939,3 +939,8 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 ## M94 — Atomic Bridge Withdrawal Rate-Limit Approval
 
 Bridge withdrawal rate limits are now reserved atomically with authenticated approval. A withdrawal can enter `Approved` only from `Validated`; bridge period usage is reserved before the status transition, and a failed reservation leaves the withdrawal in `Validated`. Repeated approval calls cannot consume the limit twice. The reserved period is persisted and included in the state root.
+
+
+## M95 — Authenticated Bridge Emergency Pause
+
+Bridge emergency pause is now a consensus-visible, validator-authenticated action. A `BridgePauseAuthorizationSet` binds bridge ID, pause state and a monotonic nonce; each authorization is Ed25519-authenticated against the validator identity. The configured validator quorum must approve a uniform pause/unpause state. Older or replayed authorization sets are rejected, and the latest authorization set is persisted in the state root.
