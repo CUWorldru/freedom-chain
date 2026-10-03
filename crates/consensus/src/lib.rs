@@ -62,6 +62,7 @@ pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, round:
         if !seen.insert(vote.validator_id) { return Err("duplicate validator vote".into()); }
     }
     if seen.len() < threshold { return Err(format!("quorum not reached: {}/{}", seen.len(), threshold)); }
+    if !stake_quorum_reached(state, &seen) { return Err("stake quorum not reached".into()); }
     Ok(())
 }
 
@@ -133,6 +134,7 @@ pub fn validate_timeout_quorum(state:&ChainState,height:u64,round:u64,timeouts:&
  let mut seen=std::collections::BTreeSet::new();
  for t in timeouts{validate_timeout(state,t,height,round)?;if !seen.insert(t.validator_id){return Err("duplicate timeout validator".into())}}
  if seen.len()<quorum_threshold(state.validators.len()){return Err("timeout quorum not reached".into())}
+ if !stake_quorum_reached(state,&seen){return Err("timeout stake quorum not reached".into())}
  Ok(())
 }
 
