@@ -49,6 +49,10 @@ let mut working=s.clone();
 let mut receipts=Vec::with_capacity(block.transactions.len());
 for tx in &block.transactions{receipts.push(execute_transaction(&mut working,tx)?);}
 if block.header.receipts_root!=receipts_root(&receipts){return Err("receipts root mismatch".into())}
+if let Some(cert) = &block.header.epoch_transition_certificate {
+    freedom_consensus::validate_validator_set_certificate(s, cert)?;
+    working.validator_set_certificate = Some(cert.clone());
+}
 working.height=block.header.height;
 working.maybe_advance_epoch();
 if block.header.state_root!=working.state_root(){return Err("state root mismatch".into())}
@@ -137,6 +141,10 @@ pub fn build_next_block(
     working.height = height;
     let tx_root = tx_root(&transactions);
     let receipts_root = receipts_root(&receipts);
+    let epoch_transition_certificate = if epoch != state.epoch { state.validator_set_certificate.clone() } else { None };
+    if let Some(cert) = &epoch_transition_certificate {
+        working.validator_set_certificate = Some(cert.clone());
+    }
     let state_root = working.state_root();
     Ok(Block {
         header: freedom_types::BlockHeader {
@@ -149,7 +157,7 @@ pub fn build_next_block(
             timestamp,
             epoch,
             proposer,
-            epoch_transition_certificate: None,
+            epoch_transition_certificate,
         },
         transactions,
         receipts,
