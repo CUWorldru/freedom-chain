@@ -2838,6 +2838,42 @@ impl EthereumSyncCommitteeProof {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EthereumEndToEndProof {
+    pub envelope:CrossChainFinalityEnvelope,
+    pub finality:EthereumFinalityProof,
+    pub committee:EthereumSyncCommitteeProof,
+    pub signature:EthereumSyncCommitteeSignature,
+    pub receipt:EthereumTransactionProof,
+}
+
+impl EthereumEndToEndProof {
+    pub fn verify(&self)->bool{
+        if !self.envelope.validate_structure(){return false;}
+        if self.envelope.proof_kind!=CrossChainProofKind::Ethereum{return false;}
+        if !self.finality.validate_structure(){return false;}
+        if !self.finality.verify_chain_anchor(self.envelope.finalized_hash,self.finality.state_root){return false;}
+        if !self.committee.verify(){return false;}
+        if !self.signature.verify(){return false;}
+        if self.signature.signing_root!=self.finality.finalized_block_hash{return false;}
+        if !self.receipt.verify_receipt_mpt(){return false;}
+        if !self.receipt.verify_binding(&self.envelope){return false;}
+        if self.receipt.block_hash!=self.finality.finalized_block_hash
+            || self.receipt.block_number!=self.finality.finalized_block_number{return false;}
+        true
+    }
+    pub fn proof_hash(&self)->Hash{
+        let mut b=Vec::new();
+        b.extend_from_slice(b"FREEDOM-ETH-END-TO-END-V1");
+        b.extend_from_slice(&self.envelope.proof_hash);
+        b.extend_from_slice(&self.finality.proof_hash());
+        b.extend_from_slice(&self.committee.proof_hash());
+        b.extend_from_slice(&self.signature.proof_hash());
+        b.extend_from_slice(&self.receipt.proof_hash());
+        freedom_primitives::hash_bytes(&b)
+    }
+}
+
 pub struct EthereumFinalityProof {
     pub finalized_block_number:u64,
     pub finalized_block_hash:Hash,
