@@ -43,6 +43,7 @@ struct SyncMisbehaviorEvidence {
 const PEER_MISBEHAVIOR_THRESHOLD: u32 = 3;
 const PEER_SCORE_COOLDOWN_ROUNDS: u64 = 3;
 const PEER_SCORE_DECAY_INTERVAL: u64 = 10;
+const PEER_EVIDENCE_LIMIT: usize = 32;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum PeerEvidenceKind {
@@ -81,6 +82,10 @@ fn record_peer_evidence(
     entry.score = entry.score.saturating_add(1);
     entry.last_decay_height = evidence.height;
     entry.evidence.push(evidence);
+    if entry.evidence.len() > PEER_EVIDENCE_LIMIT {
+        let excess = entry.evidence.len() - PEER_EVIDENCE_LIMIT;
+        entry.evidence.drain(0..excess);
+    }
     if entry.score >= PEER_MISBEHAVIOR_THRESHOLD {
         entry.cooldown_until_height = entry.cooldown_until_height.max(
             entry.evidence.last().map(|e| e.height).unwrap_or(0).saturating_add(PEER_SCORE_COOLDOWN_ROUNDS)
@@ -246,6 +251,27 @@ mod m31_tests {
             ].concat(),
         );
         assert_ne!(base, changed);
+    }
+
+    #[test]
+    fn peer_reputation_evidence_is_bounded() {
+        let peer = libp2p::PeerId::random();
+        let mut reputations = BTreeMap::new();
+        for height in 0..(PEER_EVIDENCE_LIMIT as u64 + 5) {
+            record_peer_evidence(&mut reputations, PeerReputationEvidence {
+                peer,
+                height,
+                request_id: [height as u8; 32],
+                fingerprint: [2u8; 32],
+                kind: PeerEvidenceKind::SyncConflict,
+                reason: "test".to_string(),
+            });
+        }
+        let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(reputation.score, PEER_EVIDENCE_LIMIT as u32 + 5);
+        assert_eq!(reputation.evidence.len(), PEER_EVIDENCE_LIMIT);
+        assert_eq!(reputation.evidence.first().unwrap().height, 5);
+        assert_eq!(reputation.evidence.last().unwrap().height, PEER_EVIDENCE_LIMIT as u64 + 4);
     }
 
     #[test]
