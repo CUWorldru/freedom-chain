@@ -399,8 +399,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 libp2p::request_response::Message::Response { request_id: outbound_id, response } => {
                                     match response {
                                         SyncWireResponse::Blocks(response) => {
-                                            if pending_sync != Some(response.request_id)
-                                                || pending_sync_from != Some(response.from_height)
+                                            if pending_sync.map(|(expected_peer, expected_outbound_id, expected_request_id, expected_from)| {
+                                                expected_peer == peer
+                                                    && expected_outbound_id == outbound_id
+                                                    && expected_request_id == response.request_id
+                                                    && expected_from == response.from_height
+                                            }) != Some(true)
                                                 || freedom_network::validate_sync_response(&response).is_err()
                                             { continue; }
                                             let mut working_state = state.clone();
@@ -422,7 +426,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 state = working_state;
                                                 println!("SYNCED blocks={} height={}", accepted, state.height);
                                                 pending_sync=None;
-                                                pending_sync_from=None;
                                                 round=0;
                                                 timeout_round_sent=None;
                                                 if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
@@ -434,8 +437,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         SyncWireResponse::Snapshot(response) => {
-                                            if pending_snapshot.map(|(id, _)| id) != Some(response.request_id) {
-                                                eprintln!("SNAPSHOT_REJECTED unsolicited or stale response at {}", response.height);
+                                            if pending_snapshot.map(|(expected_peer, expected_outbound_id, expected_request_id, target_height)| {
+                                                expected_peer == peer
+                                                    && expected_outbound_id == outbound_id
+                                                    && expected_request_id == response.request_id
+                                                    && response.height <= target_height
+                                            }) != Some(true) {
+                                                eprintln!("SNAPSHOT_REJECTED unsolicited, stale, wrong-peer, or wrong-request response at {}", response.height);
                                                 continue;
                                             }
                                             if response.height <= state.height || freedom_network::validate_snapshot_response(&response).is_err() { continue; }
@@ -520,7 +528,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             state = snapshot_state;
                                             pending_sync = None;
-                                            pending_sync_from = None;
                                             pending_snapshot = None;
                                             round = 0;
                                             timeout_round_sent = None;
