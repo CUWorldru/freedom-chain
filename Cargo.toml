@@ -25,7 +25,7 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 hex = "0.4"
-libp2p = { version = "0.57", default-features = false, features = ["tokio", "tcp", "noise", "yamux", "gossipsub", "identify", "ping", "kad", "macros"] }
+libp2p = { version = "0.57", default-features = false, features = ["tokio", "tcp", "noise", "yamux", "gossipsub", "identify", "ping", "kad", "request-response", "macros"] }
 serde_json = "1"
 rocksdb = "0.25"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
