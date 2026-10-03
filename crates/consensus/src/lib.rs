@@ -26,9 +26,10 @@ pub fn quorum_threshold(validator_count: usize) -> usize {
     (validator_count * 2) / 3 + 1
 }
 
-pub fn validate_vote(state: &ChainState, vote: &freedom_types::ValidatorVote, expected_block_hash: Hash, expected_height: u64) -> Result<(), String> {
+pub fn validate_vote(state: &ChainState, vote: &freedom_types::ValidatorVote, expected_block_hash: Hash, expected_height: u64, expected_round: u64) -> Result<(), String> {
     if vote.block_hash != expected_block_hash { return Err("vote block hash mismatch".into()); }
     if vote.height != expected_height { return Err("vote height mismatch".into()); }
+    if vote.round != expected_round { return Err("vote round mismatch".into()); }
     let validator = state.validators.get(&vote.validator_id).ok_or_else(|| "unknown validator".to_string())?;
     if vote.signature.len() != 64 { return Err("invalid vote signature length".into()); }
     let mut sig = [0u8;64];
@@ -39,11 +40,11 @@ pub fn validate_vote(state: &ChainState, vote: &freedom_types::ValidatorVote, ex
     Ok(())
 }
 
-pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, votes: &[freedom_types::ValidatorVote]) -> Result<(), String> {
+pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, round: u64, votes: &[freedom_types::ValidatorVote]) -> Result<(), String> {
     let threshold = quorum_threshold(state.validators.len());
     let mut seen = std::collections::BTreeSet::new();
     for vote in votes {
-        validate_vote(state, vote, block_hash, height)?;
+        validate_vote(state, vote, block_hash, height, round)?;
         if !seen.insert(vote.validator_id) { return Err("duplicate validator vote".into()); }
     }
     if seen.len() < threshold { return Err(format!("quorum not reached: {}/{}", seen.len(), threshold)); }
