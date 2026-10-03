@@ -430,7 +430,7 @@ impl ChainState {
   {
     return Err(StateError::ArithmeticOverflow);
   }
-  if authorization.recipient == [0; 20] {
+  if authorization.recipient == [0; 32] {
     return Err(StateError::InvalidRecipient);
   }
   let current_balance = self.accounts.get(&authorization.recipient)
