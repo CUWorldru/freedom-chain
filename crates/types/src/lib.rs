@@ -1940,26 +1940,49 @@ pub struct BitcoinUtxoAccumulator {
     pub bitcoin_tip_hash: Hash,
     pub bitcoin_tip_chainwork: [u8; 32],
     pub root: Hash,
+    #[serde(default)]
+    pub leaf_count: u64,
 }
 
 impl BitcoinUtxoAccumulator {
+    pub fn leaf_hash(txid: &Hash, vout: u32, amount: u64, script: &[u8]) -> Hash {
+        let mut b=Vec::new();
+        b.extend_from_slice(BITCOIN_UTXO_ACCUMULATOR_DOMAIN);
+        b.extend_from_slice(txid);
+        b.extend_from_slice(&vout.to_le_bytes());
+        b.extend_from_slice(&amount.to_le_bytes());
+        b.extend_from_slice(&(script.len() as u64).to_le_bytes());
+        b.extend_from_slice(script);
+        bitcoin_sha256d(&b)
+    }
+
+    pub fn merkle_parent(left: &Hash, right: &Hash) -> Hash {
+        freedom_primitives::hash_bytes(&[
+            BITCOIN_UTXO_ACCUMULATOR_DOMAIN, b"NODE", left, right
+        ].concat())
+    }
+
     pub fn compute_root(utxos: &[(Hash, u32, u64, Vec<u8>)]) -> Hash {
-        let mut leaves: Vec<Hash> = utxos.iter().map(|(txid, vout, amount, script)| {
-            let mut b=Vec::new();
-            b.extend_from_slice(BITCOIN_UTXO_ACCUMULATOR_DOMAIN);
-            b.extend_from_slice(txid);
-            b.extend_from_slice(&vout.to_le_bytes());
-            b.extend_from_slice(&amount.to_le_bytes());
-            b.extend_from_slice(&(script.len() as u64).to_le_bytes());
-            b.extend_from_slice(script);
-            bitcoin_sha256d(&b)
-        }).collect();
+        let mut leaves: Vec<Hash> = utxos.iter()
+            .map(|(txid,vout,amount,script)| Self::leaf_hash(txid,vout,*amount,script))
+            .collect();
         leaves.sort();
-        let mut root=freedom_primitives::hash_bytes(&[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, b"ROOT"].concat());
-        for leaf in leaves {
-            root=freedom_primitives::hash_bytes(&[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, &root, &leaf].concat());
+        if leaves.is_empty() {
+            return freedom_primitives::hash_bytes(
+                &[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, b"EMPTY"].concat()
+            );
         }
-        root
+        while leaves.len() > 1 {
+            let mut next=Vec::with_capacity((leaves.len()+1)/2);
+            let mut i=0;
+            while i<leaves.len() {
+                let right=if i+1<leaves.len(){leaves[i+1]}else{leaves[i]};
+                next.push(Self::merkle_parent(&leaves[i],&right));
+                i+=2;
+            }
+            leaves=next;
+        }
+        leaves[0]
     }
 
     pub fn validate(&self, canonical_tip: &BitcoinChainCheckpoint) -> bool {
@@ -1969,6 +1992,7 @@ impl BitcoinUtxoAccumulator {
             && self.bitcoin_tip_hash == canonical_tip.block_hash
             && self.bitcoin_tip_chainwork == canonical_tip.chainwork
             && self.root != [0;32]
+            && self.leaf_count > 0
     }
 }
 
@@ -1997,20 +2021,23 @@ impl BitcoinUtxoAccumulatorProof {
     }
 
     pub fn verify_membership(&self, canonical_tip: &BitcoinChainCheckpoint) -> bool {
-        if !self.exists || !self.accumulator.validate(canonical_tip) || self.siblings.len() > 64 {
+        if !self.exists || !self.accumulator.validate(canonical_tip)
+            || self.accumulator.leaf_count == 0
+            || self.leaf_index >= self.accumulator.leaf_count
+            || self.siblings.len() > 64 {
             return false;
         }
         let mut current=self.leaf_hash();
         let mut index=self.leaf_index;
         for sibling in &self.siblings {
             current=if index & 1 == 0 {
-                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, &current, sibling].concat())
+                BitcoinUtxoAccumulator::merkle_parent(&current,sibling)
             } else {
-                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_ACCUMULATOR_DOMAIN, sibling, &current].concat())
+                BitcoinUtxoAccumulator::merkle_parent(sibling,&current)
             };
             index >>= 1;
         }
-        current==self.accumulator.root
+        current==self.accumulator.root && index==0
     }
 
     pub fn verify_exact_output(&self, tx:&BitcoinUtxoProof, canonical_tip:&BitcoinChainCheckpoint)->bool {
