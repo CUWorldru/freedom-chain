@@ -75,7 +75,6 @@ pub fn verify_external_bridge_deposit(
     policy: &freedom_types::BridgeSecurityPolicy,
     descriptor: &freedom_types::BridgeAdapterDescriptor,
     canonical_asset_id: Hash,
-    _representation_asset_id: Hash,
     recipient_override: Option<Vec<u8>>,
 ) -> Result<freedom_types::VerifiedDeposit, String> {
     if canonical_asset_id != registry.canonical_asset_id {
