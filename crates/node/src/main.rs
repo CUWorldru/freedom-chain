@@ -117,6 +117,31 @@ mod m31_tests {
     }
 }
 
+fn replay_persisted_blocks(
+    state: &mut freedom_state::ChainState,
+    blocks: &[freedom_types::Block],
+) -> Result<(), String> {
+    for block in blocks {
+        if block.header.height != state.height + 1 {
+            return Err(format!("stored chain height gap at {}", block.header.height));
+        }
+        if block.header.previous_hash != state.last_block_hash {
+            return Err(format!("stored chain previous hash mismatch at {}", block.header.height));
+        }
+        let expected = proposer_for_height_round(state, block.header.height, block.header.round)
+            .ok_or_else(|| "no proposer for stored block".to_string())?;
+        if expected != block.header.proposer {
+            return Err(format!("stored block proposer mismatch at {}", block.header.height));
+        }
+        let committed = execute_block(state, block)
+            .map_err(|e| format!("stored block execution rejected at {}: {e}", block.header.height))?;
+        if block_hash(&committed) != block_hash(block) {
+            return Err(format!("stored block hash mismatch at {}", block.header.height));
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let validators: Vec<Validator> = (0u8..3).map(|i| {
         let key = [i + 1; 32];
@@ -181,23 +206,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         1
     };
     if stored_height >= replay_from {
-        for block in store.range(replay_from, stored_height)? {
-            if block.header.height != state.height + 1 {
-                return Err(format!("stored chain height gap at {}", block.header.height).into());
-            }
-            if block.header.previous_hash != state.last_block_hash {
-                return Err(format!("stored chain previous hash mismatch at {}", block.header.height).into());
-            }
-            let expected = proposer_for_height_round(&state, block.header.height, block.header.round)
-                .ok_or("no proposer for stored block")?;
-            if expected != block.header.proposer {
-                return Err(format!("stored block proposer mismatch at {}", block.header.height).into());
-            }
-            let committed = execute_block(&mut state, &block)?;
-            if block_hash(&committed) != block_hash(&block) {
-                return Err(format!("stored block hash mismatch at {}", block.header.height).into());
-            }
-        }
+        let replay_blocks = store.range(replay_from, stored_height)?;
+        replay_persisted_blocks(&mut state, &replay_blocks).map_err(|e| e.into())?;
         if state.last_block_hash != store.latest_hash()? {
             return Err("stored latest hash metadata mismatch".into());
         }
