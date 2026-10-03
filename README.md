@@ -1029,3 +1029,8 @@ A blocked Bitcoin bridge can now be recovered through a persisted recovery autho
 ## M111 — Authenticated Bitcoin Reorg Recovery
 
 Bitcoin reorg recovery now carries per-validator Ed25519 signatures. Recovery is accepted only when signatures authenticate against the current validator set and the authenticated count reaches the bridge policy quorum. Validator IDs alone are no longer sufficient authorization.
+
+
+## M112 — Bitcoin Recovery Canonicality Binding
+
+Recovery authorizations now bind to a canonical Bitcoin height, block hash, and accumulated chainwork. Recovery is rejected if the declared canonical point is below the trusted checkpoint in height or chainwork, preventing recovery from being used to authorize rollback to an older/weaker branch.
