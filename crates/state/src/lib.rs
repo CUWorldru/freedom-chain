@@ -49,7 +49,7 @@ impl ChainState {
   if self.slashed_evidence.contains_key(&evidence_hash){return Ok(0)}
   let evidence=self.evidence.get(&evidence_hash).ok_or(StateError::InvalidEvidence)?;
   let validator=self.validators.get_mut(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;
-  let expected=self.deterministic_slash_amount(&evidence.kind,validator.stake);
+  let expected=match evidence.kind { freedom_types::EquivocationKind::DoubleProposal=>validator.stake.saturating_mul(500)/10_000, freedom_types::EquivocationKind::DoublePrevote|freedom_types::EquivocationKind::DoublePrecommit=>validator.stake.saturating_mul(1000)/10_000 };
   if amount!=expected{return Err(StateError::InvalidEvidence)}
   let slash=expected.min(validator.stake);
   validator.stake-=slash;
