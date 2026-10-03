@@ -142,6 +142,9 @@ impl ChainStore {
         if let Some(cert) = &snapshot.certificate {
             let checkpoint = self.get_block(snapshot.height)?
                 .ok_or_else(|| StorageError::InvalidSnapshot("finality checkpoint block missing".into()))?;
+            if cert.block_hash != snapshot.block_hash || cert.height != snapshot.height {
+                return Err(StorageError::InvalidSnapshot("finality certificate does not match snapshot checkpoint".into()));
+            }
             freedom_consensus::validate_finality_certificate_for_set(
                 &snapshot.finality_validator_set,
                 &checkpoint,
