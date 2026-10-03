@@ -227,6 +227,7 @@ pub struct FinalityCertificate {
     pub block_hash: Hash,
     pub height: u64,
     pub round: u64,
+    #[serde(default)]
     pub precommits: Vec<ValidatorPrecommit>,
 }
 
