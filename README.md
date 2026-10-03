@@ -447,3 +447,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Snapshot activation verifies the checkpoint hash/state root, finality certificate against the snapshot validator set, state commitment, and epoch-transition certificate binding.
 - The checkpoint block must carry the same epoch-transition certificate as the snapshot state.
 - Only after these checks does the node replace its local state and persist the verified snapshot.
+
+
+## M41 — Snapshot Security & Trust Hardening
+
+- Snapshots are bound to CHAIN_ID in both local storage and the network sync envelope.
+- A node rejects a snapshot from another chain before state activation.
+- Block transition validation now enforces epoch-transition certificate rules through consensus validation.
+- Snapshot activation continues to require checkpoint hash/state-root consistency and a valid finality certificate against the snapshot validator set.
+- Epoch-transition certificates are bound to both the snapshot state and its checkpoint block.
