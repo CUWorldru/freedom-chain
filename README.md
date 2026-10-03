@@ -642,3 +642,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - evidence is created only after both responses pass transport and network-level validation, so ordinary malformed traffic is not confused with a valid-but-conflicting batch;
 - evidence remains scoped to the active sync round and is cleared when that round ends or its peers disconnect;
 - the evidence layer does not automatically punish or label a peer; it provides a deterministic input for a future peer-scoring/isolation layer.
+
+
+## M61 — Peer Sync Scoring & Cooldown
+
+- repeated valid-but-conflicting sync batches now increment a local peer sync-misbehavior score;
+- peers enter a temporary sync cooldown after three recorded conflicts;
+- cooldown is height-based and expires after three chain heights, avoiding permanent exclusion from one local observation;
+- peer scoring affects sync selection only and does not alter consensus validator status or slash stake;
+- a peer that has never produced evidence remains eligible by default.
