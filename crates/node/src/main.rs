@@ -369,6 +369,29 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_recording_uses_confirmation_count() {
+        let peer = libp2p::PeerId::random();
+        let mut reputations = BTreeMap::new();
+        record_peer_evidence_with_confirmations(&mut reputations, PeerReputationEvidence {
+            peer,
+            height: 10,
+            request_id: [1u8; 32],
+            fingerprint: [2u8; 32],
+            kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
+            reason: "confirmed".to_string(),
+        }, 2);
+        assert_eq!(
+            reputations.get(&peer).unwrap().evidence[0].severity,
+            PeerEvidenceSeverity::Elevated
+        );
+        assert_eq!(
+            reputations.get(&peer).unwrap().score,
+            PEER_REPUTATION_POLICY.elevated_severity_multiplier
+        );
+    }
+
+    #[test]
     fn peer_reputation_confirmation_escalates_severity() {
         let reputation = PeerReputation {
             score: 0,
