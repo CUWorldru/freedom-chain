@@ -1014,11 +1014,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     .map(|(count, _)| *count as usize)
                                                     .max()
                                                     .unwrap_or(1);
-let confirming_peers = snapshot_candidates
-                                                    .values()
-                                                    .map(|(count, _)| *count as usize)
-                                                    .max()
-                                                    .unwrap_or(1);
                                                 record_peer_evidence_with_confirmations(
                                                     &mut peer_reputations,
                                                     evidence,
@@ -1194,7 +1189,16 @@ let confirming_peers = snapshot_candidates
                                                     snapshot_fingerprint: evidence.fingerprint,
                                                     reason: evidence.reason.clone(),
                                                 });
-                                                record_peer_evidence(&mut peer_reputations, evidence);
+                                                let confirming_peers = snapshot_candidates
+                                                    .values()
+                                                    .map(|(count, _)| *count as usize)
+                                                    .max()
+                                                    .unwrap_or(1);
+                                                record_peer_evidence_with_confirmations(
+                                                    &mut peer_reputations,
+                                                    evidence,
+                                                    confirming_peers,
+                                                );
                                                 store.save_peer_reputation(&peer_reputations)?;
                                                 eprintln!(
                                                     "SNAPSHOT_CONFLICT peer={} height={} fingerprint={} score={:?} candidates={}",
