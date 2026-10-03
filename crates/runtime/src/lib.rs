@@ -199,6 +199,35 @@ impl<'a> BridgeIngressContext<'a> {
             resolved,
         })
     }
+    fn validate_proof(
+        &self,
+        proof: &freedom_types::CrossChainAssetProof,
+    ) -> Result<(), String> {
+        if proof.asset_id != self.resolved.canonical_asset_id()
+            || proof.representation_asset_id != self.resolved.representation_asset_id()
+        {
+            return Err("ResolvedBridgeRepresentationMismatch".into());
+        }
+
+        let representation = self
+            .registry
+            .representations
+            .iter()
+            .find(|r| r.representation.asset_id == self.resolved.representation_asset_id())
+            .ok_or_else(|| "ExternalAssetRepresentationNotRegistered".to_string())?;
+        if !representation.matches_proof(proof) {
+            return Err("BridgeCanonicalRepresentationMismatch".into());
+        }
+
+        if proof.bridge_deposit.bridge_id != self.policy.bridge_id
+            || proof.bridge_deposit.source_chain_id != self.descriptor.chain_id
+        {
+            return Err("BridgeIngressProofContextMismatch".into());
+        }
+
+        Ok(())
+    }
+
 }
 
 pub fn verify_external_bridge_deposit(
@@ -262,112 +291,8 @@ pub fn verify_bridge_deposit_with_adapter(
     proof: &freedom_types::CrossChainAssetProof,
     context: &BridgeIngressContext<'_>,
 ) -> Result<freedom_types::VerifiedDeposit, String> {
-    let registry = context.registry;
-    let policy = context.policy;
-    let descriptor = context.descriptor;
-    let external = context.external;
-    let resolved = context.resolved;
-    if !descriptor.validate()
-        || descriptor.bridge_id != policy.bridge_id
-        || descriptor.chain_id != proof.bridge_deposit.source_chain_id
-        || !descriptor.enabled
-        || descriptor.required_confirmations != policy.min_external_confirmations
-    {
-        return Err("InvalidBridgeAdapterDescriptor".into());
-    }
+    context.validate_proof(proof)?;
 
-    let expected_kind = match proof.asset_kind {
-        freedom_types::CrossChainAssetKind::BitcoinUtxo => freedom_types::BridgeAdapterKind::Bitcoin,
-        freedom_types::CrossChainAssetKind::Erc20 => freedom_types::BridgeAdapterKind::Evm,
-        freedom_types::CrossChainAssetKind::Trc20 => freedom_types::BridgeAdapterKind::Tron,
-        freedom_types::CrossChainAssetKind::TonJetton => freedom_types::BridgeAdapterKind::Ton,
-        freedom_types::CrossChainAssetKind::SolanaSpl => freedom_types::BridgeAdapterKind::Solana,
-        freedom_types::CrossChainAssetKind::Other => freedom_types::BridgeAdapterKind::Other,
-    };
-    if descriptor.kind != expected_kind {
-        return Err("BridgeAdapterAssetKindMismatch".into());
-    }
-
-    let expected_finality = match descriptor.finality_model {
-        freedom_types::BridgeFinalityModel::Confirmations
-        | freedom_types::BridgeFinalityModel::BlockFinality
-        | freedom_types::BridgeFinalityModel::SlotFinality => true,
-        freedom_types::BridgeFinalityModel::Other => false,
-    };
-    if !expected_finality {
-        return Err("UnsupportedBridgeFinalityModel".into());
-    }
-
-    if proof.asset_id != registry.canonical_asset_id {
-        return Err("CanonicalAssetRegistryMismatch".into());
-    }
-    if !registry.has_representation(proof.representation_asset_id) {
-        return Err("UnknownBridgeRepresentation".into());
-    }
-    if !registry.verify_representation_binding(proof, proof.representation_asset_id) {
-        return Err("BridgeRepresentationBindingMismatch".into());
-    }
-
-    match external {
-        freedom_types::ExternalBridgeDepositProof::BitcoinUtxo(p) => {
-            if !freedom_types::expected_asset_kind_for_mainnet(
-                p.chain_id,
-                freedom_types::CrossChainAssetKind::BitcoinUtxo,
-            ) {
-                return Err("UnsupportedBitcoinNetwork".into());
-            }
-            if registry.find_representation_by_external_identity(
-                p.chain_id,
-                freedom_types::CrossChainAssetKind::BitcoinUtxo,
-                b"BTC",
-                p.bridge_id,
-            ).is_none() {
-                return Err("BitcoinRegistryIdentityMismatch".into());
-            }
-        }
-        freedom_types::ExternalBridgeDepositProof::EvmTransfer(p) => {
-            if !freedom_types::expected_asset_kind_for_mainnet(
-                p.chain_id,
-                freedom_types::CrossChainAssetKind::Erc20,
-            ) {
-                return Err("UnsupportedEvmNetwork".into());
-            }
-            if p.token_contract.len() != 20
-                || p.token_contract.iter().all(|b| *b == 0)
-            {
-                return Err("InvalidEvmContractAddress".into());
-            }
-            if registry.find_representation_by_external_identity(
-                p.chain_id,
-                freedom_types::CrossChainAssetKind::Erc20,
-                &p.token_contract,
-                p.bridge_id,
-            ).is_none() {
-                return Err("EvmTokenRegistryIdentityMismatch".into());
-            }
-        }
-        freedom_types::ExternalBridgeDepositProof::TronUsdt(p) => {
-            if !freedom_types::expected_asset_kind_for_mainnet(
-                p.chain_id,
-                freedom_types::CrossChainAssetKind::Trc20,
-            ) {
-                return Err("UnsupportedTronNetwork".into());
-            }
-            if p.usdt_contract.len() != 20
-                || p.usdt_contract.iter().all(|b| *b == 0)
-            {
-                return Err("InvalidTronContractAddress".into());
-            }
-            if registry.find_representation_by_external_identity(
-                p.chain_id,
-                freedom_types::CrossChainAssetKind::Trc20,
-                &p.usdt_contract,
-                p.bridge_id,
-            ).is_none() {
-                return Err("TronTokenRegistryIdentityMismatch".into());
-            }
-        }
-    }
     freedom_types::DepositVerifier::verify(proof, registry, policy)
         .map_err(|e| format!("BridgeDepositVerification:{e:?}"))
 }
