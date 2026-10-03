@@ -29,7 +29,15 @@ pub struct SyncResponse { pub request_id: Hash, pub from_height: u64, pub blocks
 pub struct SnapshotSyncRequest { pub request_id: Hash, pub height: u64 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SnapshotSyncResponse { pub request_id: Hash, pub height: u64, pub block_hash: Hash, pub state_root: Hash, pub state_json: Vec<u8> }
+pub struct SnapshotSyncResponse {
+    pub request_id: Hash,
+    pub height: u64,
+    pub block_hash: Hash,
+    pub state_root: Hash,
+    pub checkpoint: freedom_types::Block,
+    pub certificate: freedom_types::FinalityCertificate,
+    pub state_json: Vec<u8>,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SyncWireRequest { Blocks(SyncRequest), Snapshot(SnapshotSyncRequest) }
