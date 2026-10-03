@@ -354,3 +354,41 @@ mod m24_evidence_tests {
         assert!(validate_evidence(&tampered).is_err());
     }
 }
+
+
+#[cfg(test)]
+mod m26_stake_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Genesis, Validator};
+
+    fn state(stakes: [u128;3]) -> ChainState {
+        let validators=(0..3).map(|i|{
+            let key=[(i+1) as u8;32];
+            let id=hash_bytes(&[b"v",&[(i+1) as u8]].concat());
+            Validator{validator_id:id,owner:freedom_primitives::address_from_public_key(&key),consensus_key:key,stake:stakes[i],blocks_proposed:0,blocks_finalized:0,missed_votes:0}
+        }).collect();
+        ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators})
+    }
+
+    #[test]
+    fn stake_quorum_uses_weight_not_count() {
+        let s=state([80,10,10]);
+        let ids:std::collections::BTreeSet<_>=s.validators.keys().take(1).copied().collect();
+        assert!(stake_quorum_reached(&s,&ids));
+    }
+
+    #[test]
+    fn minority_stake_does_not_finalize() {
+        let s=state([40,30,30]);
+        let ids:std::collections::BTreeSet<_>=s.validators.keys().take(1).copied().collect();
+        assert!(!stake_quorum_reached(&s,&ids));
+    }
+
+    #[test]
+    fn zero_total_stake_has_no_quorum() {
+        let s=state([0,0,0]);
+        let ids=std::collections::BTreeSet::new();
+        assert!(!stake_quorum_reached(&s,&ids));
+    }
+}
