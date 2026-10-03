@@ -1192,3 +1192,17 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - Signature/quorum verification is separated from canonical-tip verification because a successor block is intentionally one height beyond the persisted tip.
 - State validation requires exact agreement between the commitment and attestation: bridge, block height, block hash, previous root and next root.
 - This prevents reusing a valid quorum signature for a different Bitcoin block transition.
+
+
+## M132 — Attested Bitcoin UTXO Transition Lifecycle
+
+`apply_bitcoin_utxo_attested_commitment(...)` is the state transition boundary for a quorum-attested Bitcoin UTXO update.
+
+It atomically:
+1. verifies the candidate block is the exact successor of the persisted canonical tip;
+2. binds block hash/height to the UTXO commitment and validator attestation;
+3. rejects a transition whose previous UTXO root does not equal the last attested root;
+4. rejects attestation sequence replay;
+5. advances the canonical Bitcoin checkpoint and persisted UTXO attestation together.
+
+The block transition remains adapter-specific: a Bitcoin block hash is never treated as an SMT root.
