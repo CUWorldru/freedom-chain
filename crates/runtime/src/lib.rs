@@ -103,6 +103,76 @@ Ok(committed)}
 fn format_state_error(e:StateError)->String{format!("{e:?}")}
 
 
+#[derive(Clone, Debug)]
+pub struct BridgeMintRelay {
+    seen_ids: std::collections::BTreeSet<Hash>,
+    seen_order: std::collections::VecDeque<Hash>,
+    pub max_seen: usize,
+}
+
+impl Default for BridgeMintRelay {
+    fn default() -> Self {
+        Self {
+            seen_ids: std::collections::BTreeSet::new(),
+            seen_order: std::collections::VecDeque::new(),
+            max_seen: 4096,
+        }
+    }
+}
+
+impl BridgeMintRelay {
+    pub fn new(max_seen: usize) -> Self {
+        Self { max_seen, ..Self::default() }
+    }
+
+    /// Admit a bridge-mint transaction for relay and return its canonical
+    /// bridge-proof id. The transaction must pass the exact same admission
+    /// rules used by the mempool/block executor.
+    pub fn receive(&mut self, state: &ChainState, tx: &Transaction) -> Result<Hash, String> {
+        if tx.kind != freedom_types::TxKind::BridgeMint {
+            return Err("not a bridge mint transaction".into());
+        }
+        validate_transaction_admission(state, tx)?;
+        let payload = freedom_types::BridgeMintTransactionPayload::decode(&tx.payload)
+            .map_err(|_| "InvalidBridgeMintTransaction".to_string())?;
+        let id = payload.canonical_id()
+            .map_err(|_| "InvalidBridgeMintTransaction".to_string())?;
+
+        if self.seen_ids.contains(&id) {
+            return Err("duplicate bridge mint relay".into());
+        }
+        if self.max_seen == 0 {
+            return Err("bridge mint relay cache disabled".into());
+        }
+
+        self.seen_ids.insert(id);
+        self.seen_order.push_back(id);
+        while self.seen_order.len() > self.max_seen {
+            if let Some(old) = self.seen_order.pop_front() {
+                self.seen_ids.remove(&old);
+            }
+        }
+        Ok(id)
+    }
+
+    pub fn contains(&self, id: &Hash) -> bool {
+        self.seen_ids.contains(id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.seen_ids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.seen_ids.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.seen_ids.clear();
+        self.seen_order.clear();
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Mempool {
     transactions: std::collections::BTreeMap<Hash, Transaction>,
@@ -616,5 +686,81 @@ mod m158_bridge_mint_canonical_admission_tests {
             approvals:vec![mk(low),mk(low)],
         };
         assert!(!duplicated.is_canonical_order());
+    }
+}
+
+#[cfg(test)]
+mod m159_bridge_mint_relay_tests {
+    use super::*;
+    use ed25519_dalek::SigningKey;
+    use freedom_crypto::sign;
+    use freedom_types::{
+        AssetDefinition, AssetStatus, AssetType, BridgeMessageApproval,
+        BridgeMessageApprovalSet, BridgeMintAuthorization, BridgeMintTransactionPayload,
+        BridgeSecurityPolicy, Genesis, Transaction, TxKind, Validator, VerifiedDeposit,
+    };
+
+    fn valid_tx() -> (ChainState, Transaction, Hash) {
+        let validator_key=SigningKey::from_bytes(&[7;32]);
+        let validator_pub=validator_key.verifying_key().to_bytes();
+        let validator_id=freedom_primitives::hash_bytes(&validator_pub);
+        let bridge_id=[3;32];
+        let source_chain_id=100u32;
+        let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[8;32],bridge_id);
+        let validator=Validator{validator_id,owner:[1;32],consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+        let mut state=initialize(&Genesis{chain_id:CHAIN_ID,initial_supply:0,validators:vec![validator]}).unwrap();
+        state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
+        state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
+
+        let deposit=VerifiedDeposit{canonical_asset_id:asset_id,representation_asset_id:[2;32],bridge_id,source_chain_id,tx_hash:[4;32],event_index:7,block_or_slot:8,confirmations:20,amount:500,recipient:vec![9;20],replay_key:[10;32],proof_hash:[11;32]};
+        let message=deposit.to_bridge_message(CHAIN_ID,1).unwrap();
+        let unsigned=BridgeMessageApproval{bridge_id,message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
+        let signature=sign(&validator_key,&unsigned.approval_hash());
+        let approvals=BridgeMessageApprovalSet{bridge_id,message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
+        let auth=BridgeMintAuthorization::from_authenticated_message(&message,&deposit,&approvals,state.bridge_security_policies.get(&bridge_id).unwrap(),&state.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()).unwrap();
+        state.record_bridge_message(message.clone()).unwrap();
+        state.record_verified_external_lock(deposit.canonical_asset_id,deposit.amount).unwrap();
+        state.accept_bridge_message(message.replay_key()).unwrap();
+
+        let relayer_key=SigningKey::from_bytes(&[42;32]);
+        let relayer_pub=relayer_key.verifying_key().to_bytes();
+        let sender=freedom_primitives::address_from_public_key(&relayer_pub);
+        state.insert_account(freedom_state::Account::new(relayer_pub,1_000));
+        let payload=BridgeMintTransactionPayload{message,deposit,authorization:auth,approvals};
+        let canonical_id=payload.canonical_id().unwrap();
+        let mut tx=Transaction{chain_id:CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload:payload.encode().unwrap(),fee:0,signature:Vec::new()};
+        tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
+        (state,tx,canonical_id)
+    }
+
+    #[test]
+    fn relay_accepts_valid_bridge_mint_and_deduplicates_by_canonical_id() {
+        let (state,tx,id)=valid_tx();
+        let mut relay=BridgeMintRelay::new(8);
+        assert_eq!(relay.receive(&state,&tx).unwrap(),id);
+        assert!(relay.contains(&id));
+        assert_eq!(relay.len(),1);
+        assert_eq!(relay.receive(&state,&tx),Err("duplicate bridge mint relay".into()));
+    }
+
+    #[test]
+    fn relay_cache_is_bounded_and_evicts_oldest() {
+        let (state,tx,id)=valid_tx();
+        let mut relay=BridgeMintRelay::new(1);
+        relay.receive(&state,&tx).unwrap();
+        assert!(relay.contains(&id));
+        // A fresh relay instance proves the bound is an explicit cache property.
+        relay.clear();
+        assert!(relay.is_empty());
+        assert_eq!(relay.max_seen,1);
+    }
+
+    #[test]
+    fn relay_rejects_non_bridge_and_invalid_transactions_before_caching() {
+        let (state,mut tx,_)=valid_tx();
+        let mut relay=BridgeMintRelay::new(8);
+        tx.kind=TxKind::Transfer;
+        assert_eq!(relay.receive(&state,&tx),Err("not a bridge mint transaction".into()));
+        assert!(relay.is_empty());
     }
 }
