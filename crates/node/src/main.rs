@@ -9,7 +9,7 @@ use freedom_storage::ChainStore;
 use freedom_types::{Genesis, Validator};
 use libp2p::{Multiaddr, SwarmEvent};
 use libp2p::futures::StreamExt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use tokio::time::{interval, Duration};
 
 const ROUND_TIMEOUT_SECS: u64 = 5;
@@ -75,6 +75,7 @@ struct PeerReputation {
     cooldown_until_height: u64,
     last_decay_height: u64,
     evidence: Vec<PeerReputationEvidence>,
+    dedup_index: BTreeSet<Hash>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,6 +114,18 @@ fn peer_evidence_weight(kind: &PeerEvidenceKind, severity: PeerEvidenceSeverity)
         PeerEvidenceSeverity::Critical => PEER_REPUTATION_POLICY.critical_severity_multiplier,
     };
     base.saturating_mul(multiplier)
+}
+
+fn peer_evidence_id(evidence: &PeerReputationEvidence) -> Hash {
+    let bytes = serde_json::to_vec(&(
+        b"freedom/peer-reputation/evidence/v1",
+        evidence.peer,
+        evidence.height,
+        evidence.request_id,
+        evidence.fingerprint,
+        &evidence.kind,
+    )).expect("peer reputation evidence serialization must succeed");
+    hash_bytes(&bytes)
 }
 
 fn compact_peer_evidence(reputation: &mut PeerReputation) -> bool {
@@ -168,14 +181,10 @@ fn record_peer_evidence_with_confirmations(
         cooldown_until_height: height,
         last_decay_height: height,
         evidence: Vec::new(),
+        dedup_index: BTreeSet::new(),
     });
-    if entry.evidence.iter().any(|existing| {
-        existing.peer == evidence.peer
-            && existing.height == evidence.height
-            && existing.request_id == evidence.request_id
-            && existing.fingerprint == evidence.fingerprint
-            && existing.kind == evidence.kind
-    }) {
+    let evidence_id = peer_evidence_id(&evidence);
+    if !entry.dedup_index.insert(evidence_id) {
         return;
     }
     evidence.severity = classify_peer_evidence(entry, &evidence.kind, confirming_peers);
@@ -447,6 +456,7 @@ mod m31_tests {
             cooldown_until_height: 0,
             last_decay_height: 0,
             evidence: Vec::new(),
+            dedup_index: BTreeSet::new(),
         };
         assert_eq!(
             classify_peer_evidence(&reputation, &PeerEvidenceKind::SyncConflict, 1),
