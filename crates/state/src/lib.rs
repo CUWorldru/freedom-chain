@@ -128,9 +128,12 @@ impl ChainState {
   Ok(replay_key)
  }
  pub fn accept_bridge_message(&mut self,replay_key:Hash)->Result<(),StateError>{
+  if !self.processed_bridge_messages.contains_key(&replay_key) { return Err(StateError::InvalidBridgeMessage); }
+  if !self.bridge_message_status.contains_key(&replay_key) {
+   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Verified);
+  }
   let status=self.bridge_message_status.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
   if *status != BridgeMessageStatus::Verified { return Err(StateError::InvalidBridgeMessage); }
-  if !self.processed_bridge_messages.contains_key(&replay_key) { return Err(StateError::InvalidBridgeMessage); }
   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Accepted);
   Ok(())
  }
