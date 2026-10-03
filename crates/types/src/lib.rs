@@ -2252,6 +2252,8 @@ fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitcoinChainContext {
+    pub start_height: u64,
+    pub base_chainwork: BitcoinChainWork,
     pub tip_height: u64,
     pub tip_hash: Hash,
     pub headers: Vec<BitcoinBlockHeader>,
@@ -2261,6 +2263,8 @@ pub struct BitcoinChainContext {
 impl BitcoinChainContext {
     pub fn validate(&self) -> bool {
         self.tip_height > 0
+            && self.start_height > 0
+            && self.start_height <= self.tip_height
             && self.tip_hash != [0u8; 32]
             && !self.headers.is_empty()
             && self.difficulty_windows.iter().all(BitcoinDifficultyWindow::validate)
@@ -2270,7 +2274,7 @@ impl BitcoinChainContext {
         if !self.validate() {
             return Err(BridgeAdapterError::InvalidProof);
         }
-        let mut work = [0u64; 5];
+        let mut work = self.base_chainwork;
         for header in &self.headers {
             let target = BitcoinBlockHeader::target_from_bits(header.bits)
                 .ok_or(BridgeAdapterError::InvalidProof)?;
@@ -2311,19 +2315,31 @@ impl BitcoinChainContext {
             return Err(BridgeAdapterError::InvalidProof);
         }
 
-        let expected_count = (self.tip_height - deposit_height + 1) as usize;
+        if deposit_height < self.start_height {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        let expected_count = (self.tip_height - self.start_height + 1) as usize;
         if self.headers.len() != expected_count {
             return Err(BridgeAdapterError::InvalidProof);
         }
 
-        if self.headers[0] != *deposit_header {
+        let deposit_index = (deposit_height - self.start_height) as usize;
+        if deposit_index >= self.headers.len() || self.headers[deposit_index] != *deposit_header {
             return Err(BridgeAdapterError::InvalidProof);
         }
 
-        let mut previous_hash = deposit_header.block_hash();
-        let mut previous_bits = deposit_header.bits;
+        let mut previous_hash = if deposit_index == 0 {
+            self.headers[0].block_hash()
+        } else {
+            self.headers[deposit_index - 1].block_hash()
+        };
+        let mut previous_bits = if deposit_index == 0 {
+            self.headers[0].bits
+        } else {
+            self.headers[deposit_index - 1].bits
+        };
         for (index, header) in self.headers.iter().enumerate() {
-            let height = deposit_height + index as u64;
+            let height = self.start_height + index as u64;
             let expected_bits = self
                 .expected_bits_for_height(height, previous_bits)
                 .ok_or(BridgeAdapterError::InvalidProof)?;
