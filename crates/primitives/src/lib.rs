@@ -5,7 +5,12 @@ pub type Address = [u8; 32];
 
 pub const CHAIN_ID: u32 = 1;
 pub const GENESIS_SUPPLY: u128 = 0;
-pub const FDM_SCALE: u128 = 100_000;
+
+/// User-facing network identity. Consensus and chain ID are intentionally unchanged.
+pub const NETWORK_NAME: &str = "321MORE Network";
+pub const NATIVE_ASSET_SYMBOL: &str = "321M";
+pub const GAS_ASSET_SYMBOL: &str = NATIVE_ASSET_SYMBOL;
+pub const NATIVE_ASSET_SCALE: u128 = 100_000;
 
 pub fn hash_bytes(data: &[u8]) -> Hash {
     *blake3::hash(data).as_bytes()
