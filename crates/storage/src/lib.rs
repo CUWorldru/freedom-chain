@@ -414,6 +414,42 @@ mod tests {
 
 
     #[test]
+    fn atomic_checkpoint_snapshot_rejects_mismatched_state_before_write() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let checkpoint = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: 1, initial_supply: 0, validators: vec![]
+        });
+        state.height = 1;
+        state.last_block_hash = [9; 32];
+
+        let err = store.put_block_and_snapshot(
+            &checkpoint,
+            &state,
+            freedom_types::FinalityCertificate {
+                block_hash: block_hash(&checkpoint),
+                height: 1,
+                round: 0,
+                precommits: Vec::new(),
+            },
+            std::collections::BTreeMap::new(),
+        ).unwrap_err();
+
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "checkpoint does not match state last hash"));
+        assert_eq!(store.latest_height().unwrap(), 0);
+        assert_eq!(store.latest_hash().unwrap(), [0; 32]);
+        assert!(store.get_block(1).unwrap().is_none());
+        assert!(store.load_snapshot(1).unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_snapshot_write_without_checkpoint() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
