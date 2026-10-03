@@ -934,3 +934,8 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - `BridgeApprovalSet::authenticated_approvals` counts only structurally valid approvals whose registered validator public key matches the claimed identity and whose signature verifies;
 - duplicate validators remain deduplicated;
 - threshold/MPC aggregate signature verification is intentionally still separate because the concrete external signer scheme may differ by bridge deployment.
+
+
+## M94 — Atomic Bridge Withdrawal Rate-Limit Approval
+
+Bridge withdrawal rate limits are now reserved atomically with authenticated approval. A withdrawal can enter `Approved` only from `Validated`; bridge period usage is reserved before the status transition, and a failed reservation leaves the withdrawal in `Validated`. Repeated approval calls cannot consume the limit twice. The reserved period is persisted and included in the state root.
