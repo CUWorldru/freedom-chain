@@ -632,6 +632,19 @@ pub struct CrossChainAssetRegistry {
 }
 
 impl CrossChainAssetRegistry {
+    pub fn is_multi_representation(&self) -> bool {
+        self.representations.len() > 1
+    }
+
+    pub fn has_representation(
+        &self,
+        representation_asset_id: Hash,
+    ) -> bool {
+        self.representations
+            .iter()
+            .any(|r| r.representation.asset_id == representation_asset_id)
+    }
+
     pub fn compute_canonical_asset_id(symbol: &str, decimals: u8, issuer: Hash) -> Hash {
         let mut b = Vec::new();
         b.extend_from_slice(b"FREEDOM-CANONICAL-ASSET-V1");
