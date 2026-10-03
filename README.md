@@ -904,3 +904,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - withdrawals require a canonical 32-byte Solana recipient representation and produce the existing domain-separated withdrawal intent;
 - the adapter model is also suitable as the foundation for native SOL once the external verifier distinguishes native transfers from SPL token transfers;
 - no Solana RPC, transaction/message decoding, Merkle/account proof verification, private-key custody, or transaction broadcasting is performed by consensus code at this milestone.
+
+
+## M88 — Bridge Security Policy
+
+- added a chain-agnostic `BridgeSecurityPolicy` shared by all external bridge adapters;
+- supports validator quorum, threshold-signature requirements, or both through `BridgeApprovalMode`;
+- validator approval requires a strict two-thirds-plus-one style supermajority (`3 * quorum > 2 * total`);
+- external finality, per-deposit and per-withdrawal amount limits, daily withdrawal limits, emergency pause, and nonce floor are explicit policy parameters;
+- policy helpers reject deposits/withdrawals while paused, over configured limits, or below the nonce floor;
+- the policy is a consensus-visible configuration primitive, while actual signer/MPC cryptography and off-chain daily-volume accounting remain executor-layer responsibilities.
