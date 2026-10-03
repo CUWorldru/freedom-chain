@@ -1183,3 +1183,12 @@ Bitcoin raw transactions are now parsed inside the verifier with legacy and SegW
 - The commitment binds block height and block hash to previous and next UTXO roots.
 - State APIs now validate and build the commitment only from the canonical Bitcoin successor block.
 - This closes the reference pipeline from Bitcoin block data to an authenticated compact UTXO state transition.
+
+
+## M131 — Bitcoin UTXO Commitment Attestation Binding
+
+- Extends the validator attestation to sign both the previous and next UTXO roots.
+- The attestation is bound to the exact successor Bitcoin block height and block hash.
+- Signature/quorum verification is separated from canonical-tip verification because a successor block is intentionally one height beyond the persisted tip.
+- State validation requires exact agreement between the commitment and attestation: bridge, block height, block hash, previous root and next root.
+- This prevents reusing a valid quorum signature for a different Bitcoin block transition.
