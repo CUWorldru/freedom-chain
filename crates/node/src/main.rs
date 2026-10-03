@@ -165,6 +165,31 @@ mod m31_tests {
         assert!(err.contains("proposer mismatch"));
         assert_eq!(state, before);
     }
+
+    #[test]
+    fn replay_rejects_height_gap_before_execution() {
+        let validators: Vec<Validator> = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            Validator {
+                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                owner: address_from_public_key(&key),
+                consensus_key: key,
+                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            }
+        }).collect();
+        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
+        let mut state = initialize(&genesis).unwrap();
+        let owner = state.active_validator_set.values().next().unwrap().owner;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let (_, mut block) = build_local_proposal(&state, owner, &key, 0).unwrap();
+        block.header.height = 2;
+        let before = state.clone();
+
+        let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
+
+        assert!(err.contains("height gap"));
+        assert_eq!(state, before);
+    }
 }
 
 fn replay_persisted_blocks(
