@@ -914,3 +914,13 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - external finality, per-deposit and per-withdrawal amount limits, daily withdrawal limits, emergency pause, and nonce floor are explicit policy parameters;
 - policy helpers reject deposits/withdrawals while paused, over configured limits, or below the nonce floor;
 - the policy is a consensus-visible configuration primitive, while actual signer/MPC cryptography and off-chain daily-volume accounting remain executor-layer responsibilities.
+
+
+## M89 — Bridge Approval Records
+
+- added concrete `BridgeApproval` records binding a validator approval to bridge ID, request ID, withdrawal ID, validator ID, nonce, amount, destination chain, asset, intent hash, and signature bytes;
+- approval signing bytes use a dedicated domain and bind the exact withdrawal intent, preventing an approval from being reused for another amount, recipient, asset, chain, nonce, or request;
+- `BridgeApprovalSet` deduplicates validators and evaluates quorum against the exact bridge/withdrawal/intent tuple;
+- threshold signatures are tracked separately from validator quorum, allowing `Quorum`, `Threshold`, or `QuorumAndThreshold` policy modes;
+- malformed or mismatched approvals do not count toward quorum;
+- cryptographic signature verification and MPC aggregation remain executor/crypto-layer responsibilities; this milestone defines the consensus-visible approval evidence and counting rules.
