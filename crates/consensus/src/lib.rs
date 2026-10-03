@@ -49,7 +49,7 @@ pub fn validate_vote(state: &ChainState, vote: &freedom_types::ValidatorVote, ex
     if vote.block_hash != expected_block_hash { return Err("vote block hash mismatch".into()); }
     if vote.height != expected_height { return Err("vote height mismatch".into()); }
     if vote.round != expected_round { return Err("vote round mismatch".into()); }
-    let validator = state.validators.get(&vote.validator_id).ok_or_else(|| "unknown validator".to_string())?;
+    let validator = state.active_validator_set.get(&vote.validator_id).ok_or_else(|| "unknown validator".to_string())?;
     if vote.signature.len() != 64 { return Err("invalid vote signature length".into()); }
     let mut sig = [0u8;64];
     sig.copy_from_slice(&vote.signature);
@@ -129,7 +129,7 @@ mod quorum_tests {
 pub fn validate_timeout(state:&ChainState, timeout:&freedom_types::ValidatorTimeout, height:u64, round:u64)->Result<(),String>{
  if timeout.height!=height{return Err("timeout height mismatch".into())}
  if timeout.round!=round{return Err("timeout round mismatch".into())}
- let v=state.validators.get(&timeout.validator_id).ok_or_else(||"unknown validator".to_string())?;
+ let v=state.active_validator_set.get(&timeout.validator_id).ok_or_else(||"unknown validator".to_string())?;
  if timeout.signature.len()!=64{return Err("invalid timeout signature length".into())}
  let mut sig=[0u8;64];sig.copy_from_slice(&timeout.signature);
  if !freedom_crypto::verify(&v.consensus_key,&timeout.signing_bytes(),&sig){return Err("invalid timeout signature".into())}
@@ -155,7 +155,7 @@ pub fn validate_precommit(
     if precommit.block_hash != expected_block_hash { return Err("precommit block hash mismatch".into()); }
     if precommit.height != expected_height { return Err("precommit height mismatch".into()); }
     if precommit.round != expected_round { return Err("precommit round mismatch".into()); }
-    let validator = state.validators.get(&precommit.validator_id).ok_or_else(|| "unknown validator".to_string())?;
+    let validator = state.active_validator_set.get(&precommit.validator_id).ok_or_else(|| "unknown validator".to_string())?;
     if precommit.signature.len() != 64 { return Err("invalid precommit signature length".into()); }
     let mut sig = [0u8; 64];
     sig.copy_from_slice(&precommit.signature);
