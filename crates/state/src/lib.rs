@@ -196,6 +196,15 @@ impl ChainState {
   }
   Ok(())
  }
+ pub fn validate_cross_chain_proof_adapter(&self,envelope:&freedom_types::CrossChainFinalityEnvelope)->Result<(),StateError>{
+  match envelope.proof_kind {
+    freedom_types::CrossChainProofKind::BitcoinUtxo => freedom_types::BitcoinUtxoFinalityAdapter::default().verify_envelope(envelope),
+    freedom_types::CrossChainProofKind::Ethereum => freedom_types::EvmFinalityAdapter::default().verify_envelope(envelope),
+    freedom_types::CrossChainProofKind::Tron => freedom_types::TronFinalityAdapter::default().verify_envelope(envelope),
+    _ => return Err(StateError::InvalidBridgeWithdrawal),
+  }.map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  self.validate_cross_chain_finality_envelope(envelope)
+ }
 
  pub fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
