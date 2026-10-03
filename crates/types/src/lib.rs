@@ -54,6 +54,9 @@ impl BridgeMintTransactionPayload {
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, String> {
+        if !self.approvals.is_canonical_order() {
+            return Err("bridge approvals are not in canonical validator order".into());
+        }
         let mut out = Vec::with_capacity(1024);
         out.extend_from_slice(b"FREEDOM-BRIDGE-MINT-TX-V1");
         out.push(Self::VERSION);
@@ -176,12 +179,27 @@ impl BridgeMintTransactionPayload {
             approval_vec.push(BridgeMessageApproval{bridge_id,message_hash,validator_id,signature});
         }
         if r.i != r.b.len() { return Err("trailing bytes in bridge mint payload".into()); }
-        Ok(Self{
+        let payload = Self{
             message,
             deposit,
             authorization,
             approvals:BridgeMessageApprovalSet{bridge_id:approvals_bridge_id,message_hash:approvals_message_hash,approvals:approval_vec},
-        })
+        };
+        if !payload.approvals.is_canonical_order() {
+            return Err("bridge approvals are not in canonical validator order".into());
+        }
+        Ok(payload)
+    }
+
+    /// Canonical identity of the bridge proof carried by this transaction.
+    /// This intentionally excludes the relayer's transaction signature:
+    /// the same authenticated bridge mint proof must map to one logical id.
+    pub fn canonical_id(&self) -> Result<Hash, String> {
+        let encoded = self.encode()?;
+        let mut bytes = Vec::with_capacity(32 + encoded.len());
+        bytes.extend_from_slice(b"FREEDOM-BRIDGE-MINT-ID-V1");
+        bytes.extend_from_slice(&encoded);
+        Ok(freedom_primitives::hash_bytes(&bytes))
     }
 }
 impl Transaction {
@@ -732,6 +750,17 @@ pub struct BridgeMessageApprovalSet {
 }
 
 impl BridgeMessageApprovalSet {
+    /// Returns true only when approvals are in the single canonical order used
+    /// by the BridgeMint transaction codec: strictly ascending validator_id.
+    ///
+    /// A set with duplicate validator ids is therefore non-canonical even
+    /// though quorum counting de-duplicates those ids.
+    pub fn is_canonical_order(&self) -> bool {
+        self.approvals
+            .windows(2)
+            .all(|pair| pair[0].validator_id < pair[1].validator_id)
+    }
+
     pub fn authenticated_count(
         &self,
         validator_keys: &std::collections::BTreeMap<Hash, [u8; 32]>,
