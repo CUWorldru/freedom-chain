@@ -49,6 +49,16 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - reward mint increases total and circulating supply together
 - Treasury and CU have no direct mint path
 
+## M4 — CU Wallet / FDM Billing
+
+- signed Purchase transactions charge paid CU functionality only in FDM
+- first catalog product: `AiBotConnect`
+- purchase price is denominated in mFDM
+- payment moves FDM from buyer to merchant; it does not mint new FDM
+- purchase reference prevents duplicate charging
+- purchase records provide an on-chain billing receipt
+- wallet balance remains authoritative on Freedom Chain
+
 ## Roadmap
 
 - M3: protocol-issued FDM rewards from verified contribution WU
