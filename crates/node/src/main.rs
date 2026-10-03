@@ -304,6 +304,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
     let mut pending_sync = None::<Hash>;
     let mut pending_sync_from = None::<u64>;
+    let mut pending_snapshot = None::<(Hash, u64)>;
     let mut connected_peers = Vec::<libp2p::PeerId>::new();
     let mut valset_votes: BTreeMap<Hash, freedom_types::ValidatorSetVote> = BTreeMap::new();
     let mut valset_certificate_broadcasted: Option<Hash> = None;
@@ -432,6 +433,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         SyncWireResponse::Snapshot(response) => {
+                                            if pending_snapshot != Some((response.request_id, response.height)) {
+                                                eprintln!("SNAPSHOT_REJECTED unsolicited or stale response at {}", response.height);
+                                                continue;
+                                            }
                                             if response.height <= state.height || freedom_network::validate_snapshot_response(&response).is_err() { continue; }
                                             if response.chain_id != freedom_primitives::CHAIN_ID {
                                                 eprintln!("SNAPSHOT_REJECTED chain id mismatch");
@@ -514,6 +519,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             state = snapshot_state;
                                             pending_sync = None;
+                                            pending_sync_from = None;
+                                            pending_snapshot = None;
                                             round = 0;
                                             timeout_round_sent = None;
                                             protocol.reset_round();
