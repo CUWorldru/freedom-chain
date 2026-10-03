@@ -337,22 +337,25 @@ pub fn validate_finality_certificate(
 }
 
 
+pub fn validate_finality_certificate_for_set(
+    validator_set: &std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
+    block: &freedom_types::Block,
+    cert: &freedom_types::FinalityCertificate,
+) -> Result<(), String> {
+    let expected_hash = block_hash(block);
+    if cert.block_hash != expected_hash { return Err("finality certificate block hash mismatch".into()); }
+    if cert.height != block.header.height { return Err("finality certificate height mismatch".into()); }
+    if cert.round != block.header.round { return Err("finality certificate round mismatch".into()); }
+    if !detect_precommit_equivocation(&cert.precommits).is_empty() { return Err("finality certificate contains equivocation".into()); }
+    validate_precommit_quorum_for_set(validator_set, cert.block_hash, cert.height, cert.round, &cert.precommits)
+}
+
 pub fn validate_finality_certificate_for_block(
     state: &ChainState,
     block: &freedom_types::Block,
     cert: &freedom_types::FinalityCertificate,
 ) -> Result<(), String> {
-    let expected_hash = block_hash(block);
-    if cert.block_hash != expected_hash {
-        return Err("finality certificate block hash mismatch".into());
-    }
-    if cert.height != block.header.height {
-        return Err("finality certificate height mismatch".into());
-    }
-    if cert.round != block.header.round {
-        return Err("finality certificate round mismatch".into());
-    }
-    validate_finality_certificate(state, cert)
+    validate_finality_certificate_for_set(&state.active_validator_set, block, cert)
 }
 
 pub fn validate_timeout_certificate(
