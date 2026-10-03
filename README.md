@@ -1014,3 +1014,8 @@ Detected Bitcoin reorg conflicts are now stored as bounded, deduplicated evidenc
 ## M108 — Bitcoin Reorg Severity Policy
 
 Bitcoin reorg evidence can now be classified as Normal, Elevated, or Critical by a persisted bridge policy. A competing chain with greater accumulated chainwork is Critical; a sufficiently deeper competing tip is Elevated; other conflicts are Normal. Classification is informational/policy state only and never mutates or rolls back the trusted checkpoint.
+
+
+## M109 — Bitcoin Reorg Policy Enforcement
+
+Persisted Bitcoin reorg severity now acts as a bridge safety gate. Elevated or Critical evidence blocks Bitcoin checkpoint advancement and deposit acceptance until the evidence state is recovered/cleared by an explicit state transition. Normal evidence does not block operation. No automatic rollback or fork selection is performed.
