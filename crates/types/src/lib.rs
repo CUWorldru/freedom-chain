@@ -168,6 +168,66 @@ impl ValidatorSetCertificate {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AssetType {
+    Native = 1,
+    Bridged = 2,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AssetStatus {
+    Active = 1,
+    Paused = 2,
+    Deprecated = 3,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssetDefinition {
+    pub asset_id: Hash,
+    pub source_chain_id: u32,
+    pub asset_type: AssetType,
+    /// Contract address for contract assets, or a canonical native-asset identifier
+    /// (for example b"BTC") for chains without contracts.
+    pub contract_address: Vec<u8>,
+    pub symbol: String,
+    pub decimals: u8,
+    pub issuer: Hash,
+    pub bridge_id: Hash,
+    pub status: AssetStatus,
+}
+
+impl AssetDefinition {
+    pub fn compute_asset_id(
+        source_chain_id: u32,
+        asset_type: AssetType,
+        contract_address: &[u8],
+        issuer: Hash,
+        bridge_id: Hash,
+    ) -> Hash {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"FREEDOM-ASSET-ID-V1");
+        bytes.extend_from_slice(&source_chain_id.to_le_bytes());
+        bytes.push(asset_type as u8);
+        bytes.extend_from_slice(&(contract_address.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(contract_address);
+        bytes.extend_from_slice(&issuer);
+        bytes.extend_from_slice(&bridge_id);
+        freedom_primitives::hash_bytes(&bytes)
+    }
+
+    pub fn validate_identity(&self) -> bool {
+        self.asset_id == Self::compute_asset_id(
+            self.source_chain_id,
+            self.asset_type,
+            &self.contract_address,
+            self.issuer,
+            self.bridge_id,
+        ) && !self.symbol.is_empty()
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Genesis { pub chain_id:u32, pub initial_supply:u128, pub validators:Vec<Validator> }
 
