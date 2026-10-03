@@ -379,3 +379,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Zero-amount staking is rejected.
 - `staking_activated` is persisted and included in the state commitment.
 - M34 tests cover bootstrap, unbonding lockout, exit persistence and pending-unbonding restake rejection.
+
+
+## M35 — Epoch-Bound Validator Set Changes
+
+- `active_validator_set` is the consensus set for the current epoch and is not mutated by ordinary stake/unstake transactions.
+- `pending_validator_set` records the validator set that will become active at the next epoch boundary.
+- Stake, unstake, slashing and unbonding maturity update pending membership without changing the current consensus set mid-epoch.
+- At an epoch boundary, pending becomes active and a new pending set is derived from the resulting validator state.
+- Both active and pending validator sets are committed into the state root.
+- Consensus continues to validate proposals, votes, precommits and timeouts against the active set of the current epoch.
+- M35 tests cover delayed exit and delayed activation across an epoch boundary.
