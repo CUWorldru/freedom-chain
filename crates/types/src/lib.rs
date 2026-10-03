@@ -1503,6 +1503,7 @@ impl DepositVerifier {
         if proof.asset_id != registry.canonical_asset_id {
             return Err(DepositVerificationError::AssetMismatch);
         }
+        CryptographicDepositVerification::verify(proof)?;
         if !registry.verify_proof(proof, policy.min_external_confirmations) {
             return Err(DepositVerificationError::InvalidProof);
         }
