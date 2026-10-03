@@ -197,6 +197,7 @@ pub struct BlockProposal {
     pub signature: Vec<u8>,
 }
 impl BlockProposal {
+    pub fn message_id(&self) -> Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(b"FREEDOM-PROPOSAL-V1");
@@ -222,6 +223,7 @@ pub struct ValidatorVote {
     pub signature: Vec<u8>,
 }
 impl ValidatorVote {
+    pub fn message_id(&self) -> Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(b"FREEDOM-VOTE-V1");
@@ -241,6 +243,7 @@ pub struct ValidatorTimeout {
     pub signature: Vec<u8>,
 }
 impl ValidatorTimeout {
+    pub fn message_id(&self) -> Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(b"FREEDOM-TIMEOUT-V1");
@@ -337,6 +340,7 @@ pub struct ValidatorPrecommit {
     pub signature: Vec<u8>,
 }
 impl ValidatorPrecommit {
+    pub fn message_id(&self) -> Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(b"FREEDOM-PRECOMMIT-V1");
