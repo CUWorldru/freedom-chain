@@ -543,7 +543,7 @@ impl ChainState {
   let draw=self.draws.get(&p.draw_id).cloned().ok_or(StateError::InvalidDraw)?;
   if self.height<draw.config.starts_at||self.height>draw.config.ends_at{return Err(StateError::InvalidDraw)}
   if draw.config.ticket_price_native_units!=10_000{return Err(StateError::InvalidTicketPrice)}
-  let cost=draw.config.ticket_price_mfdm.checked_mul(p.quantity as u128).ok_or(StateError::ArithmeticOverflow)?;
+  let cost=draw.config.ticket_price_native_units.checked_mul(p.quantity as u128).ok_or(StateError::ArithmeticOverflow)?;
   let new_total=draw.total_tickets.checked_add(p.quantity).ok_or(StateError::ArithmeticOverflow)?;
   let mut new_ids=Vec::with_capacity(p.quantity as usize);
   let start=draw.total_tickets+1;
