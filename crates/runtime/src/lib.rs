@@ -69,14 +69,17 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
  Ok(())
 }
 
-pub fn verify_external_bridge_deposit(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResolvedBridgeRepresentation {
+    pub canonical_asset_id: Hash,
+    pub representation_asset_id: Hash,
+}
+
+fn resolve_bridge_representation(
     external: &freedom_types::ExternalBridgeDepositProof,
     registry: &freedom_types::CrossChainAssetRegistry,
-    policy: &freedom_types::BridgeSecurityPolicy,
-    descriptor: &freedom_types::BridgeAdapterDescriptor,
     canonical_asset_id: Hash,
-    recipient_override: Option<Vec<u8>>,
-) -> Result<freedom_types::VerifiedDeposit, String> {
+) -> Result<ResolvedBridgeRepresentation, String> {
     if canonical_asset_id != registry.canonical_asset_id {
         return Err("CanonicalAssetRegistryMismatch".into());
     }
@@ -111,36 +114,55 @@ pub fn verify_external_bridge_deposit(
         )
         .ok_or_else(|| "ExternalAssetRepresentationNotRegistered".to_string())?;
 
-    let resolved_representation_asset_id = representation.representation.asset_id;
+    Ok(ResolvedBridgeRepresentation {
+        canonical_asset_id: registry.canonical_asset_id,
+        representation_asset_id: representation.representation.asset_id,
+    })
+}
+
+pub fn verify_external_bridge_deposit(
+    external: &freedom_types::ExternalBridgeDepositProof,
+    registry: &freedom_types::CrossChainAssetRegistry,
+    policy: &freedom_types::BridgeSecurityPolicy,
+    descriptor: &freedom_types::BridgeAdapterDescriptor,
+    canonical_asset_id: Hash,
+    recipient_override: Option<Vec<u8>>,
+) -> Result<freedom_types::VerifiedDeposit, String> {
+    let resolved = resolve_bridge_representation(external, registry, canonical_asset_id)?;
 
     let proof = match external {
         freedom_types::ExternalBridgeDepositProof::BitcoinUtxo(p) =>
             p.to_cross_chain_asset_proof(
                 policy.min_external_confirmations,
-                canonical_asset_id,
-                resolved_representation_asset_id,
+                resolved.canonical_asset_id,
+                resolved.representation_asset_id,
                 recipient_override.unwrap_or_default(),
             ).map_err(|e| format!("BitcoinDeposit:{e:?}"))?,
         freedom_types::ExternalBridgeDepositProof::EvmTransfer(p) =>
             p.to_cross_chain_asset_proof(
                 policy.min_external_confirmations,
-                canonical_asset_id,
-                resolved_representation_asset_id,
+                resolved.canonical_asset_id,
+                resolved.representation_asset_id,
             ).map_err(|e| format!("EvmDeposit:{e:?}"))?,
         freedom_types::ExternalBridgeDepositProof::TronUsdt(p) =>
             p.to_cross_chain_asset_proof(
                 policy.min_external_confirmations,
                 &p.usdt_contract,
-                canonical_asset_id,
-                resolved_representation_asset_id,
+                resolved.canonical_asset_id,
+                resolved.representation_asset_id,
             ).map_err(|e| format!("TronUsdtDeposit:{e:?}"))?,
     };
 
-    if proof.asset_id != registry.canonical_asset_id
-        || proof.representation_asset_id != resolved_representation_asset_id
+    if proof.asset_id != resolved.canonical_asset_id
+        || proof.representation_asset_id != resolved.representation_asset_id
     {
         return Err("ResolvedBridgeRepresentationMismatch".into());
     }
+    let representation = registry
+        .representations
+        .iter()
+        .find(|r| r.representation.asset_id == resolved.representation_asset_id)
+        .ok_or_else(|| "ExternalAssetRepresentationNotRegistered".to_string())?;
     if !representation.matches_proof(&proof) {
         return Err("BridgeCanonicalRepresentationMismatch".into());
     }
