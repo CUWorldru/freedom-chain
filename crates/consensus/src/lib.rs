@@ -206,3 +206,35 @@ pub fn validate_finality_certificate(
     }
     validate_precommit_quorum(state, cert.block_hash, cert.height, cert.round, &cert.precommits)
 }
+
+
+pub fn validate_timeout_certificate(
+    state: &ChainState,
+    certificate: &freedom_types::TimeoutCertificate,
+    height: u64,
+    round: u64,
+) -> Result<(), String> {
+    if certificate.height != height { return Err("timeout certificate height mismatch".into()); }
+    if certificate.round >= round { return Err("timeout certificate must be from an earlier round".into()); }
+    validate_timeout_quorum(state, height, certificate.round, &certificate.timeouts)
+}
+
+pub fn validate_valid_round_proof(
+    state: &ChainState,
+    block_hash: Hash,
+    height: u64,
+    proposal_round: u64,
+    valid_round: Option<u64>,
+    precommits: &[freedom_types::ValidatorPrecommit],
+) -> Result<(), String> {
+    match valid_round {
+        None => {
+            if !precommits.is_empty() { return Err("precommits supplied without valid round".into()); }
+            Ok(())
+        }
+        Some(r) => {
+            if r >= proposal_round { return Err("valid round must be lower than proposal round".into()); }
+            validate_precommit_quorum(state, block_hash, height, r, precommits)
+        }
+    }
+}
