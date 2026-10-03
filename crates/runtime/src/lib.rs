@@ -143,6 +143,42 @@ pub fn verify_bridge_deposit_with_adapter(
     if !registry.verify_representation_binding(proof, proof.representation_asset_id) {
         return Err("BridgeRepresentationBindingMismatch".into());
     }
+
+    match external {
+        freedom_types::ExternalBridgeDepositProof::BitcoinUtxo(p) => {
+            if registry.find_representation_by_external_identity(
+                p.chain_id,
+                freedom_types::CrossChainAssetKind::BitcoinUtxo,
+                b"BTC",
+                [0u8; 32],
+                p.bridge_id,
+            ).is_none() {
+                return Err("BitcoinRegistryIdentityMismatch".into());
+            }
+        }
+        freedom_types::ExternalBridgeDepositProof::EvmTransfer(p) => {
+            if registry.find_representation_by_external_identity(
+                p.chain_id,
+                freedom_types::CrossChainAssetKind::Erc20,
+                &p.token_contract,
+                [0u8; 32],
+                p.bridge_id,
+            ).is_none() {
+                return Err("EvmTokenRegistryIdentityMismatch".into());
+            }
+        }
+        freedom_types::ExternalBridgeDepositProof::TronUsdt(p) => {
+            if registry.find_representation_by_external_identity(
+                p.chain_id,
+                freedom_types::CrossChainAssetKind::Trc20,
+                &p.usdt_contract,
+                [0u8; 32],
+                p.bridge_id,
+            ).is_none() {
+                return Err("TronTokenRegistryIdentityMismatch".into());
+            }
+        }
+    }
     freedom_types::DepositVerifier::verify(proof, registry, policy)
         .map_err(|e| format!("BridgeDepositVerification:{e:?}"))
 }
