@@ -1254,3 +1254,95 @@ mod m155_bridge_mint_boundary_tests {
  }
 }
 
+
+
+#[cfg(test)]
+mod m156_bridge_mint_transaction_tests {
+ use super::*;
+ use ed25519_dalek::SigningKey;
+ use freedom_crypto::sign;
+ use freedom_types::{
+  BridgeMessageApproval, BridgeMessageApprovalSet, BridgeMintAuthorization,
+  BridgeMintTransactionPayload, BridgeSecurityPolicy, VerifiedDeposit,
+  AssetDefinition, AssetStatus, AssetType, Genesis, Transaction, TxKind,
+ };
+
+ fn setup() -> (ChainState, VerifiedDeposit, BridgeMessage, BridgeMintAuthorization, BridgeMessageApprovalSet, SigningKey) {
+  let validator_key=SigningKey::from_bytes(&[7;32]);
+  let validator_pub=validator_key.verifying_key().to_bytes();
+  let validator_id=freedom_primitives::hash_bytes(&validator_pub);
+  let bridge_id=[3;32];
+  let source_chain_id=100u32;
+  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[8;32],bridge_id);
+  let validator=Validator{validator_id,owner:[1;32],consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+  let mut state=ChainState::genesis(&Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
+  state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
+  state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
+
+  let deposit=VerifiedDeposit{canonical_asset_id:asset_id,representation_asset_id:[2;32],bridge_id,source_chain_id,tx_hash:[4;32],event_index:7,block_or_slot:8,confirmations:20,amount:500,recipient:vec![9;20],replay_key:[10;32],proof_hash:[11;32]};
+  let message=deposit.to_bridge_message(freedom_primitives::CHAIN_ID,1).unwrap();
+  let unsigned=BridgeMessageApproval{bridge_id,message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
+  let signature=sign(&validator_key,&unsigned.approval_hash());
+  let approvals=BridgeMessageApprovalSet{bridge_id,message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
+  let auth=BridgeMintAuthorization::from_authenticated_message(&message,&deposit,&approvals,state.bridge_security_policies.get(&bridge_id).unwrap(),&state.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()).unwrap();
+
+  state.record_bridge_message(message.clone()).unwrap();
+  state.record_verified_external_lock(deposit.canonical_asset_id,deposit.amount).unwrap();
+  state.accept_bridge_message(message.replay_key()).unwrap();
+
+  let relayer_key=SigningKey::from_bytes(&[42;32]);
+  let relayer_pub=relayer_key.verifying_key().to_bytes();
+  let relayer=Account::new(relayer_pub,1_000);
+  let sender=relayer.address;
+  state.insert_account(relayer);
+  (state,deposit,message,auth,approvals,relayer_key)
+ }
+
+ #[test]
+ fn bridge_mint_executes_as_signed_transaction() {
+  let (mut state,deposit,message,auth,approvals,relayer_key)=setup();
+  let payload=BridgeMintTransactionPayload{message:message.clone(),deposit:deposit.clone(),authorization:auth.clone(),approvals:approvals.clone()}.encode().unwrap();
+  let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender:state.accounts.values().next().unwrap().address,nonce:0,kind:TxKind::BridgeMint,payload,fee:7,signature:Vec::new()};
+  tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
+
+  let receipt=freedom_runtime::execute_transaction(&mut state,&tx).unwrap();
+  assert!(receipt.success);
+  assert_eq!(state.accounts[&auth.recipient].balance,500);
+  assert_eq!(state.accounts[&tx.sender].balance,993);
+  assert_eq!(state.accounts[&tx.sender].nonce,1);
+  assert_eq!(state.supply.total,500);
+  assert_eq!(state.supply.circulating,1493);
+  assert_eq!(state.supply.treasury,7);
+  assert_eq!(state.bridge_message_status[&message.replay_key()],BridgeMessageStatus::Minted);
+  assert_eq!(state.bridge_deposit_replays[&auth.replay_key].status,freedom_types::DepositReplayStatus::Consumed);
+  assert!(receipt.events.iter().any(|e| matches!(e, freedom_types::Event::BridgeMinted{amount:500,..})));
+  state.assert_invariants();
+ }
+
+ #[test]
+ fn bridge_mint_transaction_rejects_tampered_authorization() {
+  let (mut state,deposit,message,mut auth,approvals,relayer_key)=setup();
+  auth.amount=501;
+  auth.authorization_hash=auth.compute_hash();
+  let payload=BridgeMintTransactionPayload{message,deposit,authorization:auth,approvals}.encode().unwrap();
+  let sender=state.accounts.values().next().unwrap().address;
+  let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload,fee:0,signature:Vec::new()};
+  tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
+  assert!(freedom_runtime::execute_transaction(&mut state,&tx).is_err());
+  assert_eq!(state.supply.total,0);
+  assert!(state.bridge_deposit_replays.is_empty());
+ }
+
+ #[test]
+ fn bridge_mint_transaction_rejects_replay_after_nonce_update() {
+  let (mut state,deposit,message,auth,approvals,relayer_key)=setup();
+  let payload=BridgeMintTransactionPayload{message:message.clone(),deposit:deposit.clone(),authorization:auth.clone(),approvals:approvals.clone()}.encode().unwrap();
+  let sender=state.accounts.values().next().unwrap().address;
+  let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload:payload.clone(),fee:0,signature:Vec::new()};
+  tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
+  freedom_runtime::execute_transaction(&mut state,&tx).unwrap();
+  let mut replay=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:1,kind:TxKind::BridgeMint,payload,fee:0,signature:Vec::new()};
+  replay.signature=sign(&relayer_key,&replay.signing_bytes()).to_vec();
+  assert_eq!(freedom_runtime::execute_transaction(&mut state,&replay).unwrap_err(), "DuplicateBridgeMessage");
+ }
+}
