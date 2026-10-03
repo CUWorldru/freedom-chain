@@ -167,3 +167,16 @@ M2 establishes the evidence layer for useful network work without minting FDM ye
 - Network messages serialize BlockProposal and signed ValidatorVote.
 - The node binary now starts a real libp2p listener and exposes its PeerId.
 - Consensus finalization remains governed by M14 quorum validation; M15 provides transport, not yet automatic peer discovery or view-change logic.
+
+
+## M16 — Automatic validator protocol loop
+
+- block proposals now carry the full canonical block and a consensus-key signature.
+- validators verify proposer identity, proposal signature, transaction signatures, transaction root, receipts, receipts root and post-execution state root before voting.
+- validators automatically create signed votes after accepting a proposal.
+- votes are collected and checked against the M14 quorum rule.
+- once quorum is reached, the block is finalized and committed atomically.
+- the validator round resets and the next deterministic proposer can start the next height.
+- FREEDOM_VALIDATOR_INDEX=0..2 selects the local validator role.
+- FREEDOM_PEERS can provide comma-separated libp2p multiaddrs for peer dialing.
+- M16 is the protocol loop; production still needs persistent peer discovery, timeouts/view-change, durable storage and Byzantine fault handling beyond the local quorum path.
