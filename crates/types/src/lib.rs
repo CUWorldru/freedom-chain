@@ -618,6 +618,18 @@ pub struct BitcoinBlockHeader {
     pub nonce: u32,
 }
 impl BitcoinBlockHeader {
+pub fn bitcoin_target_from_bits(bits:u32)->Option<[u8;32]>{
+    let exponent=(bits>>24) as usize; let mantissa=bits&0x007f_ffff;
+    if mantissa==0||exponent<3||exponent>32{return None;}
+    if (bits&0x0080_0000)!=0{return None;}
+    let mut out=[0u8;32]; let bytes=mantissa.to_be_bytes();
+    let m=[bytes[1],bytes[2],bytes[3]];
+    let start=32usize.checked_sub(exponent)?; let shift=exponent-3;
+    if shift>29{return None;}
+    out[start+shift..start+shift+3].copy_from_slice(&m); Some(out)
+}
+pub fn bitcoin_hash_leq_target(hash:Hash,target:[u8;32])->bool{hash.iter().rev().cmp(target.iter().rev())!=std::cmp::Ordering::Greater}
+pub fn bitcoin_pow_valid(header:&BitcoinBlockHeader)->bool{bitcoin_target_from_bits(header.bits).map(|t|bitcoin_hash_leq_target(header.block_hash(),t)).unwrap_or(false)}
     pub fn serialize(&self)->[u8;80]{let mut o=[0u8;80];o[0..4].copy_from_slice(&self.version.to_le_bytes());o[4..36].copy_from_slice(&self.prev_block_hash);o[36..68].copy_from_slice(&self.merkle_root);o[68..72].copy_from_slice(&self.time.to_le_bytes());o[72..76].copy_from_slice(&self.bits.to_le_bytes());o[76..80].copy_from_slice(&self.nonce.to_le_bytes());o}
     pub fn block_hash(&self)->Hash{bitcoin_sha256d(&self.serialize())}
 }
@@ -1218,6 +1230,14 @@ mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
  #[test] fn bitcoin_utxo_requires_six_confirmations(){let a=BitcoinAdapter::new(d()).unwrap();assert_eq!(a.verify_utxo_deposit(&p(5)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_utxo_deposit(&p(6)).is_ok());}
  #[test] fn bitcoin_vout_is_replay_event_identity(){assert_eq!(p(6).event_index(),2);}
  #[test] fn bitcoin_withdrawal_uses_script_bytes(){let a=BitcoinAdapter::new(d()).unwrap();let x=a.build_utxo_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();assert!(x.validate_hash());}
+}
+
+#[cfg(test)]
+mod m100_bitcoin_pow_tests {
+ use super::*;
+ #[test] fn bits_to_target_rejects_negative_and_zero(){assert!(bitcoin_target_from_bits(0).is_none());assert!(bitcoin_target_from_bits(0x01800001).is_none());}
+ #[test] fn pow_is_deterministic(){let h=BitcoinBlockHeader{version:1,prev_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};assert_eq!(bitcoin_pow_valid(&h),bitcoin_pow_valid(&h));}
+ #[test] fn header_links_previous_block(){let a=BitcoinBlockHeader{version:1,prev_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.prev_block_hash=a.block_hash();assert_eq!(b.prev_block_hash,a.block_hash());}
 }
 
 #[cfg(test)]
