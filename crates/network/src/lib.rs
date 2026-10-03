@@ -61,7 +61,7 @@ pub fn validate_snapshot_request(req: &SnapshotSyncRequest) -> Result<(), String
 
 pub fn validate_sync_response(response: &SyncResponse) -> Result<(), String> { if response.blocks.is_empty() { return Err("sync response is empty".into()); } if response.blocks.len() > MAX_SYNC_BLOCKS as usize { return Err("sync response exceeds maximum block count".into()); } if response.from_height == 0 { return Err("sync response cannot start at genesis".into()); } for (i,b) in response.blocks.iter().enumerate() { if b.header.height != response.from_height.saturating_add(i as u64) { return Err("sync response contains non-contiguous block heights".into()); } } if response.blocks.first().map(|b| b.header.height) != Some(response.from_height) { return Err("sync response first block does not match from_height".into()); } Ok(()) }
 
-pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(), String> { if response.height == 0 { return Err("snapshot response cannot target genesis".into()); } if response.state_json.len() > MAX_SNAPSHOT_STATE_BYTES { return Err("snapshot state exceeds maximum encoded size".into()); } if response.checkpoint.header.height != response.height { return Err("snapshot checkpoint height mismatch".into()); } if response.checkpoint.header.state_root != response.state_root { return Err("snapshot checkpoint state root mismatch".into()); } if response.certificate.height != response.height || response.certificate.block_hash != response.block_hash { return Err("snapshot certificate identity mismatch".into()); } Ok(()) }
+pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(), String> { if response.height == 0 { return Err("snapshot response cannot target genesis".into()); } if response.state_json.len() > MAX_SNAPSHOT_STATE_BYTES { return Err("snapshot state exceeds maximum encoded size".into()); } if response.checkpoint.header.height != response.height { return Err("snapshot checkpoint height mismatch".into()); } if freedom_consensus::block_hash(&response.checkpoint) != response.block_hash { return Err("snapshot checkpoint hash mismatch".into()); } if response.checkpoint.header.state_root != response.state_root { return Err("snapshot checkpoint state root mismatch".into()); } if response.certificate.height != response.height || response.certificate.block_hash != response.block_hash { return Err("snapshot certificate identity mismatch".into()); } if response.certificate.round != response.checkpoint.header.round { return Err("snapshot certificate round mismatch".into()); } Ok(()) }
 
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "FreedomEvent")]
@@ -377,6 +377,26 @@ pub fn send_sync_request(swarm: &mut Swarm<FreedomBehaviour>, peer: PeerId, requ
 mod tests {
     use super::*;
     use freedom_primitives::hash_bytes;
+
+    #[test]
+    fn snapshot_response_rejects_checkpoint_hash_mismatch() {
+        let checkpoint = freedom_types::Block {
+            header: freedom_types::BlockHeader {
+                height: 7, round: 2, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 7, epoch: 0, proposer: [4;32],
+                epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let response = SnapshotSyncResponse {
+            request_id: [1;32], chain_id: freedom_primitives::CHAIN_ID, height: 7,
+            block_hash: [9;32], state_root: [1;32], checkpoint,
+            certificate: freedom_types::FinalityCertificate { block_hash: [9;32], height: 7, round: 2, precommits: Vec::new() },
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None, state_json: Vec::new(),
+        };
+        assert!(validate_snapshot_response(&response).is_err());
+    }
 
     #[test]
     fn sync_response_rejects_wrong_first_height() {
