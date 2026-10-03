@@ -303,3 +303,16 @@ mod m33_tests {
   let expected=s.deterministic_slash_amount(&e.kind,100); assert_eq!(s.slash_evidence(e.evidence_hash,expected).unwrap(),10); assert_eq!(s.validators.get(&id).unwrap().unbonding_stake,90); assert_eq!(s.accounts.get(&owner).unwrap().staked,90); assert_eq!(s.unbonding.values().next().unwrap().amount,90);
  }
 }
+
+
+#[cfg(test)]
+mod m34_tests {
+ use super::*;
+ use freedom_types::{Genesis, Validator, Transaction, TxKind, StakePayload, UnstakePayload, ValidatorLifecycle};
+ fn setup()->(ChainState,Address,Hash){let key=[9u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(b"m34-validator");let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.insert_account(Account::new(key,100));(s,owner,id)}
+ fn tx(owner:Address,nonce:u64,kind:TxKind,payload:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:owner,nonce,kind,payload,fee:0,signature:vec![]}}
+ #[test] fn genesis_can_bootstrap_staking(){let(mut s,o,id)=setup();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Active);s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.staking_activated);assert_eq!(s.validators.get(&id).unwrap().stake,100);}
+ #[test] fn unbonding_validator_cannot_restake_before_exit(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Unbonding);assert_eq!(s.execute_transaction(&tx(o,2,TxKind::Stake,StakePayload{amount:1}.encode())),Err(StateError::InvalidValidatorLifecycle));}
+ #[test] fn exited_validator_does_not_resurrect_at_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();s.height=UNBONDING_COOLDOWN;s.maybe_advance_epoch();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Exited);assert!(s.active_validator_set.is_empty());s.height=s.epoch_length;s.maybe_advance_epoch();assert!(s.active_validator_set.is_empty());}
+ #[test] fn active_validator_with_pending_unbonding_cannot_add_stake(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:40}.encode())).unwrap();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Active);assert_eq!(s.execute_transaction(&tx(o,2,TxKind::Stake,StakePayload{amount:1}.encode())),Err(StateError::InvalidValidatorLifecycle));}
+}
