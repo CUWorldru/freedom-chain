@@ -606,6 +606,38 @@ impl CrossChainAssetRegistry {
         })
     }
 
+    pub fn find_representation_by_external_identity(
+        &self,
+        source_chain_id: u32,
+        asset_kind: CrossChainAssetKind,
+        contract_address: &[u8],
+        issuer: Hash,
+        bridge_id: Hash,
+    ) -> Option<&CrossChainAssetRepresentation> {
+        let asset_type = match asset_kind {
+            CrossChainAssetKind::BitcoinUtxo => AssetType::Native,
+            CrossChainAssetKind::Erc20
+            | CrossChainAssetKind::Trc20
+            | CrossChainAssetKind::TonJetton
+            | CrossChainAssetKind::SolanaSpl => AssetType::Bridged,
+            CrossChainAssetKind::Other => return None,
+        };
+        let asset_id = AssetDefinition::compute_asset_id(
+            source_chain_id,
+            asset_type,
+            contract_address,
+            issuer,
+            bridge_id,
+        );
+        self.representations.iter().find(|r| {
+            r.asset_kind == asset_kind
+                && r.canonical_asset_id == self.canonical_asset_id
+                && r.representation.asset_id == asset_id
+                && r.representation.source_chain_id == source_chain_id
+                && r.representation.bridge_id == bridge_id
+        })
+    }
+
     pub fn verify_proof(&self, proof: &CrossChainAssetProof, required_confirmations: u64) -> bool {
         self.validate()
             && proof.validate(required_confirmations)
