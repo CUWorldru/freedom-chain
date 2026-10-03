@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 freedom-consensus = { path = "../consensus" }
+freedom-crypto = { path = "../crypto" }
 freedom-primitives = { path = "../primitives" }
 freedom-state = { path = "../state" }
 freedom-types = { path = "../types" }
