@@ -282,6 +282,8 @@ pub fn make_evidence(
     evidence
 }
 
+pub fn validate_evidence_message(state: &ChainState, msg: &freedom_types::EvidenceMessage) -> Result<(), String> { validate_evidence(&msg.evidence)?; let v=state.active_validator_set.get(&msg.sender).ok_or_else(||"evidence sender is not active validator".to_string())?; if msg.signature.len()!=64{return Err("invalid evidence message signature length".into())} let mut sig=[0u8;64];sig.copy_from_slice(&msg.signature); if !freedom_crypto::verify(&v.consensus_key,&msg.signing_bytes(),&sig){return Err("invalid evidence message signature".into())} Ok(()) }
+
 pub fn validate_evidence(evidence: &freedom_types::EquivocationEvidence) -> Result<(), String> {
     if evidence.first.is_empty() || evidence.second.is_empty() {
         return Err("equivocation evidence payload is empty".into());
