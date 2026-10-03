@@ -387,8 +387,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if !connected_peers.is_empty() {
                             sync_peer_cursor %= connected_peers.len();
                         }
-                        let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer_id, validator_id, state.height);
-                        pending_sync = Some((peer_id, sync_outbound_id, sync_id, state.height.saturating_add(1)));
+                        if pending_sync.is_empty() {
+                            sync_required = 1;
+                            let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer_id, validator_id, state.height);
+                            pending_sync.push((peer_id, sync_outbound_id, sync_id, state.height.saturating_add(1)));
+                        }
                         let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
                         pending_snapshot = Some((peer_id, snapshot_outbound_id, snapshot_request_id, u64::MAX));
                     }
@@ -399,8 +402,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             sync_peer_cursor = 0;
                         }
-                        if pending_sync.map(|(pending_peer, ..)| pending_peer == peer_id).unwrap_or(false) {
-                            pending_sync = None;
+                        pending_sync.retain(|(pending_peer, ..)| *pending_peer != peer_id);
+                        if pending_sync.is_empty() {
+                            sync_candidates.clear();
+                            sync_required = 1;
                         }
                         if pending_snapshot.map(|(pending_peer, ..)| pending_peer == peer_id).unwrap_or(false) {
                             pending_snapshot = None;
