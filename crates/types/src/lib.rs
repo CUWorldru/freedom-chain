@@ -2774,6 +2774,35 @@ impl EthereumValidatorMembershipProof {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EthereumSyncCommitteeSignature {
+    pub validator_indices:Vec<u64>,
+    pub public_keys:Vec<[u8;48]>,
+    pub participation_bits:Vec<bool>,
+    pub signature:Vec<u8>,
+    pub signing_root:Hash,
+}
+
+impl EthereumSyncCommitteeSignature {
+    pub fn signing_bytes(&self)->Vec<u8>{
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-ETH-SYNC-COMMITTEE-BLS-V1");
+        o.extend_from_slice(&self.signing_root);
+        for (i,b) in self.validator_indices.iter().zip(self.participation_bits.iter()){
+            o.extend_from_slice(&i.to_le_bytes());o.push(*b as u8);
+        }
+        o
+    }
+    pub fn verify(&self)->bool{
+        if self.signature.len()!=96 || self.public_keys.len()!=self.participation_bits.len() || self.validator_indices.len()!=self.public_keys.len() || self.public_keys.is_empty(){return false;}
+        if self.validator_indices.windows(2).any(|w|w[0]>=w[1]){return false;}
+        if self.participation_bits.iter().any(|b|!*b){return false;}
+        let Ok(sig)=self.signature.as_slice().try_into() else{return false;};
+        freedom_crypto::bls_verify_aggregate(&self.public_keys,&self.signing_bytes(),&sig)
+    }
+    pub fn proof_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
+}
+
 pub struct EthereumSyncCommitteeProof {
     pub committee_root:Hash,
     pub committee_leaf:Hash,
