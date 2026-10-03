@@ -581,8 +581,11 @@ pub struct BitcoinUtxoProof {
     pub merkle_branch: Vec<Hash>,
     pub merkle_index: u32,
     pub script_pubkey: Vec<u8>,
+    pub raw_transaction: Vec<u8>,
 }
 impl BitcoinUtxoProof {
+    pub fn computed_tx_hash(&self)->Option<Hash>{if self.raw_transaction.is_empty(){return None;}Some(bitcoin_sha256d(&self.raw_transaction))}
+    pub fn validate_transaction_binding(&self)->bool{self.computed_tx_hash()==Some(self.tx_hash)}
     pub fn event_index(&self)->u64 { self.vout as u64 }
     pub fn validate_binding(&self,expected_tx:Hash,expected_vout:u32,expected_amount:u64,expected_script:&[u8])->bool{
         self.tx_hash==expected_tx&&self.vout==expected_vout&&self.amount_sat==expected_amount&&self.script_pubkey==expected_script&&self.tx_hash!=[0;32]&&!self.script_pubkey.is_empty()&&self.amount_sat>0
