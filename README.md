@@ -588,3 +588,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - unsolicited, stale, or replayed snapshot responses are rejected before any certificate or state processing;
 - successful snapshot activation clears the pending snapshot request together with normal sync state;
 - the node does not treat a cryptographically valid but unsolicited snapshot as a new trust anchor.
+
+
+## M55 — Remote Snapshot Discovery
+
+- peers can answer a snapshot request with the latest finalized snapshot at or below the requested target height;
+- the node requests the latest available snapshot on peer connection using a bounded discovery target;
+- the response remains bound to the outstanding snapshot request ID and passes the M53 checkpoint/certificate checks before activation;
+- after successful atomic snapshot activation, normal block sync resumes from the recovered height.
