@@ -2552,6 +2552,52 @@ impl CrossChainProofAdapter for BitcoinUtxoFinalityAdapter {
 }
 
 #[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EthereumTransactionProof {
+    pub block_number: u64,
+    pub block_hash: Hash,
+    pub transaction_hash: Hash,
+    pub transaction_index: u32,
+    pub receipt_root: Hash,
+    pub proof_nodes: Vec<Hash>,
+}
+
+impl EthereumTransactionProof {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-ETH-TX-PROOF-V1");
+        o.extend_from_slice(&self.block_number.to_le_bytes());
+        o.extend_from_slice(&self.block_hash);
+        o.extend_from_slice(&self.transaction_hash);
+        o.extend_from_slice(&self.transaction_index.to_le_bytes());
+        o.extend_from_slice(&self.receipt_root);
+        for n in &self.proof_nodes { o.extend_from_slice(n); }
+        o
+    }
+    pub fn proof_hash(&self)->Hash { freedom_primitives::hash_bytes(&self.signing_bytes()) }
+    pub fn validate_structure(&self)->bool {
+        self.block_number>0 && self.block_hash!=[0;32] && self.transaction_hash!=[0;32]
+            && self.receipt_root!=[0;32] && !self.proof_nodes.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EthereumFinalityProof {
+    pub finalized_block_number: u64,
+    pub finalized_block_hash: Hash,
+    pub state_root: Hash,
+    pub block_hash_chain: Vec<Hash>,
+}
+
+impl EthereumFinalityProof {
+    pub fn validate_structure(&self)->bool {
+        self.finalized_block_number>0
+            && self.finalized_block_hash!=[0;32]
+            && self.state_root!=[0;32]
+            && !self.block_hash_chain.is_empty()
+    }
+}
+
 pub struct EvmFinalityAdapter;
 
 impl CrossChainProofAdapter for EvmFinalityAdapter {
