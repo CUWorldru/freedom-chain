@@ -182,14 +182,11 @@ impl<'a> BridgeIngressContext<'a> {
             return Err("InvalidBridgeIngressContext".into());
         }
 
-        let context = BridgeIngressContext::build(
-        external,
-        registry,
-        policy,
-        descriptor,
-        canonical_asset_id,
-    )?;
-    let resolved = context.resolved;
+        let resolved = resolve_bridge_representation(
+            external,
+            registry,
+            canonical_asset_id,
+        )?;
         if !registry.has_representation(resolved.representation_asset_id()) {
             return Err("InvalidBridgeIngressContext".into());
         }
