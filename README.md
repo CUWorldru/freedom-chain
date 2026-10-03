@@ -1039,3 +1039,8 @@ Recovery authorizations now bind to a canonical Bitcoin height, block hash, and 
 ## M113 — Bitcoin Canonical Tip Proof
 
 Reorg recovery now supports an explicit `BitcoinCanonicalTipProof`. The recovery tip height, hash and accumulated chainwork must exactly match a contiguous, PoW-validated header chain extending the trusted checkpoint. A claimed canonical tip without a verifiable header chain cannot recover the bridge.
+
+
+## M114 — Persistent Bitcoin Canonical Tip
+
+Verified Bitcoin canonical tips are now persisted per bridge as independent trust anchors. A tip can only be stored after the supplied header-chain proof validates against the trusted checkpoint, and it cannot regress in height or accumulated chainwork. The canonical-tip registry is included in the state root and survives restart/snapshot.
