@@ -2684,9 +2684,10 @@ pub struct EthereumSszMerkleProof {
 
 impl EthereumSszMerkleProof {
     pub fn hash_pair(left:Hash,right:Hash)->Hash{
-        let mut b=Vec::with_capacity(64);
-        b.extend_from_slice(&left);b.extend_from_slice(&right);
-        ethereum_keccak256(&b)
+        use sha2::{Digest,Sha256};
+        let mut h=Sha256::new();
+        h.update(left);h.update(right);
+        h.finalize().into()
     }
 
     pub fn verify(&self)->bool{
@@ -2713,8 +2714,9 @@ impl EthereumSszMerkleProof {
 }
 
 fn ethereum_ssz_mix_in_length(root:Hash,length:u64)->Hash{
+    use sha2::{Digest,Sha256};
     let mut b=[0u8;64];b[..32].copy_from_slice(&root);b[32..40].copy_from_slice(&length.to_le_bytes());
-    ethereum_keccak256(&b)
+    Sha256::digest(b).into()
 }
 
 pub fn ethereum_ssz_chunk(data:&[u8])->Hash{
