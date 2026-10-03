@@ -120,8 +120,11 @@ impl ChainStore {
             return Err(StorageError::InvalidSnapshot("epoch transition certificate mismatch".into()));
         }
         if let Some(cert) = &snapshot.epoch_transition_certificate {
-            if cert.hash() != freedom_types::ValidatorSetCertificate::hash(cert) {
-                return Err(StorageError::InvalidSnapshot("invalid epoch transition certificate hash".into()));
+            if cert.to_epoch != snapshot.state.epoch {
+                return Err(StorageError::InvalidSnapshot("epoch transition certificate target epoch mismatch".into()));
+            }
+            if freedom_consensus::validator_set_hash(&snapshot.state.active_validator_set) != cert.new_set_hash {
+                return Err(StorageError::InvalidSnapshot("epoch transition certificate new set mismatch".into()));
             }
         }
         
