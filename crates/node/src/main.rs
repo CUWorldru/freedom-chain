@@ -45,38 +45,52 @@ const PEER_SCORE_COOLDOWN_ROUNDS: u64 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct SnapshotMisbehaviorEvidence {
+enum PeerEvidenceKind {
+    SyncConflict,
+    SnapshotConflict,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PeerReputationEvidence {
     peer: libp2p::PeerId,
     height: u64,
     request_id: Hash,
-    snapshot_fingerprint: Hash,
+    fingerprint: Hash,
+    kind: PeerEvidenceKind,
     reason: String,
 }
 
-struct PeerSyncScore {
+struct PeerReputation {
     score: u32,
     cooldown_until_height: u64,
+    evidence: Vec<PeerReputationEvidence>,
 }
 
-fn record_peer_misbehavior(
-    scores: &mut BTreeMap<libp2p::PeerId, PeerSyncScore>,
-    peer: libp2p::PeerId,
-    current_height: u64,
+fn record_peer_evidence(
+    reputations: &mut BTreeMap<libp2p::PeerId, PeerReputation>,
+    evidence: PeerReputationEvidence,
 ) {
-    let entry = scores.entry(peer).or_insert(PeerSyncScore { score: 0, cooldown_until_height: 0 });
+    let entry = reputations.entry(evidence.peer).or_insert(PeerReputation {
+        score: 0,
+        cooldown_until_height: 0,
+        evidence: Vec::new(),
+    });
     entry.score = entry.score.saturating_add(1);
+    entry.evidence.push(evidence);
     if entry.score >= PEER_MISBEHAVIOR_THRESHOLD {
-        entry.cooldown_until_height = current_height.saturating_add(PEER_SCORE_COOLDOWN_ROUNDS);
+        entry.cooldown_until_height = entry.cooldown_until_height.max(
+            entry.evidence.last().map(|e| e.height).unwrap_or(0).saturating_add(PEER_SCORE_COOLDOWN_ROUNDS)
+        );
     }
 }
 
-fn peer_is_sync_eligible(
-    scores: &BTreeMap<libp2p::PeerId, PeerSyncScore>,
+fn peer_is_eligible(
+    reputations: &BTreeMap<libp2p::PeerId, PeerReputation>,
     peer: libp2p::PeerId,
     current_height: u64,
 ) -> bool {
-    scores.get(&peer)
-        .map(|score| current_height >= score.cooldown_until_height)
+    reputations.get(&peer)
+        .map(|reputation| current_height >= reputation.cooldown_until_height)
         .unwrap_or(true)
 }
 
@@ -462,7 +476,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sync_round_peers = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_conflicts = BTreeMap::<libp2p::PeerId, u64>::new();
     let mut sync_misbehavior = Vec::<SyncMisbehaviorEvidence>::new();
-    let mut peer_sync_scores = BTreeMap::<libp2p::PeerId, PeerSyncScore>::new();
+    let mut peer_reputations = BTreeMap::<libp2p::PeerId, PeerReputation>::new();
     let mut snapshot_misbehavior = Vec::<SnapshotMisbehaviorEvidence>::new();
     let mut pending_snapshot = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
     let mut snapshot_candidates = BTreeMap::<Hash, (u64, freedom_network::SnapshotSyncResponse)>::new();
@@ -537,7 +551,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         if !pending_snapshot.iter().any(|(pending_peer, ..)| *pending_peer == peer_id)
                             && pending_snapshot.len() < 2
-                            && peer_is_sync_eligible(&peer_sync_scores, peer_id, state.height)
+                            && peer_is_eligible(&peer_reputations, peer_id, state.height)
                         {
                             if pending_snapshot.is_empty() {
                                 snapshot_candidates.clear();
