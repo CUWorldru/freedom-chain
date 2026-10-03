@@ -49,10 +49,17 @@ impl ChainState {
   if self.slashed_evidence.contains_key(&evidence_hash){return Ok(0)}
   let evidence=self.evidence.get(&evidence_hash).ok_or(StateError::InvalidEvidence)?;
   let validator=self.validators.get_mut(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;
-  let slash=amount.min(validator.stake);
+  let expected=self.deterministic_slash_amount(&evidence.kind,validator.stake);
+  if amount!=expected{return Err(StateError::InvalidEvidence)}
+  let slash=expected.min(validator.stake);
   validator.stake-=slash;
+  if let Some(a)=self.accounts.get_mut(&validator.owner){a.staked=a.staked.saturating_sub(slash);}
   self.slashed_evidence.insert(evidence_hash,slash);
   Ok(slash)
+ }
+ pub fn deterministic_slash_amount(&self,kind:&freedom_types::EquivocationKind,stake:u128)->u128{
+  let bps=match kind { freedom_types::EquivocationKind::DoubleProposal=>500, freedom_types::EquivocationKind::DoublePrevote=>1000, freedom_types::EquivocationKind::DoublePrecommit=>1000 };
+  stake.saturating_mul(bps as u128)/10_000
  }
 
  pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis FDM must be zero");let validators=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators,nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_mfdm:0,annual_reserve_mfdm:0,draw_prize_pool_mfdm:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),epoch_issuance:0,epoch_cap:1_000_000,evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
