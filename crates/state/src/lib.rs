@@ -154,7 +154,9 @@ impl ChainState {
   if journal.len()>freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT{let excess=journal.len()-freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT;journal.drain(0..excess);}
   Ok(())
  }
+ pub fn bitcoin_bridge_gate(&self,bridge_id:Hash)->Result<(),StateError>{if let Some(journal)=self.bitcoin_reorg_evidence.get(&bridge_id){if let Some(last)=journal.last(){let severity=self.bitcoin_reorg_severity(bridge_id,last)?;if severity!=freedom_types::BitcoinReorgSeverity::Normal{return Err(StateError::BitcoinReorgDetected);}}}Ok(())}
  pub fn advance_bitcoin_checkpoint(&mut self,bridge_id:Hash,headers:&[freedom_types::BitcoinBlockHeader])->Result<BitcoinChainCheckpoint,StateError>{
+  self.bitcoin_bridge_gate(bridge_id)?;
   let current=self.bitcoin_checkpoints.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
   match freedom_types::bitcoin_validate_from_checkpoint(&current,headers){
    Ok(next)=>{self.bitcoin_checkpoints.insert(bridge_id,next.clone());Ok(next)}
