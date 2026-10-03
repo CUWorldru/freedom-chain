@@ -641,3 +641,70 @@ mod m77_asset_registry_tests {
   assert_eq!(state.register_asset(valid), Err(StateError::DuplicateAsset));
  }
 }
+
+
+#[cfg(test)]
+mod m81_bidirectional_bridge_tests {
+ use super::*;
+ use freedom_types::{AssetDefinition,AssetStatus,AssetType,BridgeWithdrawal,BridgeWithdrawalStatus,Genesis};
+
+ fn asset(chain:u32,bridge:Hash)->AssetDefinition{
+  let issuer=[8u8;32]; let contract=format!("asset-{}",chain).into_bytes();
+  let id=AssetDefinition::compute_asset_id(chain,AssetType::Bridged,&contract,issuer,bridge);
+  AssetDefinition{asset_id:id,source_chain_id:chain,asset_type:AssetType::Bridged,contract_address:contract,symbol:"USDT".into(),decimals:6,issuer,bridge_id:bridge,status:AssetStatus::Active}
+ }
+ fn withdrawal(asset:&AssetDefinition,chain:u32,bridge:Hash)->BridgeWithdrawal{
+  let mut w=BridgeWithdrawal{withdrawal_id:[0;32],bridge_id:bridge,asset_id:asset.asset_id,destination_chain_id:chain,amount:100,sender:[9;32],recipient:b"external-recipient".to_vec(),nonce:7,request_hash:[0;32]};
+  w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id(); w
+ }
+
+ #[test]
+ fn outbound_withdrawal_is_chain_agnostic() {
+  let mut s=ChainState::genesis(&Genesis::default());
+  let bridge=[4u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let w=withdrawal(&a,100,bridge); let id=s.request_bridge_withdrawal(w).unwrap();
+  assert_eq!(s.bridge_withdrawal_status[&id],BridgeWithdrawalStatus::Requested);
+  for next in [BridgeWithdrawalStatus::Validated,BridgeWithdrawalStatus::Approved,BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
+  assert_eq!(s.bridge_withdrawal_status[&id],BridgeWithdrawalStatus::ExternalConfirmed);
+ }
+
+ #[test]
+ fn withdrawal_rejects_wrong_chain_or_bridge() {
+  let mut s=ChainState::genesis(&Genesis::default()); let bridge=[5u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut w=withdrawal(&a,200,bridge); w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id();
+  assert_eq!(s.request_bridge_withdrawal(w),Err(StateError::InvalidBridgeWithdrawal));
+  let mut w=withdrawal(&a,100,[6u8;32]); w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id();
+  assert_eq!(s.request_bridge_withdrawal(w),Err(StateError::InvalidBridgeWithdrawal));
+ }
+
+ #[test]
+ fn accounting_enforces_lock_mint_burn_release_conservation() {
+  let mut s=ChainState::genesis(&Genesis::default()); let bridge=[7u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  s.record_verified_external_lock(a.asset_id,100).unwrap();
+  s.record_freedom_mint(a.asset_id,100).unwrap();
+  assert_eq!(s.record_freedom_mint(a.asset_id,1),Err(StateError::InvalidBridgeAccounting));
+  s.record_freedom_burn(a.asset_id,100).unwrap();
+  assert_eq!(s.record_external_release(a.asset_id,101),Err(StateError::InvalidBridgeAccounting));
+  s.record_external_release(a.asset_id,100).unwrap();
+  assert!(s.validate_bridge_accounting(a.asset_id).is_ok());
+ }
+
+ #[test]
+ fn finalization_cannot_release_before_burn() {
+  let mut s=ChainState::genesis(&Genesis::default()); let bridge=[8u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  s.record_verified_external_lock(a.asset_id,100).unwrap(); s.record_freedom_mint(a.asset_id,100).unwrap();
+  let id=s.request_bridge_withdrawal(withdrawal(&a,100,bridge)).unwrap();
+  for next in [BridgeWithdrawalStatus::Validated,BridgeWithdrawalStatus::Approved,BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
+  assert_eq!(s.advance_bridge_withdrawal(id,BridgeWithdrawalStatus::Finalized),Err(StateError::InvalidBridgeAccounting));
+  s.record_freedom_burn(a.asset_id,100).unwrap();
+  s.advance_bridge_withdrawal(id,BridgeWithdrawalStatus::Finalized).unwrap();
+  assert_eq!(s.bridge_accounting[&a.asset_id].external_released,100);
+ }
+
+ #[test]
+ fn bridge_state_changes_state_root() {
+  let mut s=ChainState::genesis(&Genesis::default()); let before=s.state_root(); let bridge=[9u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  s.record_verified_external_lock(a.asset_id,100).unwrap(); let after_lock=s.state_root(); assert_ne!(before,after_lock);
+  s.record_freedom_mint(a.asset_id,100).unwrap(); assert_ne!(after_lock,s.state_root());
+ }
+}
