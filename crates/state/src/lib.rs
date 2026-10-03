@@ -238,7 +238,7 @@ impl ChainState {
   for (k,v) in &self.accounts{leaves.push(state_leaf(b"account",k,&enc_account(v)));}
   for (k,v) in &self.validators{leaves.push(state_leaf(b"validator",k,&enc_validator(v)));}
   for (k,v) in &self.unbonding{leaves.push(state_leaf(b"unbonding",k,&enc_unbonding(v)));}
-  for (k,v) in &self.active_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"active_validator",k,&x));}
+  for (k,v) in &self.active_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"active_validator",k,&x));} for (k,v) in &self.pending_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"pending_validator",k,&x));}
   for (k,v) in &self.evidence{leaves.push(state_leaf(b"evidence",k,&enc_evidence(v)));}
   for (k,v) in &self.slashed_evidence{leaves.push(state_leaf(b"slashed_evidence",k,&v.to_le_bytes()));}
   for (k,v) in &self.nodes{leaves.push(state_leaf(b"node",k,&enc_node(v)));}
