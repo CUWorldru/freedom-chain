@@ -168,6 +168,11 @@ pub fn verify_bridge_deposit_with_adapter(
             ) {
                 return Err("UnsupportedEvmNetwork".into());
             }
+            if p.token_contract.len() != 20
+                || p.token_contract.iter().all(|b| *b == 0)
+            {
+                return Err("InvalidEvmContractAddress".into());
+            }
             if registry.find_representation_by_external_identity(
                 p.chain_id,
                 freedom_types::CrossChainAssetKind::Erc20,
@@ -183,6 +188,11 @@ pub fn verify_bridge_deposit_with_adapter(
                 freedom_types::CrossChainAssetKind::Trc20,
             ) {
                 return Err("UnsupportedTronNetwork".into());
+            }
+            if p.usdt_contract.len() != 20
+                || p.usdt_contract.iter().all(|b| *b == 0)
+            {
+                return Err("InvalidTronContractAddress".into());
             }
             if registry.find_representation_by_external_identity(
                 p.chain_id,
