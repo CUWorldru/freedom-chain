@@ -896,9 +896,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
     let mut state = initialize(&genesis)?;
-    let validator_index = std::env::var("FREEDOM_VALIDATOR_INDEX").ok()
+    let validator_index = std::env::var("NETWORK_321MORE_VALIDATOR_INDEX").or_else(|_| std::env::var("FREEDOM_VALIDATOR_INDEX")).ok()
         .and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
-    if validator_index >= 3 { return Err("FREEDOM_VALIDATOR_INDEX must be 0..2".into()); }
+    if validator_index >= 3 { return Err("NETWORK_321MORE_VALIDATOR_INDEX must be 0..2".into()); }
 
     let consensus_key = ed25519_dalek::SigningKey::from_bytes(&[(validator_index as u8) + 1; 32]);
     let validator_id = hash_bytes(&[b"validator", &[(validator_index as u8) + 1]].concat());
@@ -906,12 +906,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut protocol = ValidatorProtocol::new(validator_id, consensus_key.clone());
     let mut blocks: BTreeMap<Hash, freedom_types::Block> = BTreeMap::new();
 
-    let db_path = std::env::var("FREEDOM_DB_PATH").unwrap_or_else(|_| "./data/freedom".to_string());
+    let db_path = std::env::var("NETWORK_321MORE_DB_PATH").or_else(|_| std::env::var("FREEDOM_DB_PATH")).unwrap_or_else(|_| "./data/321more".to_string());
     let store = ChainStore::open(&db_path)?;
     let stored_height = store.latest_height()?;
     store.validate_tip_metadata()
         .map_err(|e| format!("stored tip metadata is inconsistent: {e}"))?;
-    let snapshot_interval = std::env::var("FREEDOM_SNAPSHOT_INTERVAL").ok()
+    let snapshot_interval = std::env::var("NETWORK_321MORE_SNAPSHOT_INTERVAL").or_else(|_| std::env::var("FREEDOM_SNAPSHOT_INTERVAL")).ok()
         .and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
         .unwrap_or(DEFAULT_SNAPSHOT_INTERVAL);
     let replay_from = if let Some(snapshot) = store.latest_snapshot()? {
@@ -952,13 +952,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut swarm = build_swarm()?;
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse::<Multiaddr>()?)?;
 
-    if let Ok(peers) = std::env::var("FREEDOM_PEERS") {
+    if let Ok(peers) = std::env::var("NETWORK_321MORE_PEERS").or_else(|_| std::env::var("FREEDOM_PEERS")) {
         for raw in peers.split(',').filter(|s| !s.trim().is_empty()) {
             swarm.dial(raw.trim().parse::<Multiaddr>()?)?;
         }
     }
 
-    println!("Freedom Chain M18 validator={validator_index}");
+    println!("321MORE Network validator={validator_index}");
     println!("peer_id={}", swarm.local_peer_id());
     println!("validators={}", state.validators.len());
     println!("height={}", state.height);
