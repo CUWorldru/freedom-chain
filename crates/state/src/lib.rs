@@ -199,6 +199,7 @@ impl ChainState {
   let mut leaves=Vec::new();
   for (k,v) in &self.accounts{leaves.push(state_leaf(b"account",k,&enc_account(v)));}
   for (k,v) in &self.validators{leaves.push(state_leaf(b"validator",k,&enc_validator(v)));}
+  for (k,v) in &self.active_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"active_validator",k,&x));}
   for (k,v) in &self.evidence{leaves.push(state_leaf(b"evidence",k,&enc_evidence(v)));}
   for (k,v) in &self.slashed_evidence{leaves.push(state_leaf(b"slashed_evidence",k,&v.to_le_bytes()));}
   for (k,v) in &self.nodes{leaves.push(state_leaf(b"node",k,&enc_node(v)));}
@@ -211,7 +212,7 @@ impl ChainState {
   for (k,v) in &self.draw_results{leaves.push(state_leaf(b"draw_result",k,&enc_draw_result(v)));}
   for (k,v) in &self.ledger{let key=l.tx_hash;leaves.push(state_leaf(b"ledger",&key,&enc_ledger(l)));}
   for (e) in &self.events{let value=enc_event(e);leaves.push(state_leaf(b"event",&(leaves.len() as u64).to_le_bytes(),&value));}
-  let mut monetary=Vec::new();monetary.extend_from_slice(&self.height.to_le_bytes());// last_block_hash is excluded from state_root to avoid a circular state-root/block-hash dependency.monetary.extend_from_slice(&self.cu_fund_mfdm.to_le_bytes());monetary.extend_from_slice(&self.annual_reserve_mfdm.to_le_bytes());monetary.extend_from_slice(&self.draw_prize_pool_mfdm.to_le_bytes());monetary.extend_from_slice(&self.supply.total.to_le_bytes());monetary.extend_from_slice(&self.supply.circulating.to_le_bytes());monetary.extend_from_slice(&self.supply.locked.to_le_bytes());monetary.extend_from_slice(&self.supply.staked.to_le_bytes());monetary.extend_from_slice(&self.supply.treasury.to_le_bytes());monetary.extend_from_slice(&self.epoch_issuance.to_le_bytes());monetary.extend_from_slice(&self.epoch_cap.to_le_bytes());
+  let mut monetary=Vec::new();monetary.extend_from_slice(&self.height.to_le_bytes());monetary.extend_from_slice(&self.epoch.to_le_bytes());monetary.extend_from_slice(&self.epoch_length.to_le_bytes());// last_block_hash is excluded from state_root to avoid a circular state-root/block-hash dependency.monetary.extend_from_slice(&self.cu_fund_mfdm.to_le_bytes());monetary.extend_from_slice(&self.annual_reserve_mfdm.to_le_bytes());monetary.extend_from_slice(&self.draw_prize_pool_mfdm.to_le_bytes());monetary.extend_from_slice(&self.supply.total.to_le_bytes());monetary.extend_from_slice(&self.supply.circulating.to_le_bytes());monetary.extend_from_slice(&self.supply.locked.to_le_bytes());monetary.extend_from_slice(&self.supply.staked.to_le_bytes());monetary.extend_from_slice(&self.supply.treasury.to_le_bytes());monetary.extend_from_slice(&self.epoch_issuance.to_le_bytes());monetary.extend_from_slice(&self.epoch_cap.to_le_bytes());
   leaves.push(state_leaf(b"meta",&[0;1],&monetary));
   leaves.sort();
   freedom_primitives::merkle_root(&leaves)
