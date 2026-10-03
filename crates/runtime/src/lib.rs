@@ -53,6 +53,10 @@ pub fn validate_transaction_admission(s:&ChainState,tx:&Transaction)->Result<(),
 
 fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),String>{
  let p=freedom_types::BridgeMintTransactionPayload::decode(&tx.payload).map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
+ // decode enforces canonical approval ordering; re-encode must be byte-identical
+ // so a signed BridgeMint transaction has exactly one accepted payload representation.
+ let canonical_payload=p.encode().map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
+ if canonical_payload != tx.payload { return Err("InvalidBridgeMintTransaction".into()); }
  let policy=s.bridge_security_policies.get(&p.message.bridge_id).ok_or_else(||"InvalidBridgeMintTransaction".to_string())?;
  let keys=s.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<freedom_primitives::Hash,[u8;32]>>();
  let expected=freedom_types::BridgeMintAuthorization::from_authenticated_message(&p.message,&p.deposit,&p.approvals,policy,&keys)
@@ -580,5 +584,37 @@ mod m22_tests {
         };
         p.signature = freedom_crypto::sign(&key, &p.signing_bytes()).to_vec();
         assert!(freedom_crypto::verify(&key.verifying_key().to_bytes(), &p.signing_bytes(), &p.signature.try_into().unwrap()));
+    }
+}
+
+
+#[cfg(test)]
+mod m158_bridge_mint_canonical_admission_tests {
+    use super::*;
+    use freedom_types::{BridgeMessageApproval, BridgeMessageApprovalSet};
+
+    #[test]
+    fn bridge_approval_set_requires_strict_validator_id_order() {
+        let low=[1u8;32];
+        let high=[2u8;32];
+        let mk=|validator_id| BridgeMessageApproval{
+            bridge_id:[3;32], message_hash:[4;32], validator_id, signature:vec![0;64]
+        };
+        let ordered=BridgeMessageApprovalSet{
+            bridge_id:[3;32], message_hash:[4;32],
+            approvals:vec![mk(low),mk(high)],
+        };
+        assert!(ordered.is_canonical_order());
+        assert!(ordered.approvals.len()==2);
+        let reversed=BridgeMessageApprovalSet{
+            bridge_id:[3;32], message_hash:[4;32],
+            approvals:vec![mk(high),mk(low)],
+        };
+        assert!(!reversed.is_canonical_order());
+        let duplicated=BridgeMessageApprovalSet{
+            bridge_id:[3;32], message_hash:[4;32],
+            approvals:vec![mk(low),mk(low)],
+        };
+        assert!(!duplicated.is_canonical_order());
     }
 }
