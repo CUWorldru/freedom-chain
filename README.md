@@ -1257,3 +1257,10 @@ Ethereum execution MPT continues to use Keccak-256; SSZ consensus structures use
 Adds validator membership and sync-committee SSZ Merkle proof structures. Proofs use the consensus-layer SHA-256 SSZ tree, generalized indices, and explicit binding to a finalized checkpoint root.
 
 This milestone proves tree membership only. It does not yet verify validator signatures, committee participation, or BLS aggregate signatures; those are M140 cryptographic checks.
+
+
+## M140 — Ethereum BLS12-381 Sync Committee Verification
+
+Adds BLS12-381 verification through `blst`, including aggregate verification for participating sync-committee public keys. `EthereumSyncCommitteeSignature` commits to the finalized signing root, validator indices and participation bits, rejects malformed/duplicate indices and requires a 96-byte aggregate signature.
+
+The state boundary additionally requires the signature signing root to equal the expected finalized checkpoint signing root. Committee membership/validator-set authorization remains a separate SSZ proof boundary.
