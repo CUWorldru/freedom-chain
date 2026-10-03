@@ -284,6 +284,81 @@ impl AssetDefinition {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrossChainAssetRepresentation {
+    pub canonical_asset_id: Hash,
+    pub representation: AssetDefinition,
+    pub asset_kind: CrossChainAssetKind,
+}
+
+impl CrossChainAssetRepresentation {
+    pub fn validate(&self) -> bool {
+        self.canonical_asset_id != [0; 32]
+            && self.representation.validate_identity()
+            && !self.representation.symbol.is_empty()
+            && self.representation.status == AssetStatus::Active
+    }
+
+    pub fn matches_proof(&self, proof: &CrossChainAssetProof) -> bool {
+        self.validate()
+            && proof.asset_id == self.canonical_asset_id
+            && proof.asset_kind == self.asset_kind
+            && proof.bridge_deposit.source_chain_id == self.representation.source_chain_id
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrossChainAssetRegistry {
+    pub canonical_asset_id: Hash,
+    pub symbol: String,
+    pub decimals: u8,
+    pub representations: Vec<CrossChainAssetRepresentation>,
+}
+
+impl CrossChainAssetRegistry {
+    pub fn compute_canonical_asset_id(symbol: &str, decimals: u8, issuer: Hash) -> Hash {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"FREEDOM-CANONICAL-ASSET-V1");
+        b.extend_from_slice(&(symbol.len() as u64).to_le_bytes());
+        b.extend_from_slice(symbol.as_bytes());
+        b.push(decimals);
+        b.extend_from_slice(&issuer);
+        freedom_primitives::hash_bytes(&b)
+    }
+
+    pub fn validate(&self) -> bool {
+        self.canonical_asset_id != [0; 32]
+            && !self.symbol.is_empty()
+            && self.decimals <= 38
+            && !self.representations.is_empty()
+            && self.representations.iter().all(|r| {
+                r.canonical_asset_id == self.canonical_asset_id && r.validate()
+            })
+            && self.representations.iter().all(|a| {
+                self.representations.iter().filter(|b| {
+                    b.representation.asset_id == a.representation.asset_id
+                }).count() == 1
+            })
+    }
+
+    pub fn find_representation(
+        &self,
+        source_chain_id: u32,
+        asset_kind: CrossChainAssetKind,
+    ) -> Option<&CrossChainAssetRepresentation> {
+        self.representations.iter().find(|r| {
+            r.representation.source_chain_id == source_chain_id
+                && r.asset_kind == asset_kind
+        })
+    }
+
+    pub fn verify_proof(&self, proof: &CrossChainAssetProof, required_confirmations: u64) -> bool {
+        self.validate()
+            && proof.validate(required_confirmations)
+            && self.representations.iter().any(|r| r.matches_proof(proof))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[repr(u8)]
 pub enum BridgeDirection { Inbound = 1, Outbound = 2 }
@@ -4298,5 +4373,87 @@ mod m148_unified_asset_proof_tests {
         assert!(p.validate(20));
         p.amount = 124;
         assert!(!p.validate(20));
+    }
+}
+
+#[cfg(test)]
+mod m149_canonical_asset_registry_tests {
+    use super::*;
+
+    #[test]
+    fn canonical_registry_accepts_multiple_usdt_representations() {
+        let issuer = [9;32];
+        let canonical = CrossChainAssetRegistry::compute_canonical_asset_id("USDT", 6, issuer);
+        let tron_contract = vec![0xaa;20];
+        let tron = AssetDefinition {
+            asset_id: AssetDefinition::compute_asset_id(
+                TronUsdtDepositProof::TRON_MAINNET_CHAIN_ID,
+                AssetType::Bridged,
+                &tron_contract,
+                issuer,
+                [7;32],
+            ),
+            source_chain_id: TronUsdtDepositProof::TRON_MAINNET_CHAIN_ID,
+            asset_type: AssetType::Bridged,
+            contract_address: tron_contract,
+            symbol: "USDT".into(),
+            decimals: 6,
+            issuer,
+            bridge_id: [7;32],
+            status: AssetStatus::Active,
+        };
+        let eth = AssetDefinition {
+            asset_id: AssetDefinition::compute_asset_id(1, AssetType::Bridged, &[0xbb;20], issuer, [8;32]),
+            source_chain_id: 1,
+            asset_type: AssetType::Bridged,
+            contract_address: vec![0xbb;20],
+            symbol: "USDT".into(),
+            decimals: 6,
+            issuer,
+            bridge_id: [8;32],
+            status: AssetStatus::Active,
+        };
+        let registry = CrossChainAssetRegistry {
+            canonical_asset_id: canonical,
+            symbol: "USDT".into(),
+            decimals: 6,
+            representations: vec![
+                CrossChainAssetRepresentation {
+                    canonical_asset_id: canonical,
+                    representation: tron,
+                    asset_kind: CrossChainAssetKind::Trc20,
+                },
+                CrossChainAssetRepresentation {
+                    canonical_asset_id: canonical,
+                    representation: eth,
+                    asset_kind: CrossChainAssetKind::Erc20,
+                },
+            ],
+        };
+        assert!(registry.validate());
+        assert!(registry.find_representation(TronUsdtDepositProof::TRON_MAINNET_CHAIN_ID, CrossChainAssetKind::Trc20).is_some());
+        assert!(registry.find_representation(1, CrossChainAssetKind::Erc20).is_some());
+    }
+
+    #[test]
+    fn canonical_registry_rejects_wrong_asset_identity() {
+        let issuer = [9;32];
+        let canonical = CrossChainAssetRegistry::compute_canonical_asset_id("USDT", 6, issuer);
+        let proof = CrossChainAssetProof {
+            bridge_deposit: BridgeDepositProof {
+                bridge_id: [7;32], source_chain_id: TronUsdtDepositProof::TRON_MAINNET_CHAIN_ID,
+                tx_hash: [2;32], event_index: 0, block_or_slot: 1, confirmations: 20,
+                proof: vec![1;32],
+            },
+            asset_id: [3;32],
+            asset_kind: CrossChainAssetKind::Trc20,
+            amount: 100,
+            recipient: vec![4;20],
+            proof_hash: [0;32],
+        };
+        let registry = CrossChainAssetRegistry {
+            canonical_asset_id: canonical, symbol: "USDT".into(), decimals: 6, representations: vec![],
+        };
+        assert!(!registry.verify_proof(&proof, 12));
     }
 }
