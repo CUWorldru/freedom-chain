@@ -708,3 +708,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - decay also enforces the same bound for previously persisted or legacy reputation data;
 - the bounded journal prevents long-running nodes from growing reputation storage without limit;
 - evidence compaction does not alter the accumulated score or an already-issued cooldown.
+
+
+## M68 — Reputation Policy Separation
+
+- peer reputation policy is represented explicitly by threshold, cooldown, decay interval, and evidence retention settings;
+- evidence recording remains responsible for recording bounded evidence, while policy application owns score-based cooldown decisions;
+- eligibility reads the same policy instead of duplicating threshold constants;
+- current policy values remain unchanged: threshold 3, cooldown 3 rounds, decay interval 10 heights, evidence limit 32.
