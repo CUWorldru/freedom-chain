@@ -447,6 +447,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
                         pending_sync.push((peer, sync_outbound_id, sync_id, from_height));
                         sync_round_peers.insert(peer, from_height);
+                        selected += 1;
                     }
                 }
             }
@@ -560,11 +561,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     batch_fingerprint: fingerprint,
                                                     reason: "batch disagrees with another valid sync response".to_string(),
                                                 });
+                                                record_peer_misbehavior(&mut peer_sync_scores, peer, state.height);
                                                 eprintln!(
-                                                    "SYNC_CONFLICT peer={} from={} fingerprint={} existing_candidates={}",
+                                                    "SYNC_CONFLICT peer={} from={} fingerprint={} score={:?} existing_candidates={}",
                                                     peer,
                                                     response.from_height,
                                                     hex::encode(fingerprint),
+                                                    peer_sync_scores.get(&peer),
                                                     sync_candidates.len()
                                                 );
                                             }
