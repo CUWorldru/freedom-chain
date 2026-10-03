@@ -974,3 +974,8 @@ Bitcoin bridge verification can now validate a contiguous header sequence. Every
 ## M102 — Bitcoin Accumulated Chainwork
 
 Bitcoin header chains now expose deterministic per-header work `floor(2^256 / (target + 1))`, accumulated chainwork, and chainwork comparison for competing validated header sequences. This establishes the basis for selecting the chain with the greatest demonstrated PoW rather than trusting arrival order or raw height alone.
+
+
+## M102 — Bitcoin Accumulated Chainwork
+
+Bitcoin header chains now expose deterministic per-header work and accumulated chainwork. Work is calculated as `2^256 / (target + 1)` using arbitrary-precision arithmetic, then represented as a fixed 256-bit big-endian value. Competing valid chains can be compared by accumulated work rather than height alone.
