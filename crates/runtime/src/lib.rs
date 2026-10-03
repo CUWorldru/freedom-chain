@@ -140,6 +140,9 @@ pub fn verify_bridge_deposit_with_adapter(
         return Err("UnsupportedBridgeFinalityModel".into());
     }
 
+    if !registry.has_representation(proof.representation_asset_id) {
+        return Err("UnknownBridgeRepresentation".into());
+    }
     if !registry.verify_representation_binding(proof, proof.representation_asset_id) {
         return Err("BridgeRepresentationBindingMismatch".into());
     }
