@@ -275,3 +275,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Consensus can detect and validate equivocation evidence.
 - Chain state persists evidence and idempotent slashing records and includes them in the state root.
 - Slashing is currently a foundation: validator stake is reduced by an explicit protocol call; automatic evidence transaction wiring and validator-set effects remain future work.
+
+
+## M25 — Evidence Transactions and Deterministic Slashing
+
+- Added SubmitEvidence transaction type and canonical payload encoding.
+- Evidence transactions are executed deterministically by every node.
+- Valid evidence is persisted, slashing is idempotent, and validator stake is reduced by the transaction's explicit slash amount capped at current stake.
+- Slashing emits EquivocationSlashed and the event is committed into the state root.
+- This is the first protocol-level slashing path; stake-weighted quorum and validator-set activation remain M26/M27.
