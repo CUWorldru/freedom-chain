@@ -26,6 +26,20 @@ pub fn quorum_threshold(validator_count: usize) -> usize {
     (validator_count * 2) / 3 + 1
 }
 
+pub fn total_active_stake(state: &ChainState) -> u128 {
+    state.validators.values().map(|v| v.stake).sum()
+}
+
+pub fn stake_quorum_reached(state: &ChainState, signers: &std::collections::BTreeSet<Hash>) -> bool {
+    let total = total_active_stake(state);
+    if total == 0 { return false; }
+    let signed = signers.iter()
+        .filter_map(|id| state.validators.get(id))
+        .map(|v| v.stake)
+        .sum::<u128>();
+    signed.saturating_mul(3) >= total.saturating_mul(2)
+}
+
 pub fn validate_vote(state: &ChainState, vote: &freedom_types::ValidatorVote, expected_block_hash: Hash, expected_height: u64, expected_round: u64) -> Result<(), String> {
     if vote.block_hash != expected_block_hash { return Err("vote block hash mismatch".into()); }
     if vote.height != expected_height { return Err("vote height mismatch".into()); }
