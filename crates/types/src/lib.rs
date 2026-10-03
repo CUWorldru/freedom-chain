@@ -43,6 +43,50 @@ pub enum TxKind {
     Governance,
 }
 
+impl Transaction {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&self.chain_id.to_le_bytes());
+        out.extend_from_slice(&self.sender);
+        out.extend_from_slice(&self.nonce.to_le_bytes());
+        out.push(self.kind as u8);
+        out.extend_from_slice(&(self.payload.len() as u64).to_le_bytes());
+        out.extend_from_slice(&self.payload);
+        out.extend_from_slice(&self.fee.to_le_bytes());
+        out
+    }
+
+    pub fn hash(&self) -> Hash {
+        freedom_primitives::hash_bytes(&self.signing_bytes())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransferPayload {
+    pub to: Address,
+    pub amount: u128,
+}
+
+impl TransferPayload {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(48);
+        out.extend_from_slice(&self.to);
+        out.extend_from_slice(&self.amount.to_le_bytes());
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() != 48 {
+            return Err("transfer payload must be exactly 48 bytes".into());
+        }
+        let mut to = [0u8; 32];
+        to.copy_from_slice(&bytes[..32]);
+        let mut amount_bytes = [0u8; 16];
+        amount_bytes.copy_from_slice(&bytes[32..]);
+        Ok(Self { to, amount: u128::from_le_bytes(amount_bytes) })
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Receipt {
     pub tx_hash: Hash,
