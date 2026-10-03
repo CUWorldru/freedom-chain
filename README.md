@@ -1229,3 +1229,10 @@ Current adapters: Bitcoin UTXO, Ethereum/EVM, and Tron. Ethereum/EVM and Tron ad
 Adds explicit Ethereum proof structures for transaction/receipt inclusion metadata and finalized-block metadata. `EthereumTransactionProof::verify_binding` binds a transaction proof to the common finality envelope by exact block height, block hash and proof hash.
 
 This is intentionally a proof boundary rather than a claim of Ethereum consensus verification: RLP/receipt-trie verification and Ethereum PoS finality certificate verification remain separate implementation steps.
+
+
+## M136 — Ethereum Receipt MPT Verification
+
+Ethereum receipt proofs now use raw RLP-encoded Merkle-Patricia-Trie nodes and Keccak-256 node references. Verification checks the proof path from `receiptsRoot`, supports both hashed and inline child nodes, validates compact hex-prefix paths, and binds the proof to the transaction index and receipt value.
+
+This is an inclusion-proof verifier only. Ethereum PoS consensus/finality certificates and the full receipt semantic decoder remain separate layers.
