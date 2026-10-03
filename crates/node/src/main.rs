@@ -102,6 +102,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = std::env::var("FREEDOM_DB_PATH").unwrap_or_else(|_| "./data/freedom".to_string());
     let store = ChainStore::open(&db_path)?;
     let stored_height = store.latest_height()?;
+    if stored_height > 0 {
+        let latest_block = store.get_block(stored_height)?.ok_or("stored latest block missing")?;
+        if block_hash(&latest_block) != store.latest_hash()? {
+            return Err("stored latest hash metadata mismatch".into());
+        }
+    } else if store.latest_hash()? != [0; 32] {
+        return Err("stored latest hash metadata is non-zero at genesis".into());
+    }
     let snapshot_interval = std::env::var("FREEDOM_SNAPSHOT_INTERVAL").ok()
         .and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
         .unwrap_or(DEFAULT_SNAPSHOT_INTERVAL);
