@@ -634,3 +634,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - disagreement evidence is scoped to the current sync round and is cleared after the round ends or a peer disconnects;
 - a disagreement does not by itself label a peer malicious: the node remains neutral until stronger cryptographic or protocol evidence exists;
 - the sync quorum still requires matching batches before state or storage changes.
+
+
+## M60 — Sync Misbehavior Evidence
+
+- sync disagreements now produce structured in-memory evidence containing the peer identity, requested height, protocol request ID, offending batch fingerprint and reason;
+- evidence is created only after both responses pass transport and network-level validation, so ordinary malformed traffic is not confused with a valid-but-conflicting batch;
+- evidence remains scoped to the active sync round and is cleared when that round ends or its peers disconnect;
+- the evidence layer does not automatically punish or label a peer; it provides a deterministic input for a future peer-scoring/isolation layer.
