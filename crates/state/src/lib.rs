@@ -917,6 +917,20 @@ mod m77_asset_registry_tests {
  }
 
  #[test]
+ fn genesis_native_asset_identity_matches_321more_metadata() {
+  let state=ChainState::genesis(&Genesis::default());
+  let native=state.asset_registry.values().find(|a| a.asset_type==AssetType::Native).unwrap();
+  assert_eq!(freedom_primitives::NETWORK_NAME, "321MORE Network");
+  assert_eq!(freedom_primitives::NATIVE_ASSET_SYMBOL, "321M");
+  assert_eq!(freedom_primitives::GAS_ASSET_SYMBOL, "321M");
+  assert_eq!(freedom_primitives::CHAIN_ID, 1);
+  assert_eq!(native.source_chain_id, freedom_primitives::CHAIN_ID);
+  assert_eq!(native.symbol, "321M");
+  assert_eq!(native.status, AssetStatus::Active);
+  assert!(native.validate_identity());
+ }
+
+ #[test]
  fn identical_symbols_on_different_chains_are_distinct_assets() {
   let mut state=ChainState::genesis(&Genesis::default());
   let eth=bridged_asset(1, b"0xeth-usdt", [1u8;32]);
