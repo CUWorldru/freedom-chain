@@ -250,11 +250,12 @@ pub struct ValidatorProtocol {
     pub timeouts: std::collections::BTreeMap<Hash, freedom_types::ValidatorTimeout>,
     pub locked_round: Option<u64>,
     pub locked_block_hash: Option<Hash>,
+    pub locked_block: Option<Block>,
 }
 
 impl ValidatorProtocol {
     pub fn new(validator_id: Hash, consensus_key: ed25519_dalek::SigningKey) -> Self {
-        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), precommits: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new(), locked_round: None, locked_block_hash: None }
+        Self { validator_id, consensus_key, votes: std::collections::BTreeMap::new(), precommits: std::collections::BTreeMap::new(), timeouts: std::collections::BTreeMap::new(), locked_round: None, locked_block_hash: None, locked_block: None }
     }
 
     pub fn reset_round(&mut self) { self.votes.clear(); self.precommits.clear(); self.timeouts.clear(); }
@@ -263,6 +264,7 @@ impl ValidatorProtocol {
         self.reset_round();
         self.locked_round = None;
         self.locked_block_hash = None;
+        self.locked_block = None;
     }
 
     pub fn receive_proposal(&self, state: &ChainState, proposal: &freedom_types::BlockProposal) -> Result<freedom_types::ValidatorVote, String> {
@@ -294,6 +296,7 @@ impl ValidatorProtocol {
         block_hash: Hash,
         height: u64,
         round: u64,
+        block: &Block,
     ) -> Result<freedom_types::ValidatorPrecommit, String> {
         let votes: Vec<_> = self.votes.values().cloned().collect();
         freedom_consensus::validate_quorum(state, block_hash, height, round, &votes)?;
@@ -304,6 +307,7 @@ impl ValidatorProtocol {
         }
         self.locked_round = Some(round);
         self.locked_block_hash = Some(block_hash);
+        self.locked_block = Some(block.clone());
         let mut precommit = freedom_types::ValidatorPrecommit {
             block_hash,
             height,
