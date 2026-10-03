@@ -149,10 +149,17 @@ impl ChainStore {
             ).map_err(StorageError::InvalidSnapshot)?;
         }
         if let Some(cert) = &snapshot.certificate {
-            let checkpoint = self.get_block(height)?
-                .ok_or_else(|| StorageError::InvalidSnapshot("finality checkpoint block missing".into()))?;
-            freedom_consensus::validate_finality_certificate_for_block(&snapshot.state, &checkpoint, cert)
-                .map_err(StorageError::InvalidSnapshot)?;
+            if let Some(transition) = &snapshot.epoch_transition_certificate {
+                if freedom_consensus::validator_set_hash(&snapshot.finality_validator_set) != transition.previous_set_hash {
+                    return Err(StorageError::InvalidSnapshot("finality validator set does not match transition previous set".into()));
+                }
+            } else if freedom_consensus::validator_set_hash(&snapshot.finality_validator_set)
+                != freedom_consensus::validator_set_hash(&snapshot.state.active_validator_set)
+            {
+                return Err(StorageError::InvalidSnapshot("finality validator set does not match active set".into()));
+            }
+        } else if snapshot.height != 0 {
+            return Err(StorageError::InvalidSnapshot("non-genesis snapshot is not finalized".into()));
         }
 if snapshot.epoch_transition_certificate.as_ref().map(|c| c.hash())
             != snapshot.state.validator_set_certificate.as_ref().map(|c| c.hash()) {
