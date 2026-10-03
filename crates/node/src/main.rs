@@ -378,6 +378,26 @@ mod m31_tests {
     }
 
     #[test]
+    fn peer_reputation_dedup_keeps_distinct_fingerprints() {
+        let peer = libp2p::PeerId::random();
+        let base = |fingerprint| PeerReputationEvidence {
+            peer,
+            height: 10,
+            request_id: [7u8; 32],
+            fingerprint,
+            kind: PeerEvidenceKind::SyncConflict,
+            severity: PeerEvidenceSeverity::Normal,
+            reason: "distinct".to_string(),
+        };
+        let mut reputations = BTreeMap::new();
+        record_peer_evidence(&mut reputations, base([8u8; 32]));
+        record_peer_evidence(&mut reputations, base([9u8; 32]));
+        let reputation = reputations.get(&peer).unwrap();
+        assert_eq!(reputation.score, 2);
+        assert_eq!(reputation.evidence.len(), 2);
+    }
+
+    #[test]
     fn peer_reputation_evidence_is_idempotent() {
         let peer = libp2p::PeerId::random();
         let evidence = PeerReputationEvidence {
