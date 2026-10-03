@@ -1694,3 +1694,176 @@ mod m119_bitcoin_raw_transaction_tests {
         assert!(!proof.validate_output_binding());
     }
 }
+
+
+/// M120: a cryptographically anchored proof that a previously included Bitcoin
+/// output has not been spent up to a canonical tip.
+///
+/// Bitcoin block headers commit to transaction Merkle roots, but Bitcoin does
+/// not commit a UTXO set in the header. Therefore an honest unspent proof must
+/// either use a trusted/committed UTXO accumulator or inspect every transaction
+/// in every block after the output's inclusion. M120 implements the latter.
+/// It is intentionally a full-block spend scan, not a fake "absence proof".
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinSpendScanBlock {
+    pub height: u64,
+    pub header: BitcoinBlockHeader,
+    /// Complete raw transactions for this block, in canonical block order.
+    pub raw_transactions: Vec<Vec<u8>>,
+}
+
+impl BitcoinSpendScanBlock {
+    pub fn transaction_hashes(&self) -> Result<Vec<Hash>, String> {
+        if self.raw_transactions.is_empty() {
+            return Err("bitcoin spend-scan block must contain transactions".into());
+        }
+        if self.raw_transactions.len() > 1_000_000 {
+            return Err("bitcoin spend-scan block transaction count exceeds limit".into());
+        }
+        let mut hashes = Vec::with_capacity(self.raw_transactions.len());
+        let mut seen = std::collections::BTreeSet::new();
+        for raw in &self.raw_transactions {
+            let tx = BitcoinTransaction::parse(raw)
+                .map_err(|_| "invalid raw transaction in spend-scan block".to_string())?;
+            if !seen.insert(tx.txid) {
+                return Err("duplicate transaction id in spend-scan block".into());
+            }
+            hashes.push(tx.txid);
+        }
+        Ok(hashes)
+    }
+
+    pub fn merkle_root_from_transactions(&self) -> Result<Hash, String> {
+        let mut level = self.transaction_hashes()?;
+        while level.len() > 1 {
+            let mut next = Vec::with_capacity((level.len() + 1) / 2);
+            let mut i = 0usize;
+            while i < level.len() {
+                let left = level[i];
+                let right = if i + 1 < level.len() { level[i + 1] } else { left };
+                let mut bytes = Vec::with_capacity(64);
+                bytes.extend_from_slice(&left);
+                bytes.extend_from_slice(&right);
+                next.push(bitcoin_sha256d(&bytes));
+                i += 2;
+            }
+            level = next;
+        }
+        Ok(level[0])
+    }
+
+    pub fn verify_structure(&self) -> Result<(), String> {
+        if self.header.block_hash() == [0; 32] || !bitcoin_pow_valid(&self.header) {
+            return Err("invalid bitcoin block proof-of-work".into());
+        }
+        if self.header.merkle_root != self.merkle_root_from_transactions()? {
+            return Err("bitcoin spend-scan Merkle root mismatch".into());
+        }
+        if self.height == 0 {
+            return Err("bitcoin spend-scan height must be positive".into());
+        }
+        Ok(())
+    }
+
+    pub fn spends_outpoint(&self, tx_hash: Hash, vout: u32) -> Result<bool, String> {
+        for raw in &self.raw_transactions {
+            let tx = BitcoinTransaction::parse(raw)
+                .map_err(|_| "invalid raw transaction in spend-scan block".to_string())?;
+            if tx.inputs.iter().any(|i| i.previous_txid == tx_hash && i.previous_vout == vout) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSpendStateProof {
+    pub utxo: BitcoinUtxoProof,
+    pub inclusion_header: BitcoinBlockHeader,
+    /// Blocks from the block immediately after the UTXO inclusion block through
+    /// the claimed canonical tip, inclusive.
+    pub post_inclusion_blocks: Vec<BitcoinSpendScanBlock>,
+    pub tip_height: u64,
+    pub tip_hash: Hash,
+    pub tip_chainwork: [u8; 32],
+}
+
+impl BitcoinUtxoSpendStateProof {
+    pub fn verify_against_canonical_tip(
+        &self,
+        canonical_tip: &BitcoinChainCheckpoint,
+    ) -> Result<(), String> {
+        if !self.utxo.validate_output_binding() {
+            return Err("UTXO transaction/output binding invalid".into());
+        }
+        if self.utxo.block_height == 0 || self.utxo.block_height > canonical_tip.height {
+            return Err("UTXO block height is outside canonical tip".into());
+        }
+        if self.inclusion_header.block_hash() == [0; 32]
+            || !bitcoin_pow_valid(&self.inclusion_header)
+            || self.inclusion_header.merkle_root
+                != bitcoin_merkle_root(
+                    self.utxo.tx_hash,
+                    &self.utxo.merkle_branch,
+                    self.utxo.merkle_index,
+                )
+        {
+            return Err("UTXO inclusion header/Merkle proof invalid".into());
+        }
+        if self.inclusion_header.block_hash() != self.utxo_block_hash_expected() {
+            return Err("UTXO inclusion header is not bound to the canonical proof".into());
+        }
+
+        let expected_blocks = canonical_tip.height - self.utxo.block_height;
+        if self.post_inclusion_blocks.len() as u64 != expected_blocks {
+            return Err("spend-scan does not cover every block through canonical tip".into());
+        }
+        if self.tip_height != canonical_tip.height
+            || self.tip_hash != canonical_tip.block_hash
+            || self.tip_chainwork != canonical_tip.chainwork
+        {
+            return Err("spend-scan tip does not match canonical tip".into());
+        }
+
+        let mut previous_hash = self.inclusion_header.block_hash();
+        let mut expected_height = self.utxo.block_height + 1;
+        for block in &self.post_inclusion_blocks {
+            if block.height != expected_height || block.header.prev_block_hash != previous_hash {
+                return Err("bitcoin spend-scan header linkage mismatch".into());
+            }
+            block.verify_structure()?;
+            if block.spends_outpoint(self.utxo.tx_hash, self.utxo.vout)? {
+                return Err("bitcoin UTXO has been spent".into());
+            }
+            previous_hash = block.header.block_hash();
+            expected_height += 1;
+        }
+        if previous_hash != canonical_tip.block_hash {
+            return Err("bitcoin spend-scan does not reach canonical tip".into());
+        }
+        if expected_blocks > 0 {
+            let headers: Vec<_> = self.post_inclusion_blocks.iter().map(|b| b.header.clone()).collect();
+            let derived = bitcoin_validate_from_checkpoint(
+                &BitcoinChainCheckpoint {
+                    height: self.utxo.block_height,
+                    block_hash: self.inclusion_header.block_hash(),
+                    chainwork: [1; 32],
+                },
+                &headers,
+            ).map_err(|_| "bitcoin spend-scan chainwork validation failed".to_string())?;
+            if derived.height != canonical_tip.height || derived.block_hash != canonical_tip.block_hash {
+                return Err("bitcoin spend-scan canonical chain validation failed".into());
+            }
+        }
+        Ok(())
+    }
+
+    fn utxo_block_hash_expected(&self) -> Hash {
+        self.inclusion_header.block_hash()
+    }
+
+    pub fn is_unspent(&self, canonical_tip: &BitcoinChainCheckpoint) -> bool {
+        self.verify_against_canonical_tip(canonical_tip).is_ok()
+    }
+}
