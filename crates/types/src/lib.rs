@@ -671,6 +671,20 @@ fn bitcoin_add_chainwork(a:[u8;32],b:[u8;32])->[u8;32]{
     for i in (0..32).rev(){let x=a[i] as u16+b[i] as u16+carry;out[i]=(x&0xff) as u8;carry=x>>8;}out
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub const BITCOIN_REORG_EVIDENCE_LIMIT:usize=32;
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinReorgEvidence {
+ pub checkpoint_height:u64,
+ pub checkpoint_hash:Hash,
+ pub candidate_tip_height:u64,
+ pub candidate_tip_hash:Hash,
+ pub candidate_chainwork:[u8;32],
+ pub fingerprint:Hash,
+}
+impl BitcoinReorgEvidence {
+ pub fn compute_fingerprint(&self)->Hash{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BITCOIN-REORG-V1");o.extend_from_slice(&self.checkpoint_height.to_le_bytes());o.extend_from_slice(&self.checkpoint_hash);o.extend_from_slice(&self.candidate_tip_height.to_le_bytes());o.extend_from_slice(&self.candidate_tip_hash);o.extend_from_slice(&self.candidate_chainwork);freedom_primitives::hash_bytes(&o)}
+ pub fn validate(&self)->bool{self.checkpoint_hash!=[0;32]&&self.candidate_tip_hash!=[0;32]&&self.candidate_chainwork!=[0;32]&&self.fingerprint==self.compute_fingerprint()}
+}
 pub struct BitcoinReorgReport { pub checkpoint_height:u64, pub checkpoint_hash:Hash, pub candidate_tip_height:u64, pub candidate_tip_hash:Hash, pub candidate_chainwork:[u8;32] }
 pub fn bitcoin_evaluate_reorg(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinReorgReport,BitcoinCheckpointError>{
  if !checkpoint.validate(){return Err(BitcoinCheckpointError::InvalidCheckpoint);} if headers.is_empty(){return Err(BitcoinCheckpointError::EmptyHeaders);}
