@@ -511,3 +511,11 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - after snapshot activation, a node resumes proposing from the recovered height when it is the scheduled proposer;
 - the next proposal must use recovered height + 1, recovered last_block_hash, and the deterministic proposer for the recovered round;
 - regression coverage verifies contiguous proposal construction from recovered genesis state.
+
+## M46 — Adversarial Replay Integrity
+
+- persisted replay is isolated behind one validation path;
+- height gaps, previous-hash corruption, and proposer corruption are rejected before state mutation;
+- block execution errors abort recovery rather than partially activating the corrupted replay;
+- replay still verifies the resulting committed block hash after execution;
+- regression tests cover corrupted previous hash, proposer, and height continuity.
