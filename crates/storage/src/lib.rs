@@ -128,7 +128,11 @@ impl ChainStore {
         self.save_snapshot_with_certificate_opt(state, block_hash, Some(certificate), finality_validator_set)
     }
 
-    fn validate_snapshot_integrity(&self, snapshot: &StateSnapshot) -> Result<(), StorageError> {
+    fn validate_snapshot_integrity_with_checkpoint(
+        &self,
+        snapshot: &StateSnapshot,
+        checkpoint: Option<&Block>,
+    ) -> Result<(), StorageError> {
         if snapshot.chain_id != CHAIN_ID {
             return Err(StorageError::InvalidSnapshot("chain id mismatch".into()));
         }
@@ -139,32 +143,29 @@ impl ChainStore {
             return Err(StorageError::InvalidSnapshot("state root mismatch".into()));
         }
 
-        let checkpoint = if snapshot.height == 0 {
+        if snapshot.height == 0 {
             if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
                 return Err(StorageError::InvalidSnapshot("genesis snapshot hash linkage mismatch".into()));
             }
-            None
+            if snapshot.certificate.is_some() || snapshot.epoch_transition_certificate.is_some() {
+                return Err(StorageError::InvalidSnapshot("genesis snapshot contains finality certificate metadata".into()));
+            }
         } else {
             if snapshot.state.last_block_hash != snapshot.block_hash {
                 return Err(StorageError::InvalidSnapshot("snapshot state last hash mismatch".into()));
             }
-            let checkpoint = self.get_block(snapshot.height)?
+            let checkpoint = checkpoint
                 .ok_or_else(|| StorageError::InvalidSnapshot("checkpoint block missing".into()))?;
-            if freedom_consensus::block_hash(&checkpoint) != snapshot.block_hash {
+            if checkpoint.header.height != snapshot.height {
+                return Err(StorageError::InvalidSnapshot("checkpoint height mismatch".into()));
+            }
+            if freedom_consensus::block_hash(checkpoint) != snapshot.block_hash {
                 return Err(StorageError::InvalidSnapshot("snapshot checkpoint hash mismatch".into()));
             }
             if checkpoint.header.state_root != snapshot.state_root {
                 return Err(StorageError::InvalidSnapshot("checkpoint state root mismatch".into()));
             }
-            Some(checkpoint)
-        };
 
-        if snapshot.height == 0 {
-            if snapshot.certificate.is_some() || snapshot.epoch_transition_certificate.is_some() {
-                return Err(StorageError::InvalidSnapshot("genesis snapshot contains finality certificate metadata".into()));
-            }
-        } else {
-            let checkpoint = checkpoint.as_ref().expect("non-genesis checkpoint validated above");
             let cert = snapshot.certificate.as_ref()
                 .ok_or_else(|| StorageError::InvalidSnapshot("snapshot has no finality certificate".into()))?;
 
@@ -204,14 +205,26 @@ impl ChainStore {
         Ok(())
     }
 
-    fn save_snapshot_with_certificate_opt(
+    fn validate_snapshot_integrity(&self, snapshot: &StateSnapshot) -> Result<(), StorageError> {
+        let checkpoint = if snapshot.height == 0 {
+            None
+        } else {
+            Some(
+                self.get_block(snapshot.height)?
+                    .ok_or_else(|| StorageError::InvalidSnapshot("checkpoint block missing".into()))?
+            )
+        };
+        self.validate_snapshot_integrity_with_checkpoint(snapshot, checkpoint.as_ref())
+    }
+
+    fn build_snapshot(
         &self,
         state: &ChainState,
         block_hash: [u8;32],
         certificate: Option<freedom_types::FinalityCertificate>,
         finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
-    ) -> Result<(), StorageError> {
-        let snapshot = StateSnapshot {
+    ) -> StateSnapshot {
+        StateSnapshot {
             chain_id: CHAIN_ID,
             height: state.height,
             block_hash,
@@ -220,10 +233,57 @@ impl ChainStore {
             certificate,
             finality_validator_set,
             epoch_transition_certificate: state.validator_set_certificate.clone(),
-        };
+        }
+    }
+
+    fn save_snapshot_with_certificate_opt(
+        &self,
+        state: &ChainState,
+        block_hash: [u8;32],
+        certificate: Option<freedom_types::FinalityCertificate>,
+        finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
+    ) -> Result<(), StorageError> {
+        let snapshot = self.build_snapshot(state, block_hash, certificate, finality_validator_set);
         self.validate_snapshot_integrity(&snapshot)?;
         let bytes = serde_json::to_vec(&snapshot).map_err(|e| StorageError::Codec(e.to_string()))?;
         self.db.put(Self::snapshot_key(state.height), bytes).map_err(|e| StorageError::Rocks(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn put_block_and_snapshot(
+        &self,
+        checkpoint: &Block,
+        state: &ChainState,
+        certificate: freedom_types::FinalityCertificate,
+        finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
+    ) -> Result<(), StorageError> {
+        if checkpoint.header.height == 0 || checkpoint.header.height != state.height {
+            return Err(StorageError::InvalidMetadata);
+        }
+        let checkpoint_hash = freedom_consensus::block_hash(checkpoint);
+        if checkpoint_hash != state.last_block_hash {
+            return Err(StorageError::InvalidSnapshot("checkpoint does not match state last hash".into()));
+        }
+
+        let snapshot = self.build_snapshot(
+            state,
+            checkpoint_hash,
+            Some(certificate),
+            finality_validator_set,
+        );
+        self.validate_snapshot_integrity_with_checkpoint(&snapshot, Some(checkpoint))?;
+
+        let block_bytes = serde_json::to_vec(checkpoint)
+            .map_err(|e| StorageError::Codec(e.to_string()))?;
+        let snapshot_bytes = serde_json::to_vec(&snapshot)
+            .map_err(|e| StorageError::Codec(e.to_string()))?;
+
+        let mut batch = WriteBatch::default();
+        batch.put(Self::height_key(checkpoint.header.height), block_bytes);
+        batch.put(META_HEIGHT, checkpoint.header.height.to_be_bytes());
+        batch.put(META_HASH, checkpoint_hash);
+        batch.put(Self::snapshot_key(snapshot.height), snapshot_bytes);
+        self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))?;
         Ok(())
     }
 
