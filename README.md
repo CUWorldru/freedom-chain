@@ -527,3 +527,14 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - recovery validates that tip metadata points to an actual persisted block with the matching hash;
 - genesis metadata must remain zero-hash when the stored height is zero;
 - regression tests cover invalid zero-height writes and corrupted tip hash metadata.
+
+
+## M48 — Snapshot Atomicity and Consistency
+
+- snapshot persistence validates chain identity, state height/state root, and checkpoint linkage before writing;
+- non-genesis snapshots must match the persisted checkpoint block hash, checkpoint state root, and the state's last block hash;
+- non-genesis snapshots must pass finality-certificate validation against the persisted checkpoint and historical validator set before persistence;
+- genesis snapshots remain a special height-0 case and may retain the bootstrap validator set, but cannot carry finality or epoch-transition certificates;
+- epoch-transition certificate bindings are validated before persistence and again during snapshot loading;
+- invalid snapshot writes fail before creating a snapshot record, so callers cannot persist a logically inconsistent checkpoint;
+- regression tests cover missing checkpoints, checkpoint/state-root mismatch, and snapshot linkage failures.
