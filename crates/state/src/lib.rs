@@ -114,6 +114,30 @@ impl ChainState {
   }
   registry
  }
+ pub fn register_cross_chain_registry(
+  &mut self,
+  registry: freedom_types::CrossChainAssetRegistry,
+) -> Result<(), StateError> {
+  if !registry.validate() {
+   return Err(StateError::InvalidAsset);
+  }
+  if self.cross_chain_asset_registries.contains_key(&registry.canonical_asset_id) {
+   return Err(StateError::DuplicateAsset);
+  }
+  for representation in &registry.representations {
+   if self.asset_registry.contains_key(&representation.representation.asset_id) {
+    return Err(StateError::DuplicateAsset);
+   }
+  }
+  for representation in &registry.representations {
+   self.asset_registry.insert(
+    representation.representation.asset_id,
+    representation.representation.clone(),
+   );
+  }
+  self.cross_chain_asset_registries.insert(registry.canonical_asset_id, registry);
+  Ok(())
+ }
  pub fn register_asset(&mut self, asset: AssetDefinition) -> Result<(), StateError> {
   if !asset.validate_identity() || asset.status == AssetStatus::Deprecated {
    return Err(StateError::InvalidAsset);
