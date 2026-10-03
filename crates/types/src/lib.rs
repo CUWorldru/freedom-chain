@@ -2249,7 +2249,6 @@ fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
     Some((exponent << 24) | (mantissa & 0x007f_ffff))
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub const BITCOIN_MAINNET_CHAIN_ID: u32 = 0x4254_4301;
 pub const BITCOIN_MAINNET_GENESIS_HASH: Hash = [
     0x6f, 0xe2, 0x8c, 0x0a, 0xb6, 0xf1, 0xb3, 0x72,
@@ -2258,24 +2257,40 @@ pub const BITCOIN_MAINNET_GENESIS_HASH: Hash = [
     0x68, 0xd6, 0x19, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-pub struct BitcoinNetworkCheckpoint {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BitcoinNetworkProfile {
     pub chain_id: u32,
     pub genesis_hash: Hash,
+}
+
+impl BitcoinNetworkProfile {
+    pub const MAINNET: Self = Self {
+        chain_id: BITCOIN_MAINNET_CHAIN_ID,
+        genesis_hash: BITCOIN_MAINNET_GENESIS_HASH,
+    };
+
+    pub fn validate(self) -> bool {
+        self == Self::MAINNET
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitcoinNetworkCheckpoint {
+    pub profile: BitcoinNetworkProfile,
     pub height: u64,
     pub block_hash: Hash,
 }
 
 impl BitcoinNetworkCheckpoint {
     pub fn validate(&self) -> bool {
-        self.chain_id == BITCOIN_MAINNET_CHAIN_ID
-            && self.genesis_hash == BITCOIN_MAINNET_GENESIS_HASH
+        self.profile.validate()
             && self.height > 0
             && self.block_hash != [0u8; 32]
     }
 }
 
 pub struct BitcoinChainContext {
-    pub chain_id: u32,
+    pub profile: BitcoinNetworkProfile,
     pub checkpoint: BitcoinNetworkCheckpoint,
     pub start_height: u64,
     pub base_start_height: u64,
@@ -2289,9 +2304,9 @@ pub struct BitcoinChainContext {
 
 impl BitcoinChainContext {
     pub fn validate(&self) -> bool {
-        self.chain_id == BITCOIN_MAINNET_CHAIN_ID
+        self.profile.validate()
             && self.checkpoint.validate()
-            && self.checkpoint.chain_id == self.chain_id
+            && self.checkpoint.profile == self.profile
             && self.checkpoint.height <= self.base_start_height
             && self.tip_height > 0
             && self.start_height > 0
@@ -2343,7 +2358,10 @@ impl BitcoinChainContext {
     }
 
     fn verify_checkpoint_anchor(&self) -> bool {
-        if !self.checkpoint.validate() || self.checkpoint.height > self.base_start_height {
+        if !self.profile.validate()
+            || !self.checkpoint.validate()
+            || self.checkpoint.profile != self.profile
+            || self.checkpoint.height > self.base_start_height {
             return false;
         }
         let checkpoint_index = (self.checkpoint.height - self.base_start_height) as usize;
