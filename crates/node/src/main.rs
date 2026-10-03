@@ -170,7 +170,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let mut accepted = 0u64;
                                     for block in response.blocks {
                                         if block.header.height != state.height + 1 { break; }
-                                        if block.header.round != block.header.epoch { break; }
                                         let expected = match proposer_for_height_round(&state, block.header.height, block.header.round) {
                                             Some(v) => v,
                                             None => break,
