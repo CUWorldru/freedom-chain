@@ -266,3 +266,12 @@ Reference: libp2p 0.57 exposes the request-response protocol and a built-in JSON
 - Proposal validation checks timeout certificates and valid-round precommit proofs before accepting a cross-round locked proposal.
 - The node now packages timeout quorum evidence during view change and re-proposes a locked block when it has one.
 - This remains a prototype BFT implementation; durable evidence/slashing, validator-set changes, and a fully specified unlock/valid-round protocol remain future work.
+
+
+## M24 — Equivocation Evidence and Slashing Foundation
+
+- Added canonical evidence objects for double-prevote, double-precommit and double-proposal violations.
+- Evidence has a deterministic hash and domain-separated signing bytes.
+- Consensus can detect and validate equivocation evidence.
+- Chain state persists evidence and idempotent slashing records and includes them in the state root.
+- Slashing is currently a foundation: validator stake is reduced by an explicit protocol call; automatic evidence transaction wiring and validator-set effects remain future work.
