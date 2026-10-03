@@ -306,7 +306,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 eprintln!("SNAPSHOT_REJECTED invalid checkpoint finality certificate: {e}");
                                                 continue;
                                             }
+                                            if response.certificate.block_hash != response.block_hash
+                                                || response.certificate.height != response.height
+                                                || response.certificate.round != response.checkpoint.header.round {
+                                                eprintln!("SNAPSHOT_REJECTED finality certificate checkpoint mismatch");
+                                                continue;
+                                            }
+                                            if response.certificate.height != snapshot_state.height {
+                                                eprintln!("SNAPSHOT_REJECTED finality certificate height does not match snapshot");
+                                                continue;
+                                            }
                                             if let Some(cert) = &response.epoch_transition_certificate {
+                                                if freedom_consensus::validator_set_hash(&response.finality_validator_set) != cert.previous_set_hash {
+                                                    eprintln!("SNAPSHOT_REJECTED finality set is not the transition previous set");
+                                                    continue;
+                                                }
                                                 if cert.to_epoch != snapshot_state.epoch
                                                     || cert.new_set_hash != freedom_consensus::validator_set_hash(&snapshot_state.active_validator_set)
                                                     || snapshot_state.validator_set_certificate.as_ref().map(|c| c.hash()) != Some(cert.hash())
