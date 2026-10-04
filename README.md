@@ -1484,3 +1484,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Bitcoin `BridgeMint` runtime admission now authenticates UTXO attestations against the active validator set, matching state-level quorum enforcement.
 - This removes the remaining runtime path where a validator present only in the historical/full registry could contribute to a mint quorum.
 - Added a regression test for active-validator key resolution.
+
+
+### M240 — BridgeMint authorization uses active validators
+- Runtime `BridgeMint` authorization now resolves validator keys from the active validator set rather than the full validator registry.
+- This closes the remaining authorization path where a validator removed from the active set could still authenticate a mint approval.
+- Added a regression test distinguishing active validators from registry-only validators.
