@@ -1582,3 +1582,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Validator-set certificates now count only votes with matching epochs/set hashes, valid validator identity, unique signer identity, and valid signatures.
 - Activated-staking Bitcoin finality requires the certificate to reach the bridge validator quorum.
 - A certificate with the correct `new_set_hash` but forged/empty votes can no longer satisfy finality readiness.
+
+
+### M256 — Finality attestation sequence semantics
+- Fixed the finality gate so the persisted Bitcoin UTXO attestation is treated as the candidate transition being finalized.
+- Removed the contradictory stored-sequence-plus-one requirement from envelope validation.
+- Sequence continuity remains enforced at attestation registration, while finality requires the envelope sequence to equal the authenticated persisted attestation sequence.
