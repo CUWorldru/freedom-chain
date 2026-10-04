@@ -1431,3 +1431,8 @@ Bridge withdrawal requests are now checked against the stored security policy at
 ### M230 — threshold withdrawal approvals require authenticated evidence
 
 Withdrawal approval in `Threshold` and `QuorumAndThreshold` modes no longer trusts the persisted `threshold_signatures` counter by itself. The counter must not exceed the number of independently authenticated, active-validator approvals bound to the withdrawal intent; otherwise approval is rejected. This closes a forged threshold-count bypass without changing the existing approval payload format.
+
+
+### M231 — overflow-safe bridge policy quorum validation
+
+`BridgeSecurityPolicy::validate()` now evaluates the validator supermajority rule in a wider integer type, preventing `u16` multiplication overflow at extreme validator counts. The policy format and quorum rule remain unchanged; only the arithmetic domain is hardened.
