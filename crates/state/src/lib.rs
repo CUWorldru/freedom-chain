@@ -234,6 +234,7 @@ impl ChainState {
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if attestation.validator_ids.iter().any(|id| !self.active_validator_set.contains_key(id)){return Err(StateError::InvalidBridgeWithdrawal);}
+  if !policy.quorum_matches_validator_count(self.active_validator_set.len()){return Err(StateError::InvalidBridgeWithdrawal);}
   let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
   if commitment.block_height!=canonical.height+1
     || attestation.bridge_id!=bridge_id
@@ -364,6 +365,7 @@ impl ChainState {
       || attestation.previous_utxo_root != envelope.previous_state_root
       || attestation.accumulator_root != envelope.state_root
       || !attestation.validate_structure()
+      || !policy.quorum_matches_validator_count(self.active_validator_set.len())
       || !attestation.verify_signatures(&validators,policy.validator_quorum) {
       return Err(StateError::InvalidBridgeWithdrawal);
     }
@@ -1082,6 +1084,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
   if attestation.bridge_id!=policy.bridge_id
     || attestation.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
+    || !policy.quorum_matches_validator_count(self.active_validator_set.len())
     || !attestation.verify(canonical,&validators,policy.validator_quorum){return Err(StateError::InvalidBridgeWithdrawal);}
   if let Some(previous)=self.bitcoin_utxo_attestations.get(&attestation.bridge_id){if previous.sequence==u64::MAX || attestation.sequence!=previous.sequence+1{return Err(StateError::InvalidBridgeWithdrawal);}}
   self.bitcoin_utxo_attestations.insert(attestation.bridge_id,attestation);
@@ -3819,6 +3822,41 @@ mod m272_finality_state_root_coverage_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m275_bitcoin_attestation_quorum_binding_tests {
+    use super::*;
+
+    fn policy(total:u16, quorum:u16)->freedom_types::BridgeSecurityPolicy {
+        freedom_types::BridgeSecurityPolicy {
+            bridge_id:[7;32],
+            approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:quorum,
+            validator_total:total,
+            threshold_signers:1,
+            threshold_total:1,
+            min_external_confirmations:1,
+            max_deposit_amount:1000,
+            max_withdrawal_amount:1000,
+            daily_limit:1000,
+            emergency_paused:false,
+            nonce_floor:0,
+        }
+    }
+
+    #[test]
+    fn bitcoin_attestation_quorum_requires_exact_active_validator_set_size() {
+        assert!(policy(3,2).quorum_matches_validator_count(3));
+        assert!(!policy(3,2).quorum_matches_validator_count(2));
+        assert!(!policy(3,2).quorum_matches_validator_count(4));
+    }
+
+    #[test]
+    fn bitcoin_attestation_quorum_requires_strict_two_thirds() {
+        assert!(policy(3,3).quorum_matches_validator_count(3));
+        assert!(!policy(3,2).quorum_matches_validator_count(3));
+    }
+}
 
 #[cfg(test)]
 mod m273_bitcoin_chainwork_binding_tests {
