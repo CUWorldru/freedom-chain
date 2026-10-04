@@ -1286,3 +1286,6 @@ State exposes `validate_ethereum_end_to_end_proof(...)` as the unified validatio
 ## M205 — Bitcoin Bridge Mint Admission Binding
 
 The consensus `BridgeMint` admission path now consumes the persisted Bitcoin canonical tip. For Bitcoin mainnet deposits it requires the deposit height to be buried under the bridge policy's minimum confirmation depth and rejects stale or inconsistent UTXO attestation tips. M204 remains the cryptographic/header/fork verifier; M205 connects that finality boundary to actual mint transaction admission.
+## M206 — Bitcoin UTXO Attestation Required for Mint Admission
+
+Bitcoin BridgeMint admission now requires a state-held, quorum-authenticated `BitcoinUtxoCommitmentAttestation` for the bridge. The attestation must bind to the exact persisted canonical Bitcoin tip, use the same source chain ID, and satisfy the bridge validator quorum. M205 established the mandatory canonical-tip/finality boundary; M206 makes the authenticated UTXO commitment layer mandatory as well, without changing the BridgeMint transaction payload format.
