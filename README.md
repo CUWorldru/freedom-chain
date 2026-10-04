@@ -1650,3 +1650,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Validator key snapshots must match their committed snapshot hashes and every snapshot hash must have a corresponding snapshot.
 - Persisted Bitcoin UTXO attestations and commitments are structurally validated before finality proceeds.
 - Added regression tests for inconsistent validator-history and malformed Bitcoin commitment state.
+
+
+### M267 — Validator quorum binding
+- Bound validator quorum policy to the exact historical validator-set size used to authenticate an epoch transition certificate.
+- Preserved the existing strict >2/3 quorum rule.
+- Added reusable policy validation and regression tests for validator-count mismatch and weakened quorum.
