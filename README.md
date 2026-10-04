@@ -1705,3 +1705,8 @@ Bitcoin UTXO commitment attestations now require a canonical signer representati
 ## M275 — Bitcoin attestation quorum binding
 
 Bitcoin UTXO commitment attestation validation now requires the bridge policy's validator_total to exactly match the active validator-set size and its validator_quorum to satisfy the strict >2/3 rule. The binding is enforced during attestation registration, commitment validation, and finality validation, preventing a policy/set-size mismatch from weakening the attestation security threshold.
+
+
+### M276 — Bitcoin attestation epoch binding
+
+Bitcoin UTXO commitment attestations now cryptographically bind their signatures to the exact validator-set epoch and committed validator-set hash. The binding is included in the attestation signing bytes and is enforced during attestation registration, commitment validation, and cross-chain finality validation. An attestation created under a previous epoch can no longer be reused after an epoch transition, even if validator identities happen to remain unchanged. Added regression coverage for epoch/hash mismatch and signed-identity changes.
