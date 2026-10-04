@@ -1320,3 +1320,10 @@ Regression coverage verifies both rejection of an Ethereum chain ID and acceptan
 The Bitcoin canonical-tip Merkle deposit validator now requires BitcoinMerkleProof.chain_id to equal the protocol-defined BITCOIN_MAINNET_CHAIN_ID before canonical-header verification.
 
 Regression coverage verifies that a proof carrying an unrelated chain ID is rejected at the Bitcoin-specific state boundary. The generic BitcoinMerkleProof verifier remains unchanged.
+
+
+## M212 — Bitcoin UTXO Transition Chain-ID Binding
+
+Bitcoin UTXO accumulator transition entry points now require the transition chain_id to equal the protocol-defined BITCOIN_MAINNET_CHAIN_ID. This applies to both block-bound transition validation and standalone accumulator transition validation.
+
+Regression coverage verifies rejection of an Ethereum chain ID at both Bitcoin-specific state boundaries. No transition payload structure or previous M-module architecture was changed.
