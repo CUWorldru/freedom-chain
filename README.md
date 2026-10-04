@@ -1411,3 +1411,8 @@ Stored bridge message approval sets are now canonicalized and restricted to the 
 ## M226 — Withdrawal Quorum Active-Validator Binding
 
 Bridge withdrawal approval quorum authentication now uses the active validator set. A validator remaining in the historical registry but removed from the active set cannot satisfy the current withdrawal quorum.
+
+
+## M227 — Bridge Pause Authorization Canonicalization
+
+Emergency pause authorization sets now require strictly ascending validator IDs before quorum authentication. Duplicate or non-canonical signer entries are rejected, keeping the persisted emergency-control evidence deterministic.
