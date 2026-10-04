@@ -1402,19 +1402,9 @@ mod m208_bitcoin_attestation_chain_id_tests {
     use freedom_types::{BitcoinChainCheckpoint, BitcoinUtxoCommitmentAttestation};
 
     fn state_with_bitcoin_bridge() -> ChainState {
-        let key = freedom_crypto::generate_keypair();
-        let validator_id = freedom_primitives::hash_bytes(&key.verifying_key().to_bytes());
-        let validator = freedom_types::Validator {
-            validator_id,
-            owner: [1; 20],
-            consensus_key: key.verifying_key().to_bytes(),
-            stake: 1_000,
-            unbonding_stake: 0,
-            status: freedom_types::ValidatorStatus::Active,
-        };
         let genesis = freedom_types::Genesis {
             initial_supply: 0,
-            validators: vec![validator],
+            validators: vec![],
         };
         let mut state = ChainState::genesis(&genesis);
         let policy = freedom_types::BridgeSecurityPolicy {
@@ -1443,10 +1433,8 @@ mod m208_bitcoin_attestation_chain_id_tests {
         state
     }
 
-    fn signed_attestation(chain_id: u32) -> BitcoinUtxoCommitmentAttestation {
-        let key = freedom_crypto::generate_keypair();
-        let validator_id = freedom_primitives::hash_bytes(&key.verifying_key().to_bytes());
-        let mut attestation = BitcoinUtxoCommitmentAttestation {
+    fn unsigned_attestation(chain_id: u32) -> BitcoinUtxoCommitmentAttestation {
+        BitcoinUtxoCommitmentAttestation {
             bridge_id: [7; 32],
             chain_id,
             policy_id: [6; 32],
@@ -1456,23 +1444,16 @@ mod m208_bitcoin_attestation_chain_id_tests {
             bitcoin_tip_chainwork: [9; 32],
             previous_utxo_root: [10; 32],
             accumulator_root: [11; 32],
-            validator_ids: vec![validator_id],
+            validator_ids: vec![[12; 32]],
             signatures: vec![],
             attestation_hash: [0; 32],
-        };
-        let signature = freedom_crypto::sign(&key, &attestation.signing_bytes());
-        attestation.signatures = vec![freedom_types::BitcoinReorgRecoverySignature {
-            validator_id,
-            signature: signature.to_vec(),
-        }];
-        attestation.attestation_hash = attestation.compute_hash();
-        attestation
+        }
     }
 
     #[test]
-    fn registration_rejects_non_bitcoin_chain_id() {
+    fn registration_rejects_non_bitcoin_chain_id_before_authentication() {
         let mut state = state_with_bitcoin_bridge();
-        let attestation = signed_attestation(1);
+        let attestation = unsigned_attestation(1);
         assert_eq!(
             state.register_bitcoin_utxo_commitment_attestation(attestation),
             Err(StateError::InvalidBridgeWithdrawal)
