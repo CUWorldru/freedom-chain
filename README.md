@@ -1501,3 +1501,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 ### M242 — Consensus-state Bitcoin BridgeMint gate
 - State-level `BridgeMint` execution now enforces the persisted Bitcoin canonical tip, confirmation boundary, and quorum-authenticated UTXO attestation before minting Bitcoin-backed assets.
 - This mirrors the runtime admission boundary at the authoritative state execution layer, preventing a direct consensus execution path from bypassing Bitcoin finality checks.
+
+
+### M244 — Bridge acceptance state-transition hardening
+- State `accept_bridge_message()` no longer creates a missing `Verified` status implicitly.
+- Acceptance now requires an existing `Verified` status and verifies that the supplied replay key matches the stored message replay key.
+- Added regression tests for missing-status promotion and replay-key mismatch.
