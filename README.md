@@ -1643,3 +1643,10 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Added canonical state-root leaves for validator-set history hashes, historical validator key snapshots, and their snapshot hashes.
 - Added state-root leaves for persisted Bitcoin UTXO attestations and block commitments used by cross-chain finality.
 - Added regression tests proving mutation of each finality-critical structure changes the consensus state root.
+
+
+### M266 — Cross-chain finality state integrity gate
+- Added a single integrity gate before cross-chain finality validation.
+- Validator key snapshots must match their committed snapshot hashes and every snapshot hash must have a corresponding snapshot.
+- Persisted Bitcoin UTXO attestations and commitments are structurally validated before finality proceeds.
+- Added regression tests for inconsistent validator-history and malformed Bitcoin commitment state.
