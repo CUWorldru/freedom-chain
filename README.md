@@ -1426,3 +1426,8 @@ Bridge withdrawal approval now enforces the stored bridge security policy before
 ## M229 — Withdrawal Request Policy Admission
 
 Bridge withdrawal requests are now checked against the stored security policy at creation time. Invalid policy state, emergency pause, amount limits, and nonce-floor violations are rejected before a withdrawal enters the request lifecycle, complementing the M228 approval-time enforcement.
+
+
+### M230 — threshold withdrawal approvals require authenticated evidence
+
+Withdrawal approval in `Threshold` and `QuorumAndThreshold` modes no longer trusts the persisted `threshold_signatures` counter by itself. The counter must not exceed the number of independently authenticated, active-validator approvals bound to the withdrawal intent; otherwise approval is rejected. This closes a forged threshold-count bypass without changing the existing approval payload format.
