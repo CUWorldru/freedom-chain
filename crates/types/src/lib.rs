@@ -5896,6 +5896,10 @@ pub struct BitcoinUtxoCommitmentAttestation {
     pub bridge_id: Hash,
     pub chain_id: u32,
     pub policy_id: Hash,
+    #[serde(default)]
+    pub validator_set_epoch: u64,
+    #[serde(default)]
+    pub validator_set_hash: Hash,
     pub sequence: u64,
     pub bitcoin_tip_height: u64,
     pub bitcoin_tip_hash: Hash,
@@ -5914,6 +5918,8 @@ impl BitcoinUtxoCommitmentAttestation {
         o.extend_from_slice(&self.bridge_id);
         o.extend_from_slice(&self.chain_id.to_le_bytes());
         o.extend_from_slice(&self.policy_id);
+        o.extend_from_slice(&self.validator_set_epoch.to_le_bytes());
+        o.extend_from_slice(&self.validator_set_hash);
         o.extend_from_slice(&self.sequence.to_le_bytes());
         o.extend_from_slice(&self.bitcoin_tip_height.to_le_bytes());
         o.extend_from_slice(&self.bitcoin_tip_hash);
@@ -5932,6 +5938,7 @@ impl BitcoinUtxoCommitmentAttestation {
         self.bridge_id != [0;32]
             && self.chain_id != 0
             && self.policy_id != [0;32]
+            && self.validator_set_hash != [0;32]
             && self.sequence > 0
             && self.bitcoin_tip_height > 0
             && self.bitcoin_tip_hash != [0;32]
@@ -7149,6 +7156,8 @@ mod m274_bitcoin_attestation_signer_set_tests {
             bridge_id:[1;32],
             chain_id:BITCOIN_MAINNET_CHAIN_ID,
             policy_id:[2;32],
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence:1,
             bitcoin_tip_height:100,
             bitcoin_tip_hash:[3;32],
