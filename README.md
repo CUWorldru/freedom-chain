@@ -1501,3 +1501,8 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 ### M242 — Consensus-state Bitcoin BridgeMint gate
 - State-level `BridgeMint` execution now enforces the persisted Bitcoin canonical tip, confirmation boundary, and quorum-authenticated UTXO attestation before minting Bitcoin-backed assets.
 - This mirrors the runtime admission boundary at the authoritative state execution layer, preventing a direct consensus execution path from bypassing Bitcoin finality checks.
+
+
+### M243 — Direct Bitcoin mint helper hardened
+- The public `mint_bridge_authorized` state helper now independently enforces Bitcoin reorg safety, canonical-tip confirmations, and active-validator UTXO attestation before minting.
+- This closes the direct-helper path that could otherwise bypass the M242 transaction execution gate.
