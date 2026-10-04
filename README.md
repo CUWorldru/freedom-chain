@@ -1619,3 +1619,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Activated-staking finality now requires the validator-set certificate to describe exactly the current epoch transition.
 - `from_epoch + 1 == to_epoch == state.epoch` is enforced.
 - A valid certificate from an older epoch cannot remain usable after the validator set advances.
+
+
+### M262 — Validator certificate lifecycle
+- A validator-set certificate is now cleared atomically when a new epoch activates a new validator set.
+- Each epoch therefore starts without inheriting a stale certificate from the previous validator transition.
+- Finality must obtain a fresh certificate for the newly active epoch before staking-gated finality can proceed.
