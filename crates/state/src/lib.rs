@@ -3685,3 +3685,133 @@ mod m271_validator_history_write_boundary_tests {
         assert_eq!(state.record_validator_set_epoch_hash(0,hash),Ok(()));
     }
 }
+
+
+#[cfg(test)]
+mod m272_finality_state_root_coverage_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![freedom_types::GenesisValidator {
+                validator_id:[1u8;32],
+                owner:[2u8;32],
+                consensus_key:[3u8;32],
+                stake:100,
+            }],
+        })
+    }
+
+    fn policy(bridge:Hash) -> freedom_types::BridgeSecurityPolicy {
+        freedom_types::BridgeSecurityPolicy {
+            bridge_id:bridge,
+            approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1,
+            validator_total:1,
+            threshold_signers:1,
+            threshold_total:1,
+            min_external_confirmations:1,
+            max_deposit_amount:1000,
+            max_withdrawal_amount:1000,
+            daily_limit:1000,
+            emergency_paused:false,
+            nonce_floor:0,
+        }
+    }
+
+    #[test]
+    fn canonical_bitcoin_tip_and_bridge_policy_are_state_committed() {
+        let bridge=[71u8;32];
+        let mut state=genesis();
+        state.bridge_security_policies.insert(bridge,policy(bridge));
+        state.bitcoin_canonical_tips.insert(bridge,freedom_types::BitcoinChainCheckpoint {
+            height:100,
+            block_hash:[72u8;32],
+            chainwork:[73u8;32],
+        });
+        let before=state.state_root();
+
+        state.bitcoin_canonical_tips.get_mut(&bridge).unwrap().height=101;
+        assert_ne!(before,state.state_root());
+
+        let before_policy=state.state_root();
+        state.bridge_security_policies.get_mut(&bridge).unwrap().validator_quorum=2;
+        assert_ne!(before_policy,state.state_root());
+    }
+
+    #[test]
+    fn certificate_mutation_is_state_committed() {
+        let mut state=genesis();
+        let cert=freedom_types::ValidatorSetCertificate {
+            from_epoch:0,
+            to_epoch:1,
+            previous_set_hash:[74u8;32],
+            new_set_hash:[75u8;32],
+            votes:vec![],
+        };
+        state.validator_set_certificate=Some(cert);
+        let before=state.state_root();
+        state.validator_set_certificate.as_mut().unwrap().to_epoch=2;
+        assert_ne!(before,state.state_root());
+    }
+
+    #[test]
+    fn finality_critical_state_root_categories_are_all_present() {
+        let bridge=[76u8;32];
+        let mut state=genesis();
+        state.bridge_security_policies.insert(bridge,policy(bridge));
+        state.bitcoin_canonical_tips.insert(bridge,freedom_types::BitcoinChainCheckpoint {
+            height:100, block_hash:[77u8;32], chainwork:[78u8;32],
+        });
+        state.bitcoin_utxo_attestations.insert(bridge,freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id:bridge,
+            chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id:bridge,
+            sequence:1,
+            bitcoin_tip_height:101,
+            bitcoin_tip_hash:[79u8;32],
+            bitcoin_tip_chainwork:[80u8;32],
+            previous_utxo_root:[81u8;32],
+            accumulator_root:[82u8;32],
+            validator_ids:vec![[1u8;32]],
+            signatures:vec![],
+            attestation_hash:[83u8;32],
+        });
+        state.bitcoin_utxo_commitments.insert(bridge,freedom_types::BitcoinUtxoBlockCommitment {
+            block_height:101,
+            block_hash:[79u8;32],
+            previous_root:[81u8;32],
+            next_root:[82u8;32],
+            update_proof:freedom_types::BitcoinUtxoSmtUpdateProof {
+                previous_root:[81u8;32],
+                next_root:[82u8;32],
+                steps:vec![],
+            },
+        });
+
+        let mut roots=std::collections::BTreeSet::new();
+        roots.insert(state.state_root());
+
+        state.validator_set_history.get_mut(&0).unwrap()[0]^=1;
+        roots.insert(state.state_root());
+
+        state.validator_set_history_sets.get_mut(&0).unwrap().get_mut(&[1u8;32]).unwrap()[0]^=1;
+        roots.insert(state.state_root());
+
+        state.validator_set_history_key_hashes.get_mut(&0).unwrap()[0]^=1;
+        roots.insert(state.state_root());
+
+        state.validator_set_history_entries.get_mut(&0).unwrap().get_mut(&[1u8;32]).unwrap().stake+=1;
+        roots.insert(state.state_root());
+
+        state.bitcoin_utxo_attestations.get_mut(&bridge).unwrap().sequence+=1;
+        roots.insert(state.state_root());
+
+        state.bitcoin_utxo_commitments.get_mut(&bridge).unwrap().block_height+=1;
+        roots.insert(state.state_root());
+
+        assert_eq!(roots.len(),7);
+    }
+}
