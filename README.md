@@ -1281,3 +1281,8 @@ The state boundary additionally requires the signature signing root to equal the
 Adds `EthereumEndToEndProof`, composing the Ethereum consensus and execution proof layers into one verification boundary: finalized checkpoint metadata, SSZ committee membership, BLS aggregate signature, execution block binding, receipt MPT inclusion, and exact envelope binding.
 
 State exposes `validate_ethereum_end_to_end_proof(...)` as the unified validation entry point. The layers remain independently verifiable so execution proofs and consensus proofs cannot silently substitute for one another.
+
+
+## M205 — Bitcoin Bridge Mint Admission Binding
+
+The consensus `BridgeMint` admission path now consumes the persisted Bitcoin canonical tip. For Bitcoin mainnet deposits it requires the deposit height to be buried under the bridge policy's minimum confirmation depth and rejects stale or inconsistent UTXO attestation tips. M204 remains the cryptographic/header/fork verifier; M205 connects that finality boundary to actual mint transaction admission.
