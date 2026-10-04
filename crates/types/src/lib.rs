@@ -345,6 +345,25 @@ impl ValidatorSetCertificate {
     pub fn hash(&self) -> Hash {
         freedom_primitives::hash_bytes(&self.signing_bytes())
     }
+    pub fn authenticated_vote_count(&self, validators: &std::collections::BTreeMap<Hash,[u8;32]>) -> u16 {
+        let mut seen=std::collections::BTreeSet::new();
+        for vote in &self.votes {
+            if vote.from_epoch!=self.from_epoch || vote.to_epoch!=self.to_epoch
+                || vote.previous_set_hash!=self.previous_set_hash
+                || vote.new_set_hash!=self.new_set_hash
+                || vote.signature.len()!=64 || seen.contains(&vote.validator_id) {
+                continue;
+            }
+            let Some(key)=validators.get(&vote.validator_id) else { continue };
+            if freedom_primitives::hash_bytes(key)!=vote.validator_id { continue; }
+            let mut sig=[0u8;64];
+            sig.copy_from_slice(&vote.signature);
+            if freedom_crypto::verify(key,&vote.signing_bytes(),&sig) {
+                seen.insert(vote.validator_id);
+            }
+        }
+        seen.len() as u16
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
