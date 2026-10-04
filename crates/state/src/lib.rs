@@ -752,7 +752,9 @@ mod m234_bitcoin_apply_reorg_gate_tests {
   });
   let block=freedom_types::BitcoinSpendScanBlock{height:101,header:freedom_types::BitcoinBlockHeader{version:1,previous_block_hash:[8;32],merkle_root:[0;32],timestamp:1,bits:0,nonce:0},raw_transactions:vec![]};
   let commitment=freedom_types::BitcoinUtxoBlockCommitment{block_height:101,block_hash:[13;32],previous_root:[10;32],next_root:[11;32],update_proof:freedom_types::BitcoinUtxoSmtUpdateProof{previous_root:[10;32],next_root:[11;32],steps:vec![]}};
-  let attestation=freedom_types::BitcoinUtxoCommitmentAttestation{bridge_id:bridge,chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,policy_id:[6;32],sequence:1,bitcoin_tip_height:101,bitcoin_tip_hash:[13;32],bitcoin_tip_chainwork:[15;32],previous_utxo_root:[10;32],accumulator_root:[11;32],validator_ids:vec![],signatures:vec![],attestation_hash:[0;32]};
+  let attestation=freedom_types::BitcoinUtxoCommitmentAttestation{bridge_id:bridge,chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,policy_id:[6;32],validator_set_epoch:0,
+            validator_set_hash:[1;32],
+            sequence:1,bitcoin_tip_height:101,bitcoin_tip_hash:[13;32],bitcoin_tip_chainwork:[15;32],previous_utxo_root:[10;32],accumulator_root:[11;32],validator_ids:vec![],signatures:vec![],attestation_hash:[0;32]};
   assert_eq!(state.apply_bitcoin_utxo_attested_commitment(bridge,&block,&commitment,&attestation),Err(StateError::BitcoinReorgDetected));
  }
 }
@@ -767,7 +769,9 @@ mod m232_bitcoin_attestation_binding_tests {
   state.bitcoin_canonical_tips.insert([7;32],freedom_types::BitcoinChainCheckpoint{height:100,block_hash:[8;32],chainwork:[9;32]});
   state.bridge_security_policies.insert([7;32],freedom_types::BridgeSecurityPolicy{bridge_id:[7;32],approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000,max_withdrawal_amount:1_000,daily_limit:1_000,emergency_paused:false,nonce_floor:0});
   let commitment=freedom_types::BitcoinUtxoBlockCommitment{block_height:101,block_hash:[13;32],previous_root:[10;32],next_root:[11;32],update_proof:freedom_types::BitcoinUtxoSmtUpdateProof{previous_root:[10;32],next_root:[11;32],steps:vec![]}};
-  let attestation=freedom_types::BitcoinUtxoCommitmentAttestation{bridge_id:[7;32],chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,policy_id:[6;32],sequence:1,bitcoin_tip_height:101,bitcoin_tip_hash:[13;32],bitcoin_tip_chainwork:[9;32],previous_utxo_root:[10;32],accumulator_root:[11;32],validator_ids:vec![],signatures:vec![],attestation_hash:[0;32]};
+  let attestation=freedom_types::BitcoinUtxoCommitmentAttestation{bridge_id:[7;32],chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,policy_id:[6;32],validator_set_epoch:0,
+            validator_set_hash:[1;32],
+            sequence:1,bitcoin_tip_height:101,bitcoin_tip_hash:[13;32],bitcoin_tip_chainwork:[9;32],previous_utxo_root:[10;32],accumulator_root:[11;32],validator_ids:vec![],signatures:vec![],attestation_hash:[0;32]};
   (state,commitment,attestation)
  }
 
@@ -814,7 +818,9 @@ mod m222_bitcoin_attestation_apply_active_validator_tests {
         };
         let attestation = freedom_types::BitcoinUtxoCommitmentAttestation {
             bridge_id:[7;32], chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
-            policy_id:[6;32], sequence:1, bitcoin_tip_height:101,
+            policy_id:[6;32], validator_set_epoch:0,
+            validator_set_hash:[1;32],
+            sequence:1, bitcoin_tip_height:101,
             bitcoin_tip_hash:[13;32], bitcoin_tip_chainwork:[14;32],
             previous_utxo_root:[10;32], accumulator_root:[11;32],
             validator_ids:vec![[13;32]],
@@ -890,7 +896,9 @@ mod m220_sequence_overflow_tests {
         });
         state.bitcoin_utxo_attestations.insert([7;32], freedom_types::BitcoinUtxoCommitmentAttestation {
             bridge_id:[7;32], chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
-            policy_id:[6;32], sequence:u64::MAX, bitcoin_tip_height:100,
+            policy_id:[6;32], validator_set_epoch:0,
+            validator_set_hash:[1;32],
+            sequence:u64::MAX, bitcoin_tip_height:100,
             bitcoin_tip_hash:[8;32], bitcoin_tip_chainwork:[9;32],
             previous_utxo_root:[10;32], accumulator_root:[11;32],
             validator_ids:vec![[13;32]], signatures:vec![], attestation_hash:[12;32],
