@@ -922,7 +922,12 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
  pub fn bitcoin_utxo_commitment_attestation(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoCommitmentAttestation>{self.bitcoin_utxo_attestations.get(&bridge_id)} pub fn register_bitcoin_block_utxo_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:freedom_types::BitcoinUtxoBlockCommitment)->Result<(),StateError>{
   self.validate_bitcoin_block_utxo_commitment(bridge_id,block,&commitment)?;
-  if self.bitcoin_utxo_commitments.contains_key(&bridge_id){return Err(StateError::InvalidBridgeWithdrawal);}
+  if let Some(previous)=self.bitcoin_utxo_commitments.get(&bridge_id) {
+    if commitment.block_height <= previous.block_height
+      || commitment.previous_root != previous.next_root {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
+  }
   self.bitcoin_utxo_commitments.insert(bridge_id,commitment);
   Ok(())
  }
