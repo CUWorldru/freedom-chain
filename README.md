@@ -1663,3 +1663,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Bound historical key snapshots to the corresponding full validator-set hash.
 - Included historical validator entries in the canonical state root and finality-integrity checks.
 - Added regression tests for snapshot/hash mismatch and state-root mutation.
+
+
+### M269 — Canonical validator-set certificates
+- Validator-set transition certificates now require strictly ascending, unique validator vote IDs.
+- Every vote must carry the exact transition epochs and set hashes encoded by the certificate.
+- Added regression coverage for duplicate, unsorted and canonical vote sets.
