@@ -314,13 +314,13 @@ impl ChainState {
  pub fn validate_bitcoin_block_utxo_commitment(&self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
-  if commitment.block_height!=block.height||commitment.block_hash!=block.header.block_hash()||!commitment.verify(){return Err(StateError::InvalidBridgeWithdrawal);}
+  if commitment.block_height!=block.height||commitment.block_hash!=block.header.block_hash()||!commitment.verify(){return Err(StateError::InvalidBridgeWithdrawal);} if let Some(attestation)=self.bitcoin_utxo_attestations.get(&bridge_id){if commitment.previous_root!=attestation.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}}
   Ok(())
  }
  pub fn validate_bitcoin_compact_utxo_transition(&self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,proof:&freedom_types::BitcoinUtxoSmtUpdateProof)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
-  if proof.previous_root==[0;32]||proof.next_root==[0;32]||!proof.verify(){return Err(StateError::InvalidBridgeWithdrawal);}
+  if proof.previous_root==[0;32]||proof.next_root==[0;32]||!proof.verify(){return Err(StateError::InvalidBridgeWithdrawal);} if let Some(attestation)=self.bitcoin_utxo_attestations.get(&bridge_id){if proof.previous_root!=attestation.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}}
   Ok(())
  }
  pub fn validate_bitcoin_block_utxo_transition(&self,transition:&freedom_types::BitcoinUtxoAccumulatorTransition,previous:&[freedom_types::BitcoinUtxoStateEntry],block:&freedom_types::BitcoinSpendScanBlock)->Result<(),StateError>{
@@ -1736,6 +1736,86 @@ mod m212_bitcoin_utxo_transition_chain_id_tests {
         let transition = transition(1);
         assert_eq!(
             state.validate_bitcoin_utxo_transition(&transition, &[]),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+}
+
+
+#[cfg(test)]
+mod m213_bitcoin_utxo_root_continuity_tests {
+    use super::*;
+    use freedom_types::{BitcoinChainCheckpoint, BitcoinUtxoBlockCommitment, BitcoinUtxoSmtUpdateProof, BitcoinUtxoCommitmentAttestation};
+
+    fn state_with_root(root: [u8;32]) -> ChainState {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bitcoin_canonical_tips.insert([7; 32], BitcoinChainCheckpoint {
+            height: 100, block_hash: [8; 32], chainwork: [9; 32],
+        });
+        state.bitcoin_utxo_attestations.insert([7; 32], BitcoinUtxoCommitmentAttestation {
+            bridge_id: [7;32],
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id: [6;32],
+            sequence: 1,
+            bitcoin_tip_height: 100,
+            bitcoin_tip_hash: [8;32],
+            bitcoin_tip_chainwork: [9;32],
+            previous_utxo_root: [10;32],
+            accumulator_root: root,
+            validator_ids: vec![],
+            signatures: vec![],
+            attestation_hash: [11;32],
+        });
+        state
+    }
+
+    #[test]
+    fn block_commitment_rejects_disconnected_previous_root() {
+        let state = state_with_root([12;32]);
+        let commitment = BitcoinUtxoBlockCommitment {
+            block_height: 101,
+            block_hash: [13;32],
+            previous_root: [14;32],
+            next_root: [15;32],
+            update_proof: BitcoinUtxoSmtUpdateProof {
+                previous_root: [14;32],
+                next_root: [15;32],
+                steps: vec![],
+            },
+        };
+        let block = freedom_types::BitcoinSpendScanBlock {
+            height: 101,
+            header: freedom_types::BitcoinBlockHeader {
+                version: 1, prev_block_hash: [8;32], merkle_root: [16;32],
+                timestamp: 1, bits: 0, nonce: 0,
+            },
+            raw_transactions: vec![],
+        };
+        assert_eq!(
+            state.validate_bitcoin_block_utxo_commitment([7;32], &block, &commitment),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn compact_transition_rejects_disconnected_previous_root() {
+        let state = state_with_root([12;32]);
+        let proof = BitcoinUtxoSmtUpdateProof {
+            previous_root: [14;32],
+            next_root: [15;32],
+            steps: vec![],
+        };
+        let block = freedom_types::BitcoinSpendScanBlock {
+            height: 101,
+            header: freedom_types::BitcoinBlockHeader {
+                version: 1, prev_block_hash: [8;32], merkle_root: [16;32],
+                timestamp: 1, bits: 0, nonce: 0,
+            },
+            raw_transactions: vec![],
+        };
+        assert_eq!(
+            state.validate_bitcoin_compact_utxo_transition([7;32], &block, &proof),
             Err(StateError::InvalidBridgeWithdrawal)
         );
     }
