@@ -345,6 +345,19 @@ impl ValidatorSetCertificate {
     pub fn hash(&self) -> Hash {
         freedom_primitives::hash_bytes(&self.signing_bytes())
     }
+    pub fn validate_transition_fields(&self) -> bool {
+        self.from_epoch < self.to_epoch
+            && self.previous_set_hash != [0;32]
+            && self.new_set_hash != [0;32]
+            && self.previous_set_hash != self.new_set_hash
+            && !self.votes.is_empty()
+            && self.votes.iter().all(|v|
+                v.from_epoch == self.from_epoch
+                    && v.to_epoch == self.to_epoch
+                    && v.previous_set_hash == self.previous_set_hash
+                    && v.new_set_hash == self.new_set_hash)
+    }
+
     pub fn authenticated_vote_count(&self, validators: &std::collections::BTreeMap<Hash,[u8;32]>) -> u16 {
         let mut seen=std::collections::BTreeSet::new();
         for vote in &self.votes {
