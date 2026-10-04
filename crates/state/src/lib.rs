@@ -295,6 +295,38 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m251_finality_attestation_gate_tests {
+    use super::*;
+
+    #[test]
+    fn bitcoin_finality_rejects_missing_attestation() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let bridge=[7u8;32];
+        state.bridge_security_policies.insert(bridge, freedom_types::BridgeSecurityPolicy {
+            bridge_id:bridge, approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:1000, max_withdrawal_amount:1000,
+            daily_limit:1000, emergency_paused:false, nonce_floor:0,
+        });
+        state.bitcoin_canonical_tips.insert(bridge, freedom_types::BitcoinChainCheckpoint {
+            height:100, block_hash:[8;32], chainwork:[9;32],
+        });
+        let mut envelope=freedom_types::CrossChainFinalityEnvelope {
+            bridge_id:bridge, chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            sequence:1, proof_kind:freedom_types::CrossChainProofKind::BitcoinUtxo,
+            finalized_height:101, finalized_hash:[13;32],
+            state_root:[11;32], previous_state_root:[10;32], proof_hash:[0;32],
+        };
+        envelope.proof_hash=envelope.compute_hash();
+        assert_eq!(state.validate_cross_chain_finality_envelope(&envelope),Err(StateError::InvalidBridgeWithdrawal));
+    }
+}
+
+#[cfg(test)]
 mod m250_bitcoin_commitment_storage_tests {
     use super::*;
 
