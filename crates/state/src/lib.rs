@@ -233,6 +233,7 @@ impl ChainState {
  } pub fn validate_cross_chain_finality_envelope(&self,envelope:&freedom_types::CrossChainFinalityEnvelope)->Result<(),StateError>{
   if !envelope.validate_structure(){return Err(StateError::InvalidBridgeWithdrawal);}
   let policy=self.bridge_security_policies.get(&envelope.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if policy.bridge_id!=envelope.bridge_id || !policy.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
   let canonical=self.bitcoin_canonical_tips.get(&envelope.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if envelope.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID{return Err(StateError::InvalidBridgeWithdrawal);}
   if envelope.proof_kind==freedom_types::CrossChainProofKind::BitcoinUtxo {
