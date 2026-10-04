@@ -1570,3 +1570,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - When staking is activated, Bitcoin finality now requires a persisted validator-set certificate.
 - This prevents the finality path from treating an uncertified validator-set state as production-ready.
 - Existing genesis/non-staking behavior remains unchanged.
+
+
+### M254 — Validator-set certificate binding
+- Activated-staking Bitcoin finality now requires a non-empty validator-set certificate with a forward epoch transition.
+- The certificate's `new_set_hash` is checked against the canonical hash of the current active validator set.
+- A certificate object that exists but describes a different active set can no longer satisfy the finality readiness gate.
