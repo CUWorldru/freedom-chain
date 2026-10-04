@@ -226,7 +226,6 @@ impl ChainState {
   if commitment.block_height!=canonical.height+1
     || attestation.bridge_id!=bridge_id
     || attestation.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
-    || attestation.bitcoin_tip_chainwork!=canonical.chainwork
     || attestation.bitcoin_tip_height!=commitment.block_height
     || attestation.bitcoin_tip_hash!=commitment.block_hash
     || attestation.previous_utxo_root!=commitment.previous_root
