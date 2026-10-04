@@ -898,7 +898,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   proof.verify_against_canonical_tip(canonical).map_err(|_|StateError::InvalidBridgeWithdrawal)
  }
  pub fn bitcoin_canonical_tip(&self,bridge_id:Hash)->Option<&BitcoinChainCheckpoint>{self.bitcoin_canonical_tips.get(&bridge_id)}
- pub fn bitcoin_bridge_gate(&self,bridge_id:Hash)->Result<(),StateError>{if let Some(journal)=self.bitcoin_reorg_evidence.get(&bridge_id){if let Some(last)=journal.last(){let severity=self.bitcoin_reorg_severity(bridge_id,last)?;if severity!=freedom_types::BitcoinReorgSeverity::Normal{if self.bitcoin_reorg_recovery.get(&bridge_id).map(|r|r.evidence_fingerprint!=last.fingerprint).unwrap_or(true){return Err(StateError::BitcoinReorgDetected);}}}}Ok(())}
+ pub pub fn validate_bitcoin_bridge_safety(&self,bridge_id:Hash)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)}
+ fn bitcoin_bridge_gate(&self,bridge_id:Hash)->Result<(),StateError>{if let Some(journal)=self.bitcoin_reorg_evidence.get(&bridge_id){if let Some(last)=journal.last(){let severity=self.bitcoin_reorg_severity(bridge_id,last)?;if severity!=freedom_types::BitcoinReorgSeverity::Normal{if self.bitcoin_reorg_recovery.get(&bridge_id).map(|r|r.evidence_fingerprint!=last.fingerprint).unwrap_or(true){return Err(StateError::BitcoinReorgDetected);}}}}Ok(())}
  pub fn advance_bitcoin_checkpoint(&mut self,bridge_id:Hash,headers:&[freedom_types::BitcoinBlockHeader])->Result<BitcoinChainCheckpoint,StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
   let current=self.bitcoin_checkpoints.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -2612,5 +2613,24 @@ mod m237_bitcoin_recovery_validator_identity_tests {
         let keys = state.bitcoin_recovery_validator_keys();
         assert_eq!(keys.get(&validator_id), Some(&consensus_key));
         assert!(keys.get(&consensus_key).is_none());
+    }
+}
+
+#[cfg(test)]
+mod m238_bitcoin_mint_reorg_gate_tests {
+    use super::*;
+
+    #[test]
+    fn public_bitcoin_bridge_safety_rejects_unrecovered_reorg() {
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let bridge_id = [9u8; 32];
+        let checkpoint = freedom_types::BitcoinChainCheckpoint { height: 100, block_hash: [1u8; 32], chainwork: [1u8; 32] };
+        state.bitcoin_checkpoints.insert(bridge_id, checkpoint.clone());
+        state.bitcoin_reorg_policy.insert(bridge_id, freedom_types::BitcoinReorgPolicy { elevated_confirmations: 6, critical_chainwork_margin: [1u8; 32] });
+        let mut evidence = freedom_types::BitcoinReorgEvidence { checkpoint_height: 100, checkpoint_hash: checkpoint.block_hash, candidate_tip_height: 101, candidate_tip_hash: [2u8; 32], candidate_chainwork: [2u8; 32], fingerprint: [0u8; 32] };
+        evidence.fingerprint = evidence.compute_fingerprint();
+        state.bitcoin_reorg_evidence.insert(bridge_id, vec![evidence]);
+        assert_eq!(state.validate_bitcoin_bridge_safety(bridge_id), Err(StateError::BitcoinReorgDetected));
     }
 }
