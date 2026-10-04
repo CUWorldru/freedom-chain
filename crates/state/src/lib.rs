@@ -1048,11 +1048,22 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
  pub fn record_validator_set_epoch_hash(&mut self, epoch:u64, set_hash:Hash)->Result<(),StateError>{
   if set_hash==[0;32] { return Err(StateError::InvalidBridgeWithdrawal); }
-  if let Some(existing)=self.validator_set_history.get(&epoch) {
-    if *existing!=set_hash { return Err(StateError::InvalidBridgeWithdrawal); }
-    return Ok(());
+  let existing=self.validator_set_history.get(&epoch).copied();
+  if epoch==self.epoch {
+   let mut bytes=Vec::new();
+   for (id,entry) in &self.active_validator_set {
+    bytes.extend_from_slice(id);
+    bytes.extend_from_slice(&entry.owner);
+    bytes.extend_from_slice(&entry.consensus_key);
+    bytes.extend_from_slice(&entry.stake.to_le_bytes());
+   }
+   if freedom_primitives::hash_bytes(&bytes)!=set_hash { return Err(StateError::InvalidBridgeWithdrawal); }
   }
-  if epoch==0 { return Err(StateError::InvalidBridgeWithdrawal); }
+  if let Some(existing)=existing {
+   if existing!=set_hash { return Err(StateError::InvalidBridgeWithdrawal); }
+   return Ok(());
+  }
+  if epoch==0 || epoch>self.epoch { return Err(StateError::InvalidBridgeWithdrawal); }
   let previous=self.validator_set_history.get(&(epoch-1))
     .ok_or(StateError::InvalidBridgeWithdrawal)?;
   if *previous==set_hash { return Err(StateError::InvalidBridgeWithdrawal); }
