@@ -1376,3 +1376,8 @@ This closes a policy-integrity gap without inventing a future-block hash check t
 Bitcoin UTXO commitment attestations now require contiguous sequence progression. Both attestation registration and authenticated commitment application reject a sequence gap and require the next sequence to equal the previous sequence plus one.
 
 This aligns the persisted Bitcoin UTXO attestation state machine with the strict finality-envelope sequence invariant introduced in M217, preventing authenticated UTXO state from skipping intermediate transitions.
+
+
+## M220 — Bitcoin Finality Sequence Overflow Safety
+
+Bitcoin UTXO attestation and cross-chain finality sequence transitions now reject the terminal u64::MAX state from being reused. Sequence progression requires a real +1 transition, preventing saturating arithmetic from accepting a repeated maximum sequence value.
