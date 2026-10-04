@@ -1550,7 +1550,7 @@ mod m209_bitcoin_state_proof_chain_id_tests {
 #[cfg(test)]
 mod m210_bitcoin_adapter_chain_id_tests {
     use super::*;
-    use freedom_types::{BitcoinChainCheckpoint, BridgeAdapterDescriptor, BridgeAdapterFinalityModel, BridgeAdapterKind};
+    use freedom_types::{BitcoinChainCheckpoint, BridgeAdapterDescriptor, BridgeAdapterKind};
 
     fn state_with_bitcoin_bridge() -> ChainState {
         let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
