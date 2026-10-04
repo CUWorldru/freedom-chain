@@ -3068,3 +3068,18 @@ mod m253_validator_certificate_finality_tests {
         assert!(state.validator_set_certificate.is_none());
     }
 }
+
+#[cfg(test)]
+mod m255_validator_certificate_quorum_tests {
+    use super::*;
+
+    #[test]
+    fn certificate_with_no_authenticated_votes_has_zero_count() {
+        let cert=freedom_types::ValidatorSetCertificate {
+            from_epoch:1, to_epoch:2, previous_set_hash:[1;32], new_set_hash:[2;32],
+            votes:vec![],
+        };
+        let keys=std::collections::BTreeMap::new();
+        assert_eq!(cert.authenticated_vote_count(&keys),0);
+    }
+}
