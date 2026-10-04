@@ -1401,3 +1401,8 @@ Bitcoin reorg recovery quorum authentication now uses the active validator set. 
 ## M224 — Bridge Authorization Active-Validator Binding
 
 Bridge pause authorization and bridge mint/withdrawal approval quorum checks now authenticate against the active validator set rather than the broader validator registry. This prevents validators that are no longer active from satisfying current bridge security quorums.
+
+
+## M225 — Bridge Approval Admission Hardening
+
+Stored bridge message approval sets are now canonicalized and restricted to the active validator set at admission. Validator IDs must be strictly ascending and every approval signer must belong to the active set, preventing inactive or duplicate/non-canonical approval records from entering bridge state.
