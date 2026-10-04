@@ -218,7 +218,8 @@ impl ChainState {
  pub fn validate_bitcoin_utxo_attestation_for_commitment(&self,bridge_id:Hash,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  let validators=self.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
+  if attestation.validator_ids.iter().any(|id| !self.active_validator_set.contains_key(id)){return Err(StateError::InvalidBridgeWithdrawal);}
+  let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
   if commitment.block_height!=canonical.height+1
     || attestation.bridge_id!=bridge_id
     || attestation.bitcoin_tip_height!=commitment.block_height
@@ -245,6 +246,49 @@ impl ChainState {
   }
   Ok(())
  }
+#[cfg(test)]
+mod m222_bitcoin_attestation_apply_active_validator_tests {
+    use super::*;
+
+    #[test]
+    fn commitment_validation_rejects_signer_outside_active_set() {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bitcoin_canonical_tips.insert([7;32], freedom_types::BitcoinChainCheckpoint {
+            height: 100, block_hash: [8;32], chainwork: [9;32],
+        });
+        state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
+            bridge_id:[7;32], approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:1_000_000,
+            max_withdrawal_amount:1_000_000, daily_limit:1_000_000,
+            emergency_paused:false, nonce_floor:0,
+        }).unwrap();
+        let commitment = freedom_types::BitcoinUtxoBlockCommitment {
+            block_height:101, block_hash:[13;32], previous_root:[10;32],
+            next_root:[11;32],
+            update_proof: freedom_types::BitcoinUtxoSmtUpdateProof {
+                previous_root:[10;32], next_root:[11;32], steps:vec![],
+            },
+        };
+        let attestation = freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id:[7;32], chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id:[6;32], sequence:1, bitcoin_tip_height:101,
+            bitcoin_tip_hash:[13;32], bitcoin_tip_chainwork:[14;32],
+            previous_utxo_root:[10;32], accumulator_root:[11;32],
+            validator_ids:vec![[13;32]],
+            signatures:vec![freedom_types::BitcoinReorgRecoverySignature {
+                validator_id:[13;32], signature:vec![0;64],
+            }],
+            attestation_hash:[0;32],
+        };
+        assert_eq!(
+            state.validate_bitcoin_utxo_attestation_for_commitment([7;32], &commitment, &attestation),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+}
+
 #[cfg(test)]
 mod m221_bitcoin_attestation_active_validator_tests {
     use super::*;
