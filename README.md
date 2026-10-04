@@ -1348,3 +1348,10 @@ Regression coverage verifies rejection of a non-Bitcoin chain ID and acceptance 
 The state-level cross-chain finality validator now binds Bitcoin UTXO finality envelopes directly to the protocol-defined BITCOIN_MAINNET_CHAIN_ID. This removes the invalid dependency on a non-existent chain_id field in BridgeSecurityPolicy and keeps the state boundary consistent with the Bitcoin finality adapter.
 
 Regression coverage verifies rejection of a non-Bitcoin chain ID. No envelope payload structure or prior M-module architecture was changed.
+
+
+## M216 — Bitcoin Finality Envelope Root Continuity
+
+When a prior authenticated Bitcoin UTXO attestation exists, a Bitcoin UTXO finality envelope must carry the same accumulator root as its previous_state_root. This binds the next finality transition to the authenticated prior UTXO state instead of allowing a disconnected state root.
+
+Regression coverage verifies rejection of a finality envelope with an unrelated previous UTXO root.
