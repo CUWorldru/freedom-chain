@@ -883,7 +883,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   if set.request_id!=request_id || set.approvals.iter().any(|a|a.withdrawal_id!=id||a.bridge_id!=w.bridge_id||a.nonce!=w.nonce||a.amount!=w.amount||a.destination_chain_id!=w.destination_chain_id||a.asset_id!=w.asset_id||a.intent_hash!=w.request_hash){
    return Err(StateError::InvalidBridgeWithdrawal);
   }
-  let keys=self.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
+  let keys=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
   let quorum=set.quorum_reached_authenticated(policy,w.bridge_id,id,w.request_hash,&keys);
   let threshold=set.threshold_reached(&policy);
   let approved=match policy.approval_mode { freedom_types::BridgeApprovalMode::Quorum=>quorum, freedom_types::BridgeApprovalMode::Threshold=>threshold, freedom_types::BridgeApprovalMode::QuorumAndThreshold=>quorum&&threshold };
