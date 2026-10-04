@@ -267,6 +267,16 @@ impl ChainState {
   if envelope.proof_kind==freedom_types::CrossChainProofKind::BitcoinUtxo {
     if envelope.finalized_height<canonical.height || envelope.finalized_height!=canonical.height+1{return Err(StateError::InvalidBridgeWithdrawal);}
     if envelope.previous_state_root==envelope.state_root{return Err(StateError::InvalidBridgeWithdrawal);}
+    let attestation = self.bitcoin_utxo_attestations.get(&envelope.bridge_id)
+      .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    if attestation.sequence != envelope.sequence
+      || attestation.bitcoin_tip_height != envelope.finalized_height
+      || attestation.bitcoin_tip_hash != envelope.finalized_hash
+      || attestation.previous_utxo_root != envelope.previous_state_root
+      || attestation.accumulator_root != envelope.state_root
+      || !attestation.validate_structure() {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
     let commitment = self.bitcoin_utxo_commitments.get(&envelope.bridge_id)
       .ok_or(StateError::InvalidBridgeWithdrawal)?;
     if !commitment.verify()
