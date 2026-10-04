@@ -1781,6 +1781,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   for (epoch,set_hash) in &self.validator_set_history{leaves.push(state_leaf(b"validator_set_history",&epoch.to_le_bytes(),set_hash));}
   for (epoch,keys) in &self.validator_set_history_sets{let mut x=Vec::new();x.extend_from_slice(&(keys.len() as u64).to_le_bytes());for (id,key) in keys{x.extend_from_slice(id);x.extend_from_slice(key);}leaves.push(state_leaf(b"validator_set_history_keys",&epoch.to_le_bytes(),&x));}
   for (epoch,key_hash) in &self.validator_set_history_key_hashes{leaves.push(state_leaf(b"validator_set_history_key_hash",&epoch.to_le_bytes(),key_hash));}
+  for (epoch,entries) in &self.validator_set_history_entries{let mut x=Vec::new();x.extend_from_slice(&(entries.len() as u64).to_le_bytes());for (id,entry) in entries{x.extend_from_slice(id);x.extend_from_slice(&entry.owner);x.extend_from_slice(&entry.consensus_key);x.extend_from_slice(&entry.stake.to_le_bytes());}leaves.push(state_leaf(b"validator_set_history_entries",&epoch.to_le_bytes(),&x));}
   if let Some(cert)=&self.validator_set_certificate{leaves.push(state_leaf(b"validator_set_certificate",&[0;1],&cert.hash()));}
   for (k,v) in &self.bitcoin_utxo_attestations{leaves.push(state_leaf(b"bitcoin_utxo_attestation",k,&serde_json::to_vec(v).expect("bitcoin utxo attestation serialization")));}
   for (k,v) in &self.bitcoin_utxo_commitments{leaves.push(state_leaf(b"bitcoin_utxo_commitment",k,&serde_json::to_vec(v).expect("bitcoin utxo commitment serialization")));}
@@ -3510,5 +3511,28 @@ mod m267_validator_quorum_binding_tests {
         assert!(policy.validate());
         assert_ne!(policy.validator_total as usize, keys.len());
         assert!(state.validate_finality_state_integrity().is_ok());
+    }
+}
+
+
+#[cfg(test)]
+mod m268_validator_set_binding_tests {
+    use super::*;
+
+    #[test]
+    fn finality_integrity_rejects_historical_entry_hash_mismatch() {
+        let mut state=ChainState::genesis(&freedom_types::Genesis { initial_supply:0, validators:vec![] });
+        let mut entries=BTreeMap::new();
+        entries.insert([1u8;32],freedom_types::ValidatorSetEntry{validator_id:[1u8;32],owner:[2u8;32],consensus_key:[3u8;32],stake:100});
+        state.validator_set_history_entries.insert(0,entries);
+        assert_eq!(state.validate_finality_state_integrity(),Err(StateError::InvalidBridgeWithdrawal));
+    }
+
+    #[test]
+    fn historical_entry_mutation_changes_state_root() {
+        let mut state=ChainState::genesis(&freedom_types::Genesis { initial_supply:0, validators:vec![] });
+        let before=state.state_root();
+        state.validator_set_history_entries.get_mut(&0).unwrap().values_mut().next().unwrap().stake=101;
+        assert_ne!(before,state.state_root());
     }
 }
