@@ -1700,3 +1700,8 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 ## M274 — Bitcoin UTXO attestation signer-set canonicalization
 
 Bitcoin UTXO commitment attestations now require a canonical signer representation. The validator ID list must be strictly ascending, each signature must occupy the matching validator-ID position, duplicate or reordered signer sets are rejected, and authenticated signatures are accepted only when the validator ID equals the hash of the supplied consensus public key. This removes ambiguous signer-set encodings and prevents validator identity substitution during attestation verification.
+
+
+## M275 — Bitcoin attestation quorum binding
+
+Bitcoin UTXO commitment attestation validation now requires the bridge policy's validator_total to exactly match the active validator-set size and its validator_quorum to satisfy the strict >2/3 rule. The binding is enforced during attestation registration, commitment validation, and finality validation, preventing a policy/set-size mismatch from weakening the attestation security threshold.
