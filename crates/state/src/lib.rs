@@ -282,18 +282,6 @@ impl ChainState {
   } else if envelope.sequence != 1 {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
-  if envelope.proof_kind==freedom_types::CrossChainProofKind::BitcoinUtxo {
-    let attestation=self.bitcoin_utxo_attestations.get(&envelope.bridge_id)
-      .ok_or(StateError::InvalidBridgeWithdrawal)?;
-    if attestation.sequence != envelope.sequence
-      || attestation.chain_id != envelope.chain_id
-      || attestation.bitcoin_tip_height != envelope.finalized_height
-      || attestation.bitcoin_tip_hash != envelope.finalized_hash
-      || attestation.previous_utxo_root != envelope.previous_state_root
-      || attestation.accumulator_root != envelope.state_root {
-      return Err(StateError::InvalidBridgeWithdrawal);
-    }
-  }
   Ok(())
  }
 #[cfg(test)]
