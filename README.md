@@ -1631,3 +1631,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Validator-set certificate votes are now authenticated against the historical validator keys of `from_epoch`, not the newly activated set.
 - Epoch history retains validator-id → consensus-key snapshots alongside set hashes.
 - This closes the transition-authentication gap where a new validator set could otherwise sign its own activation certificate.
+
+
+### M264 — Immutable historical validator-key snapshots
+- Historical validator consensus-key snapshots now have their own canonical hash per epoch.
+- Finality verifies the stored snapshot against that hash before authenticating certificate votes.
+- This prevents a mutable historical key map from silently changing the validator identities authorized to sign a transition certificate.
