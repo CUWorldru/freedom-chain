@@ -1334,3 +1334,10 @@ Regression coverage verifies rejection of an Ethereum chain ID at both Bitcoin-s
 Bitcoin UTXO block-commitment and compact-transition validators now bind each new previous_root to the persisted Bitcoin UTXO attestation accumulator_root when one exists.
 
 This prevents a standalone proof path from introducing a disconnected UTXO state root between authenticated Bitcoin commitments. Existing payload structures and prior M-module architecture remain unchanged.
+
+
+## M214 — Bitcoin Finality Adapter Chain-ID Binding
+
+The Bitcoin UTXO cross-chain finality adapter now requires the protocol-defined BITCOIN_MAINNET_CHAIN_ID before accepting a Bitcoin finality envelope.
+
+Regression coverage verifies rejection of a non-Bitcoin chain ID and acceptance of the protocol Bitcoin chain ID. No envelope payload structure or prior M-module architecture was changed.
