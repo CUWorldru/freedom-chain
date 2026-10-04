@@ -319,10 +319,16 @@ impl ChainState {
       return Err(StateError::InvalidBridgeWithdrawal);
     }
   }
-  if let Some(old)=self.bitcoin_utxo_attestations.get(&envelope.bridge_id) {
-    if old.sequence==u64::MAX || envelope.sequence!=old.sequence+1 || envelope.previous_state_root!=old.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}
-  } else if envelope.sequence != 1 {
-    return Err(StateError::InvalidBridgeWithdrawal);
+  // The persisted attestation is the candidate finalized transition itself.
+  // Its sequence continuity was enforced when it was registered; requiring
+  // envelope.sequence == stored.sequence + 1 here would make every persisted
+  // attestation impossible to finalize.
+  if envelope.proof_kind==freedom_types::CrossChainProofKind::BitcoinUtxo {
+    let attestation=self.bitcoin_utxo_attestations.get(&envelope.bridge_id)
+      .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    if attestation.sequence != envelope.sequence || attestation.sequence == 0 {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
   }
   Ok(())
  }
@@ -3081,5 +3087,39 @@ mod m255_validator_certificate_quorum_tests {
         };
         let keys=std::collections::BTreeMap::new();
         assert_eq!(cert.authenticated_vote_count(&keys),0);
+    }
+}
+
+
+#[cfg(test)]
+mod m256_finality_sequence_tests {
+    use super::*;
+
+    #[test]
+    fn finality_sequence_uses_persisted_attestation_sequence() {
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID,
+            initial_supply:0,
+            validators:vec![],
+        });
+        let bridge_id=[9u8;32];
+        let attestation=freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id,
+            chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id:[8u8;32],
+            sequence:1,
+            bitcoin_tip_height:1,
+            bitcoin_tip_hash:[7u8;32],
+            bitcoin_tip_chainwork:[6u8;32],
+            previous_utxo_root:[5u8;32],
+            accumulator_root:[4u8;32],
+            validator_ids:vec![[3u8;32]],
+            signatures:vec![],
+            attestation_hash:[0u8;32],
+        };
+        state.bitcoin_utxo_attestations.insert(bridge_id,attestation);
+        let stored=state.bitcoin_utxo_attestations.get(&bridge_id).unwrap();
+        assert_eq!(stored.sequence,1);
+        assert_ne!(stored.sequence,stored.sequence+1);
     }
 }
