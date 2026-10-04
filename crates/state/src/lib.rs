@@ -1052,8 +1052,9 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    return Err(StateError::InvalidBridgeWithdrawal);
   }
   let keys=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
-  let quorum=set.quorum_reached_authenticated(policy,w.bridge_id,id,w.request_hash,&keys);
-  let threshold=set.threshold_reached(&policy);
+  let authenticated_approvals=set.authenticated_approvals(w.bridge_id,id,w.request_hash,&keys);
+  let quorum=policy.quorum_reached(authenticated_approvals);
+  let threshold=set.threshold_reached(&policy) && set.threshold_signatures <= authenticated_approvals;
   let approved=match policy.approval_mode { freedom_types::BridgeApprovalMode::Quorum=>quorum, freedom_types::BridgeApprovalMode::Threshold=>threshold, freedom_types::BridgeApprovalMode::QuorumAndThreshold=>quorum&&threshold };
   if !approved { return Err(StateError::InvalidBridgeWithdrawalTransition); }
   let period=self.height;
@@ -2295,4 +2296,40 @@ mod m213_bitcoin_utxo_root_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
     }
+}
+
+
+#[cfg(test)]
+mod m230_threshold_approval_authentication_tests {
+ use super::*;
+ use ed25519_dalek::SigningKey;
+
+ #[test]
+ fn threshold_approval_rejects_forged_signature_count() {
+  let key=SigningKey::from_bytes(&[7;32]);
+  let public_key=key.verifying_key().to_bytes();
+  let validator_id=freedom_primitives::hash_bytes(&public_key);
+  let validator=freedom_types::Validator{validator_id,owner:[1;32],consensus_key:public_key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+  let genesis=freedom_types::Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]};
+  let mut state=ChainState::genesis(&genesis);
+  let bridge_id=[9;32];
+  let asset_id=*state.asset_registry.keys().next().unwrap();
+  state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy{
+   bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Threshold,
+   validator_quorum:1,validator_total:1,threshold_signers:2,threshold_total:2,
+   min_external_confirmations:1,max_deposit_amount:1_000,max_withdrawal_amount:100,
+   daily_limit:100,emergency_paused:false,nonce_floor:0,
+  }).unwrap();
+  let id=[3;32];
+  let request=[4;32];
+  let mut withdrawal=freedom_types::BridgeWithdrawal{withdrawal_id:id,bridge_id,asset_id,destination_chain_id:2,amount:10,sender:[6;32],recipient:vec![7],nonce:1,request_hash:[8;32]};
+  withdrawal.request_hash=withdrawal.compute_hash();
+  state.bridge_withdrawals.insert(id,withdrawal.clone());
+  state.bridge_withdrawal_status.insert(id,freedom_types::BridgeWithdrawalStatus::Validated);
+  let mut approval=freedom_types::BridgeApproval{bridge_id,request_id:request,withdrawal_id:id,validator_id,nonce:1,amount:10,destination_chain_id:2,asset_id,intent_hash:withdrawal.request_hash,signature:Vec::new()};
+  approval.signature=key.sign(&approval.signing_message()).to_bytes().to_vec();
+  state.record_bridge_approval_set(freedom_types::BridgeApprovalSet{request_id:request,approvals:vec![approval],threshold_signatures:2}).unwrap();
+  assert_eq!(state.approve_bridge_with_authenticated_set(id,request),Err(StateError::InvalidBridgeWithdrawalTransition));
+  assert_eq!(state.bridge_withdrawal_status.get(&id),Some(&freedom_types::BridgeWithdrawalStatus::Validated));
+ }
 }
