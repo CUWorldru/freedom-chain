@@ -1671,6 +1671,11 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Added regression coverage for duplicate, unsorted and canonical vote sets.
 
 
+### M270 — Pre-mutation epoch transition integrity
+- The next epoch's validator snapshots are now derived entirely from the prospective active validator set before any epoch state is mutated.
+- A conflicting historical snapshot blocks the epoch transition without changing the epoch, active validator set, pending set, certificate, or epoch issuance.
+- Added regression coverage for conflicting historical data and prevention of partial epoch transitions.
+
 ### M269 — Atomic epoch validator snapshots
 - Epoch transitions now derive full-set hash, key snapshot, key hash, and full entry snapshot before mutating historical state.
 - Existing historical data cannot be silently overwritten with a different snapshot.
