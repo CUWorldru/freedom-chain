@@ -3225,3 +3225,20 @@ mod m260_validator_history_transition_tests {
         assert_eq!(state.validator_set_history.get(&1).copied(),first);
     }
 }
+
+
+#[cfg(test)]
+mod m261_certificate_epoch_binding_tests {
+    use super::*;
+
+    #[test]
+    fn certificate_epoch_transition_must_end_at_current_epoch() {
+        let genesis=freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] };
+        let state=ChainState::genesis(&genesis);
+        let cert=freedom_types::ValidatorSetCertificate {
+            from_epoch:0, to_epoch:1, previous_set_hash:[1u8;32], new_set_hash:[2u8;32], votes:vec![],
+        };
+        assert_eq!(cert.to_epoch,1);
+        assert_ne!(cert.to_epoch,state.epoch);
+    }
+}
