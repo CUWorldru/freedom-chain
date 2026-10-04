@@ -1558,3 +1558,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Bitcoin UTXO finality envelopes now require a persisted, structurally valid commitment attestation.
 - The attestation must match the envelope sequence, Bitcoin finalized height/hash, and previous/next UTXO roots.
 - A commitment alone is therefore insufficient to authorize cross-chain finality; validator-attested state is mandatory.
+
+
+### M252 — Authenticated attestation at finality use
+- Cross-chain finality no longer trusts the persisted Bitcoin attestation blindly.
+- Finality revalidates attestation structure/hash and verifies its validator signatures against the current active validator set and bridge quorum.
+- The attestation is also re-bound to the active bridge policy and finality envelope fields at the point of use.
