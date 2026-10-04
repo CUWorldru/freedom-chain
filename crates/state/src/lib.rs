@@ -330,6 +330,8 @@ impl ChainState {
       if self.validator_set_history_key_hashes.get(&certificate.from_epoch).copied()
           != Some(previous_key_snapshot_hash)
         || certificate_keys.is_empty()
+        || policy.validator_total as usize != certificate_keys.len()
+        || policy.validator_quorum as usize > certificate_keys.len()
         || certificate.authenticated_vote_count(certificate_keys) < policy.validator_quorum {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
@@ -3464,5 +3466,34 @@ mod m266_finality_integrity_gate_tests {
             },
         });
         assert_eq!(state.validate_finality_state_integrity(), Err(StateError::InvalidBridgeWithdrawal));
+    }
+}
+
+
+#[cfg(test)]
+mod m267_validator_quorum_binding_tests {
+    use super::*;
+
+    #[test]
+    fn finality_rejects_policy_total_smaller_than_historical_validator_set() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis { initial_supply: 0, validators: vec![] });
+        let keys = BTreeMap::from([
+            ([1u8;32], [2u8;32]),
+            ([3u8;32], [4u8;32]),
+            ([5u8;32], [6u8;32]),
+        ]);
+        state.validator_set_history_sets.insert(0, keys.clone());
+        let mut bytes=Vec::new();
+        for (id,key) in &keys { bytes.extend_from_slice(id); bytes.extend_from_slice(key); }
+        state.validator_set_history_key_hashes.insert(0, freedom_primitives::hash_bytes(&bytes));
+        let policy = freedom_types::BridgeSecurityPolicy {
+            bridge_id:[9u8;32], approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:2, validator_total:2, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:100, max_withdrawal_amount:100,
+            daily_limit:100, emergency_paused:false, nonce_floor:0,
+        };
+        assert!(policy.validate());
+        assert_ne!(policy.validator_total as usize, keys.len());
+        assert!(state.validate_finality_state_integrity().is_ok());
     }
 }
