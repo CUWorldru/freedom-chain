@@ -1306,3 +1306,10 @@ This closes the state-level identity gap left by M205–M207: an attestation can
 Bitcoin UTXO state validators now require the protocol-defined Bitcoin mainnet chain ID across accumulator membership proofs, spend-state proofs, and direct UTXO deposit proofs.
 
 This keeps all state-level Bitcoin proof entry points aligned with the M207/M208 chain identity binding and prevents a non-Bitcoin proof from entering a Bitcoin-specific state path.
+
+
+## M210 — Bitcoin Adapter Chain-ID Binding
+
+Bitcoin checkpoint-to-adapter validation now requires BridgeAdapterDescriptor.chain_id to equal the protocol-defined BITCOIN_MAINNET_CHAIN_ID. A Bitcoin adapter can no longer bind a checkpoint through an unrelated nonzero chain ID.
+
+Regression coverage verifies both rejection of an Ethereum chain ID and acceptance of the canonical Bitcoin mainnet ID. No bridge payload or prior M-module architecture was changed.
