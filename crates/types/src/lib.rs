@@ -5068,6 +5068,9 @@ impl CrossChainProofAdapter for BitcoinUtxoFinalityAdapter {
         if envelope.proof_kind != self.proof_kind() || !envelope.validate_structure() {
             return Err(CrossChainProofError::InvalidEnvelope);
         }
+        if envelope.chain_id != BITCOIN_MAINNET_CHAIN_ID {
+            return Err(CrossChainProofError::InvalidEnvelope);
+        }
         if envelope.state_root == envelope.previous_state_root {
             return Err(CrossChainProofError::InvalidProof);
         }
@@ -6970,5 +6973,39 @@ mod m204_bitcoin_finality_tests {
         let high = [2, 0, 0, 0, 0];
         assert_eq!(compare_bitcoin_chainwork(&high, &low), BitcoinChainSelection::CandidateA);
         assert_eq!(compare_bitcoin_chainwork(&low, &high), BitcoinChainSelection::CandidateB);
+    }
+}
+
+
+#[cfg(test)]
+mod m214_bitcoin_finality_adapter_chain_id_tests {
+    use super::*;
+
+    fn envelope(chain_id: u32) -> CrossChainFinalityEnvelope {
+        CrossChainFinalityEnvelope {
+            bridge_id: [1;32],
+            chain_id,
+            sequence: 1,
+            proof_kind: CrossChainProofKind::BitcoinUtxo,
+            finalized_height: 101,
+            finalized_hash: [2;32],
+            state_root: [3;32],
+            previous_state_root: [4;32],
+            proof_hash: [5;32],
+        }
+    }
+
+    #[test]
+    fn bitcoin_finality_adapter_rejects_non_bitcoin_chain_id() {
+        assert!(BitcoinUtxoFinalityAdapter::default()
+            .verify_envelope(&envelope(1))
+            .is_err());
+    }
+
+    #[test]
+    fn bitcoin_finality_adapter_accepts_protocol_chain_id() {
+        assert!(BitcoinUtxoFinalityAdapter::default()
+            .verify_envelope(&envelope(BITCOIN_MAINNET_CHAIN_ID))
+            .is_ok());
     }
 }
