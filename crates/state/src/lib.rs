@@ -949,6 +949,9 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   if w.request_hash==[0;32] || request_id==[0;32] { return Err(StateError::InvalidBridgeWithdrawal); }
   let set=self.bridge_approval_sets.get(&request_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
   let policy=self.bridge_security_policies.get(&w.bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if !policy.validate() || !policy.withdrawal_allowed(w.amount) || !policy.nonce_allowed(w.nonce) {
+   return Err(StateError::InvalidBridgeWithdrawal);
+  }
   if set.request_id!=request_id || set.approvals.iter().any(|a|a.withdrawal_id!=id||a.bridge_id!=w.bridge_id||a.nonce!=w.nonce||a.amount!=w.amount||a.destination_chain_id!=w.destination_chain_id||a.asset_id!=w.asset_id||a.intent_hash!=w.request_hash){
    return Err(StateError::InvalidBridgeWithdrawal);
   }
