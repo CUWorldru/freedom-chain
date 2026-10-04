@@ -1289,3 +1289,6 @@ The consensus `BridgeMint` admission path now consumes the persisted Bitcoin can
 ## M206 — Bitcoin UTXO Attestation Required for Mint Admission
 
 Bitcoin BridgeMint admission now requires a state-held, quorum-authenticated `BitcoinUtxoCommitmentAttestation` for the bridge. The attestation must bind to the exact persisted canonical Bitcoin tip, use the same source chain ID, and satisfy the bridge validator quorum. M205 established the mandatory canonical-tip/finality boundary; M206 makes the authenticated UTXO commitment layer mandatory as well, without changing the BridgeMint transaction payload format.
+## M207 — Bitcoin Mainnet Chain-ID Binding
+
+The Bitcoin BridgeMint admission gate now uses the protocol-defined `BITCOIN_MAINNET_CHAIN_ID` instead of a legacy numeric literal. This keeps M205/M206 Bitcoin finality and UTXO-attestation enforcement aligned with the canonical bridge network identity used by the external-proof verifier.
