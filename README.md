@@ -1545,3 +1545,10 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Bitcoin UTXO commitment attestations must bind their signed `policy_id` to the active bridge security policy.
 - A valid signature set cannot authorize an attestation under a foreign or stale policy identity.
 - The finality sequence rules remain unchanged: first attestation is sequence `1`, subsequent envelopes advance exactly one step.
+
+
+### M250 — Authoritative Bitcoin UTXO commitment storage
+- Added persisted `bitcoin_utxo_commitments` state storage for the Bitcoin bridge.
+- Added an authoritative registration/read path for block commitments.
+- Registration reuses canonical Bitcoin block validation and rejects stale/duplicate heights or broken UTXO-root continuity.
+- This makes the commitment referenced by M247/M249 an actual persisted bridge-state object rather than an implicit test-only map.
