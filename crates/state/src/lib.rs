@@ -1046,6 +1046,19 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   self.bitcoin_utxo_commitments.insert(bridge_id,commitment);
   Ok(())
  }
+ pub fn record_validator_set_epoch_hash(&mut self, epoch:u64, set_hash:Hash)->Result<(),StateError>{
+  if set_hash==[0;32] { return Err(StateError::InvalidBridgeWithdrawal); }
+  if let Some(existing)=self.validator_set_history.get(&epoch) {
+    if *existing!=set_hash { return Err(StateError::InvalidBridgeWithdrawal); }
+    return Ok(());
+  }
+  if epoch==0 { return Err(StateError::InvalidBridgeWithdrawal); }
+  let previous=self.validator_set_history.get(&(epoch-1))
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if *previous==set_hash { return Err(StateError::InvalidBridgeWithdrawal); }
+  self.validator_set_history.insert(epoch,set_hash);
+  Ok(())
+ }
  pub fn bitcoin_utxo_block_commitment(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoBlockCommitment>{self.bitcoin_utxo_commitments.get(&bridge_id)}
 
  pub fn build_bitcoin_block_utxo_commitment(&self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,previous:&freedom_types::BitcoinUtxoSmtSnapshot)->Result<freedom_types::BitcoinUtxoBlockCommitment,StateError>{
