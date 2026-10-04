@@ -1369,3 +1369,10 @@ This prevents gaps in the authenticated finality state machine while preserving 
 Bitcoin UTXO finality state validation now requires the referenced bridge security policy to be internally valid and bound to the same bridge_id as the finality envelope.
 
 This closes a policy-integrity gap without inventing a future-block hash check that the current envelope payload cannot substantiate.
+
+
+## M219 — Bitcoin UTXO Attestation Sequence Continuity
+
+Bitcoin UTXO commitment attestations now require contiguous sequence progression. Both attestation registration and authenticated commitment application reject a sequence gap and require the next sequence to equal the previous sequence plus one.
+
+This aligns the persisted Bitcoin UTXO attestation state machine with the strict finality-envelope sequence invariant introduced in M217, preventing authenticated UTXO state from skipping intermediate transitions.
