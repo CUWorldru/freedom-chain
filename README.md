@@ -1607,3 +1607,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Validator-set hashes are now recorded automatically when `maybe_advance_epoch()` activates the pending set.
 - The history writer cannot assign an arbitrary hash to the current epoch; it must match the actual active validator set.
 - Historical epochs cannot be rewritten, and future epochs cannot be pre-populated through the recorder.
+
+
+### M260 — Monotonic validator-set epoch transitions
+- Epoch activation now advances only when the computed epoch is strictly greater than the current epoch.
+- Repeated calls at the same block height cannot re-activate the validator set or mutate its history.
+- Regression tests cover activation hash correctness and history stability on repeated checks.
