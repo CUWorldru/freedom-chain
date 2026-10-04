@@ -79,13 +79,19 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
            < policy.min_external_confirmations {
      return Err("BitcoinMintFinalityNotReached".into());
    }
-   if let Some(attestation)=s.bitcoin_utxo_attestations.get(&p.message.bridge_id) {
-     if attestation.bitcoin_tip_height != canonical.height
-        || attestation.bitcoin_tip_hash != canonical.block_hash
-        || attestation.bitcoin_tip_chainwork != canonical.chainwork
-     {
-       return Err("BitcoinAttestationTipMismatch".into());
-     }
+   // M206: a Bitcoin mint must also have a quorum-authenticated UTXO
+   // commitment attestation anchored to the exact canonical tip. M205 made
+   // the tip/finality boundary mandatory; M206 makes the state-held UTXO
+   // commitment itself mandatory without changing the BridgeMint payload ABI.
+   let attestation=s.bitcoin_utxo_attestations.get(&p.message.bridge_id)
+     .ok_or_else(||"BitcoinUtxoAttestationUnavailable".to_string())?;
+   let validator_keys=s.validators.iter()
+     .map(|(id,v)|(*id,v.consensus_key))
+     .collect::<std::collections::BTreeMap<freedom_primitives::Hash,[u8;32]>>();
+   if attestation.bridge_id != p.message.bridge_id
+      || attestation.chain_id != p.message.source_chain_id
+      || !attestation.verify(canonical,&validator_keys,policy.validator_quorum) {
+     return Err("BitcoinUtxoAttestationInvalid".into());
    }
  }
 
