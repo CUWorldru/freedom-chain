@@ -2482,10 +2482,10 @@ impl BitcoinChainContext {
     }
 
     pub fn confirmations_for(&self, block_height: u64) -> Option<u64> {
-        if !self.validate() || block_height == 0 || block_height > self.tip_height {
+        if !self.validate() {
             return None;
         }
-        Some(self.tip_height - block_height + 1)
+        bitcoin_confirmations_at_tip(self.tip_height, block_height)
     }
 
     pub fn expected_bits_for_height(&self, height: u64, previous_bits: u32) -> Option<u32> {
@@ -2559,6 +2559,39 @@ impl BitcoinChainContext {
     }
 }
 
+/// M204: Bitcoin mint-finality boundary.
+///
+/// A deposit is eligible only after its confirmation depth is satisfied,
+/// the canonical chain is fully validated, and its cumulative chainwork
+/// is valid. Fork-selection is performed by the fork-aware verifier below.
+pub fn bitcoin_confirmations_at_tip(tip_height: u64, deposit_height: u64) -> Option<u64> {
+    if deposit_height == 0 || deposit_height > tip_height {
+        return None;
+    }
+    tip_height.checked_sub(deposit_height)?.checked_add(1)
+}
+
+pub fn verify_bitcoin_finality_boundary(
+    context: &BitcoinChainContext,
+    deposit_height: u64,
+    deposit_header: &BitcoinBlockHeader,
+    required_confirmations: u64,
+) -> Result<u64, BridgeAdapterError> {
+    if required_confirmations == 0 || !context.validate() || deposit_height == 0 {
+        return Err(BridgeAdapterError::InvalidProof);
+    }
+    let confirmations = bitcoin_confirmations_at_tip(context.tip_height, deposit_height)
+        .ok_or(BridgeAdapterError::InvalidProof)?;
+    if confirmations < required_confirmations {
+        return Err(BridgeAdapterError::InsufficientFinality);
+    }
+    if !bitcoin_chain_contains_deposit(context, deposit_height, deposit_header) {
+        return Err(BridgeAdapterError::InvalidProof);
+    }
+    context.verify_header_chain(deposit_height, deposit_header)?;
+    context.cumulative_chainwork()?;
+    Ok(confirmations)
+}
 pub struct BitcoinUtxoProof {
     pub bridge_id: Hash,
     pub chain_id: u32,
@@ -2631,31 +2664,53 @@ impl BitcoinUtxoProof {
         if !context.validate() || self.block_height == 0 {
             return Err(BridgeAdapterError::InvalidProof);
         }
-        let confirmations = context
-            .confirmations_for(self.block_height)
-            .ok_or(BridgeAdapterError::InvalidProof)?;
-        if self.confirmations != confirmations || confirmations < required_confirmations {
-            return Err(if confirmations < required_confirmations {
-                BridgeAdapterError::InsufficientFinality
-            } else {
-                BridgeAdapterError::InvalidProof
-            });
-        }
         let deposit_header = self
             .block_header
             .as_ref()
             .ok_or(BridgeAdapterError::InvalidProof)?;
+        let confirmations = verify_bitcoin_finality_boundary(
+            context,
+            self.block_height,
+            deposit_header,
+            required_confirmations,
+        )?;
+        if self.confirmations != confirmations {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
         self.verify_bitcoin_chain()?;
-        if !bitcoin_chain_contains_deposit(context, self.block_height, deposit_header) {
-            return Err(BridgeAdapterError::InvalidProof);
-        }
-        context.verify_header_chain(self.block_height, deposit_header)?;
-        if !bitcoin_chain_contains_deposit(context, self.block_height, deposit_header) {
-            return Err(BridgeAdapterError::InvalidProof);
-        }
         Ok(confirmations)
     }
 
+    /// M204 fork-selection gate.
+    /// The supplied context must remain the greatest-chainwork candidate.
+    pub fn verify_against_chain_context_with_forks(
+        &self,
+        context: &BitcoinChainContext,
+        required_confirmations: u64,
+        competing_contexts: &[&BitcoinChainContext],
+    ) -> Result<u64, BridgeAdapterError> {
+        let deposit_header = self
+            .block_header
+            .as_ref()
+            .ok_or(BridgeAdapterError::InvalidProof)?;
+        let confirmations = verify_bitcoin_finality_boundary(
+            context,
+            self.block_height,
+            deposit_header,
+            required_confirmations,
+        )?;
+        for competing in competing_contexts {
+            let selected = select_bitcoin_chain(context, competing)?;
+            if selected.tip_hash != context.tip_hash {
+                return Err(BridgeAdapterError::InvalidProof);
+            }
+        }
+        if self.confirmations != confirmations {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
+        self.verify_bitcoin_chain()?;
+        Ok(confirmations)
+    }
     pub fn verify_bitcoin_chain(&self) -> Result<BitcoinBlockHeaderVerification, BridgeAdapterError> {
         if !self.validate_bitcoin_chain_binding() {
             return Err(BridgeAdapterError::InvalidProof);
@@ -6866,5 +6921,54 @@ mod m153_bridge_message_auth_tests {
         };
         let keys = std::collections::BTreeMap::new();
         assert!(!set.authorized(&policy, &keys));
+    }
+}
+
+#[cfg(test)]
+mod m204_bitcoin_finality_tests {
+    use super::*;
+
+    #[test]
+    fn confirmations_are_tip_minus_deposit_plus_one() {
+        assert_eq!(bitcoin_confirmations_at_tip(100, 100), Some(1));
+        assert_eq!(bitcoin_confirmations_at_tip(105, 100), Some(6));
+        assert_eq!(bitcoin_confirmations_at_tip(100, 101), None);
+        assert_eq!(bitcoin_confirmations_at_tip(100, 0), None);
+    }
+
+    #[test]
+    fn confirmations_helper_is_overflow_safe() {
+        assert_eq!(bitcoin_confirmations_at_tip(u64::MAX, u64::MAX), Some(1));
+        assert_eq!(bitcoin_confirmations_at_tip(u64::MAX, 1), Some(u64::MAX));
+    }
+
+    #[test]
+    fn finality_boundary_rejects_zero_required_confirmations() {
+        let context = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinNetworkCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 227_931, block_hash: [0; 32],
+            },
+            start_height: 227_932, base_start_height: 227_931,
+            base_headers: vec![], tip_height: 227_932, tip_hash: [1; 32],
+            max_future_timestamp: u32::MAX, headers: vec![], difficulty_windows: vec![],
+        };
+        let header = BitcoinBlockHeader {
+            version: 1, previous_block_hash: [0; 32], merkle_root: [0; 32],
+            timestamp: 1, bits: 0x207fffff, nonce: 0,
+        };
+        assert_eq!(
+            verify_bitcoin_finality_boundary(&context, 227_932, &header, 0),
+            Err(BridgeAdapterError::InvalidProof)
+        );
+    }
+
+    #[test]
+    fn chainwork_comparison_is_greatest_work_not_height() {
+        let low = [1, 0, 0, 0, 0];
+        let high = [2, 0, 0, 0, 0];
+        assert_eq!(compare_bitcoin_chainwork(&high, &low), BitcoinChainSelection::CandidateA);
+        assert_eq!(compare_bitcoin_chainwork(&low, &high), BitcoinChainSelection::CandidateB);
     }
 }
