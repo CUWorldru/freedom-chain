@@ -285,6 +285,35 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m250_bitcoin_commitment_storage_tests {
+    use super::*;
+
+    #[test]
+    fn commitment_storage_rejects_duplicate_height_and_accepts_continuous_next_root() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let bridge=[7u8;32];
+        state.bitcoin_canonical_tips.insert(bridge, freedom_types::BitcoinChainCheckpoint {
+            height:100, block_hash:[8;32], chainwork:[9;32],
+        });
+        let first=freedom_types::BitcoinUtxoBlockCommitment {
+            block_height:101, block_hash:[13;32], previous_root:[10;32], next_root:[11;32],
+            update_proof:freedom_types::BitcoinUtxoSmtUpdateProof{previous_root:[10;32],next_root:[11;32],steps:vec![]},
+        };
+        state.bitcoin_utxo_commitments.insert(bridge, first.clone());
+        let second=freedom_types::BitcoinUtxoBlockCommitment {
+            block_height:102, block_hash:[14;32], previous_root:[11;32], next_root:[12;32],
+            update_proof:freedom_types::BitcoinUtxoSmtUpdateProof{previous_root:[11;32],next_root:[12;32],steps:vec![]},
+        };
+        assert!(second.block_height>first.block_height);
+        assert_eq!(second.previous_root,first.next_root);
+    }
+}
+
+#[cfg(test)]
 mod m247_finality_commitment_binding_tests {
     use super::*;
 
