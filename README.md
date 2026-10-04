@@ -1478,3 +1478,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Exposed the Bitcoin bridge safety gate to runtime admission and made Bitcoin `BridgeMint` transactions fail while an unresolved reorg is active.
 - This closes the runtime bypass where mint admission could read the persisted canonical tip directly without checking the reorg recovery gate.
 - Added a state regression test for the public Bitcoin bridge safety gate.
+
+
+### M239 — Bitcoin mint attestation uses active validators
+- Bitcoin `BridgeMint` runtime admission now authenticates UTXO attestations against the active validator set, matching state-level quorum enforcement.
+- This removes the remaining runtime path where a validator present only in the historical/full registry could contribute to a mint quorum.
+- Added a regression test for active-validator key resolution.
