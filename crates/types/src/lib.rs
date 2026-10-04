@@ -5743,7 +5743,6 @@ impl CrossChainFinalityEnvelope {
         o.extend_from_slice(&self.finalized_hash);
         o.extend_from_slice(&self.state_root);
         o.extend_from_slice(&self.previous_state_root);
-        o.extend_from_slice(&self.proof_hash);
         o
     }
 
@@ -5753,7 +5752,7 @@ impl CrossChainFinalityEnvelope {
         self.bridge_id != [0;32] && self.chain_id != 0 && self.sequence > 0
             && self.finalized_height > 0 && self.finalized_hash != [0;32]
             && self.state_root != [0;32] && self.previous_state_root != [0;32]
-            && self.proof_hash != [0;32]
+            && self.proof_hash == self.compute_hash()
     }
 }
 
