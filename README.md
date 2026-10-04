@@ -1313,3 +1313,10 @@ This keeps all state-level Bitcoin proof entry points aligned with the M207/M208
 Bitcoin checkpoint-to-adapter validation now requires BridgeAdapterDescriptor.chain_id to equal the protocol-defined BITCOIN_MAINNET_CHAIN_ID. A Bitcoin adapter can no longer bind a checkpoint through an unrelated nonzero chain ID.
 
 Regression coverage verifies both rejection of an Ethereum chain ID and acceptance of the canonical Bitcoin mainnet ID. No bridge payload or prior M-module architecture was changed.
+
+
+## M211 — Bitcoin Merkle Deposit Chain-ID Binding
+
+The Bitcoin canonical-tip Merkle deposit validator now requires BitcoinMerkleProof.chain_id to equal the protocol-defined BITCOIN_MAINNET_CHAIN_ID before canonical-header verification.
+
+Regression coverage verifies that a proof carrying an unrelated chain ID is rejected at the Bitcoin-specific state boundary. The generic BitcoinMerkleProof verifier remains unchanged.
