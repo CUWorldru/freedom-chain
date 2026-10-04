@@ -5756,6 +5756,43 @@ impl CrossChainFinalityEnvelope {
     }
 }
 
+
+#[cfg(test)]
+mod m246_finality_envelope_hash_tests {
+    use super::*;
+
+    fn envelope() -> CrossChainFinalityEnvelope {
+        let mut e = CrossChainFinalityEnvelope {
+            bridge_id:[1;32], chain_id:BITCOIN_MAINNET_CHAIN_ID, sequence:1,
+            proof_kind:CrossChainProofKind::BitcoinUtxo, finalized_height:101,
+            finalized_hash:[2;32], state_root:[3;32], previous_state_root:[4;32],
+            proof_hash:[0;32],
+        };
+        e.proof_hash = e.compute_hash();
+        e
+    }
+
+    #[test]
+    fn finality_envelope_hash_is_self_consistent() {
+        let e = envelope();
+        assert!(e.validate_structure());
+    }
+
+    #[test]
+    fn finality_envelope_rejects_mutated_payload_with_old_hash() {
+        let mut e = envelope();
+        e.finalized_height += 1;
+        assert!(!e.validate_structure());
+    }
+
+    #[test]
+    fn finality_envelope_rejects_mutated_proof_hash() {
+        let mut e = envelope();
+        e.proof_hash = [9;32];
+        assert!(!e.validate_structure());
+    }
+}
+
 pub struct BitcoinUtxoBlockCommitment {
     pub block_height: u64,
     pub block_hash: Hash,
