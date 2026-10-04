@@ -290,6 +290,12 @@ impl ChainState {
       if certificate.new_set_hash != active_set_hash {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
+      let certificate_keys=self.active_validator_set.iter()
+        .map(|(id,v)|(*id,v.consensus_key))
+        .collect::<std::collections::BTreeMap<_,_>>();
+      if certificate.authenticated_vote_count(&certificate_keys) < policy.validator_quorum {
+        return Err(StateError::InvalidBridgeWithdrawal);
+      }
     }
     let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
     if attestation.sequence != envelope.sequence
