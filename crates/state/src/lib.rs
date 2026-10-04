@@ -330,8 +330,7 @@ impl ChainState {
       if self.validator_set_history_key_hashes.get(&certificate.from_epoch).copied()
           != Some(previous_key_snapshot_hash)
         || certificate_keys.is_empty()
-        || policy.validator_total as usize != certificate_keys.len()
-        || policy.validator_quorum as usize > certificate_keys.len()
+        || !policy.quorum_matches_validator_count(certificate_keys.len())
         || certificate.authenticated_vote_count(certificate_keys) < policy.validator_quorum {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
