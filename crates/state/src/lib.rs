@@ -250,6 +250,53 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m228_withdrawal_policy_boundary_tests {
+    use super::*;
+
+    fn state() -> ChainState {
+        let genesis = freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bridge_security_policies.insert([9;32], freedom_types::BridgeSecurityPolicy {
+            bridge_id:[9;32], approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:1000, max_withdrawal_amount:100,
+            daily_limit:100, emergency_paused:false, nonce_floor:5,
+        });
+        state
+    }
+
+    #[test]
+    fn withdrawal_approval_rejects_policy_limit_violation() {
+        let mut state=state();
+        let id=[3;32]; let request=[4;32];
+        state.bridge_withdrawals.insert(id, freedom_types::BridgeWithdrawal {
+            withdrawal_id:id, bridge_id:[9;32], asset_id:[5;32], destination_chain_id:2,
+            amount:101, sender:[6;32], recipient:vec![7], nonce:5, request_hash:[8;32],
+        });
+        state.bridge_withdrawal_status.insert(id, freedom_types::BridgeWithdrawalStatus::Validated);
+        state.bridge_approval_sets.insert(request, freedom_types::BridgeApprovalSet {
+            request_id:request, approvals:vec![], threshold_signatures:1,
+        });
+        assert_eq!(state.approve_bridge_with_authenticated_set(id,request), Err(StateError::InvalidBridgeWithdrawal));
+    }
+
+    #[test]
+    fn withdrawal_approval_rejects_policy_nonce_floor() {
+        let mut state=state();
+        let id=[3;32]; let request=[4;32];
+        state.bridge_withdrawals.insert(id, freedom_types::BridgeWithdrawal {
+            withdrawal_id:id, bridge_id:[9;32], asset_id:[5;32], destination_chain_id:2,
+            amount:10, sender:[6;32], recipient:vec![7], nonce:4, request_hash:[8;32],
+        });
+        state.bridge_withdrawal_status.insert(id, freedom_types::BridgeWithdrawalStatus::Validated);
+        state.bridge_approval_sets.insert(request, freedom_types::BridgeApprovalSet {
+            request_id:request, approvals:vec![], threshold_signatures:1,
+        });
+        assert_eq!(state.approve_bridge_with_authenticated_set(id,request), Err(StateError::InvalidBridgeWithdrawal));
+    }
+}
+
+#[cfg(test)]
 mod m227_pause_authorization_canonical_tests {
     use super::*;
 
