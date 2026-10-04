@@ -1092,6 +1092,12 @@ impl BridgeSecurityPolicy {
             && self.daily_limit >= self.max_withdrawal_amount
     }
     pub fn quorum_reached(&self, approvals:u16)->bool { approvals >= self.validator_quorum }
+    pub fn quorum_matches_validator_count(&self, validator_count:usize)->bool {
+        validator_count > 0
+            && self.validator_total as usize == validator_count
+            && self.validator_quorum as usize <= validator_count
+            && u32::from(self.validator_quorum) * 3 > u32::try_from(validator_count).unwrap_or(u32::MAX) * 2
+    }
     pub fn threshold_reached(&self, signatures:u16)->bool { signatures >= self.threshold_signers }
     pub fn deposit_allowed(&self, amount:u128)->bool { !self.emergency_paused && amount > 0 && amount <= self.max_deposit_amount }
     pub fn withdrawal_allowed(&self, amount:u128)->bool { !self.emergency_paused && amount > 0 && amount <= self.max_withdrawal_amount && amount <= self.daily_limit }
@@ -7095,5 +7101,36 @@ mod m214_bitcoin_finality_adapter_chain_id_tests {
         assert!(BitcoinUtxoFinalityAdapter::default()
             .verify_envelope(&envelope(BITCOIN_MAINNET_CHAIN_ID))
             .is_ok());
+    }
+}
+
+
+#[cfg(test)]
+mod m267_quorum_binding_tests {
+    use super::*;
+
+    fn policy(total:u16, quorum:u16)->BridgeSecurityPolicy {
+        BridgeSecurityPolicy {
+            bridge_id:[9u8;32], approval_mode:BridgeApprovalMode::Quorum,
+            validator_quorum:quorum, validator_total:total,
+            threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:100,
+            max_withdrawal_amount:100, daily_limit:100,
+            emergency_paused:false, nonce_floor:0,
+        }
+    }
+
+    #[test]
+    fn quorum_binding_requires_exact_validator_set_size() {
+        let p=policy(2,2);
+        assert!(!p.quorum_matches_validator_count(3));
+        assert!(p.quorum_matches_validator_count(2));
+    }
+
+    #[test]
+    fn quorum_binding_preserves_two_thirds_requirement() {
+        let p=policy(4,3);
+        assert!(p.quorum_matches_validator_count(4));
+        assert!(!policy(4,2).quorum_matches_validator_count(4));
     }
 }
