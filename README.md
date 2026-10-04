@@ -1671,6 +1671,11 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Added regression coverage for duplicate, unsorted and canonical vote sets.
 
 
+### M273 — Bitcoin finality chainwork binding
+- Cross-chain Bitcoin UTXO finality now binds the persisted attestation to the canonical Bitcoin tip's cumulative chainwork as well as height and block hash.
+- A signed attestation for the right block but a different chainwork value can no longer pass the finality boundary.
+- Added regression coverage for the chainwork mismatch condition.
+
 ### M272 — Cross-chain finality state-root coverage
 - Audited the state consumed by Bitcoin UTXO finality validation.
 - Canonical Bitcoin tips, bridge security policy, validator transition certificate, historical validator snapshots, UTXO attestations, and UTXO commitments are all committed into the canonical state root.
