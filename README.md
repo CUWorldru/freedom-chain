@@ -1355,3 +1355,10 @@ Regression coverage verifies rejection of a non-Bitcoin chain ID. No envelope pa
 When a prior authenticated Bitcoin UTXO attestation exists, a Bitcoin UTXO finality envelope must carry the same accumulator root as its previous_state_root. This binds the next finality transition to the authenticated prior UTXO state instead of allowing a disconnected state root.
 
 Regression coverage verifies rejection of a finality envelope with an unrelated previous UTXO root.
+
+
+## M217 — Bitcoin Finality Sequence Continuity
+
+Bitcoin UTXO cross-chain finality envelopes now require a contiguous sequence transition: when a prior authenticated attestation exists, the next envelope sequence must equal the previous sequence plus one.
+
+This prevents gaps in the authenticated finality state machine while preserving the existing envelope structure and all previous M-module invariants.
