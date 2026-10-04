@@ -1053,7 +1053,7 @@ impl BridgeSecurityPolicy {
             && self.threshold_total > 0
             && self.threshold_signers > 0
             && self.threshold_signers <= self.threshold_total
-            && self.validator_quorum * 3 > self.validator_total * 2
+            && u32::from(self.validator_quorum) * 3 > u32::from(self.validator_total) * 2
             && self.min_external_confirmations > 0
             && self.max_deposit_amount > 0
             && self.max_withdrawal_amount > 0
@@ -3831,6 +3831,26 @@ mod m88_bridge_security_tests {
  #[test] fn policy_requires_supermajority_quorum(){assert!(p().validate());assert!(p().quorum_reached(7));assert!(!p().quorum_reached(6));}
  #[test] fn threshold_and_pause_are_enforced(){assert!(p().threshold_reached(3));assert!(!p().threshold_reached(2));assert!(p().deposit_allowed(100));assert!(p().withdrawal_allowed(100));let mut x=p();x.emergency_paused=true;assert!(!x.deposit_allowed(100));assert!(!x.withdrawal_allowed(100));}
  #[test] fn limits_and_nonce_are_enforced(){assert!(!p().deposit_allowed(1_000_001));assert!(!p().withdrawal_allowed(500_001));assert!(!p().nonce_allowed(9));assert!(p().nonce_allowed(10));}
+}
+
+
+#[cfg(test)]
+mod m231_bridge_policy_overflow_tests {
+ use super::*;
+
+ #[test]
+ fn supermajority_validation_is_overflow_safe_at_u16_max() {
+  let mut policy=BridgeSecurityPolicy{
+   bridge_id:[1;32], approval_mode:BridgeApprovalMode::Quorum,
+   validator_quorum:u16::MAX, validator_total:u16::MAX,
+   threshold_signers:1, threshold_total:1, min_external_confirmations:1,
+   max_deposit_amount:1, max_withdrawal_amount:1, daily_limit:1,
+   emergency_paused:false, nonce_floor:0,
+  };
+  assert!(policy.validate());
+  policy.validator_quorum=43_690;
+  assert!(!policy.validate());
+ }
 }
 
 
