@@ -1576,3 +1576,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Activated-staking Bitcoin finality now requires a non-empty validator-set certificate with a forward epoch transition.
 - The certificate's `new_set_hash` is checked against the canonical hash of the current active validator set.
 - A certificate object that exists but describes a different active set can no longer satisfy the finality readiness gate.
+
+
+### M255 — Cryptographically authenticated validator-set certificate
+- Validator-set certificates now count only votes with matching epochs/set hashes, valid validator identity, unique signer identity, and valid signatures.
+- Activated-staking Bitcoin finality requires the certificate to reach the bridge validator quorum.
+- A certificate with the correct `new_set_hash` but forged/empty votes can no longer satisfy finality readiness.
