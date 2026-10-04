@@ -351,11 +351,13 @@ impl ValidatorSetCertificate {
             && self.new_set_hash != [0;32]
             && self.previous_set_hash != self.new_set_hash
             && !self.votes.is_empty()
+            && self.votes.windows(2).all(|pair| pair[0].validator_id < pair[1].validator_id)
             && self.votes.iter().all(|v|
                 v.from_epoch == self.from_epoch
                     && v.to_epoch == self.to_epoch
                     && v.previous_set_hash == self.previous_set_hash
-                    && v.new_set_hash == self.new_set_hash)
+                    && v.new_set_hash == self.new_set_hash
+                    && v.validator_id != [0;32])
     }
 
     pub fn authenticated_vote_count(&self, validators: &std::collections::BTreeMap<Hash,[u8;32]>) -> u16 {
