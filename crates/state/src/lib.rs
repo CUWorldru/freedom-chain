@@ -216,6 +216,7 @@ impl ChainState {
   Ok(())
  }
  pub fn persist_bitcoin_canonical_tip(&mut self,bridge_id:Hash,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;if !proof.verify(checkpoint){return Err(StateError::BitcoinReorgDetected);}let next=BitcoinChainCheckpoint{height:proof.tip_height,block_hash:proof.tip_hash,chainwork:proof.chainwork};if let Some(prev)=self.bitcoin_canonical_tips.get(&bridge_id){if next.height<prev.height||next.chainwork<prev.chainwork{return Err(StateError::BitcoinReorgDetected);}}self.bitcoin_canonical_tips.insert(bridge_id,next);Ok(())}
+ fn bitcoin_recovery_validator_keys(&self)->std::collections::BTreeMap<Hash,[u8;32]>{self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect()}
  pub fn recover_bitcoin_reorg_with_tip(&mut self,recovery:freedom_types::BitcoinReorgRecovery,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{
   if !recovery.validate(){return Err(StateError::BitcoinReorgDetected);} if proof.tip_height!=recovery.canonical_height||proof.tip_hash!=recovery.canonical_block_hash||proof.chainwork!=recovery.canonical_chainwork{return Err(StateError::BitcoinReorgDetected);}
   let journal=self.bitcoin_reorg_evidence.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
@@ -223,7 +224,7 @@ impl ChainState {
   let policy=self.bitcoin_reorg_policy.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
   let mut ids=recovery.validator_ids.clone();ids.sort();ids.dedup();
   if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
-  let validators=self.active_validator_set.values().map(|v|(v.consensus_key, v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
+  let validators=self.bitcoin_recovery_validator_keys();
   if recovery.authenticated_count(&validators) < policy.validator_quorum{return Err(StateError::BitcoinReorgDetected);}
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
@@ -2589,5 +2590,27 @@ mod m236_bitcoin_checkpoint_persistence_reorg_gate_tests {
             state.persist_bitcoin_canonical_tip(bridge_id, &proof),
             Err(StateError::BitcoinReorgDetected)
         );
+    }
+}
+
+#[cfg(test)]
+mod m237_bitcoin_recovery_validator_identity_tests {
+    use super::*;
+
+    #[test]
+    fn recovery_validator_key_map_is_indexed_by_validator_id() {
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let validator_id = [7u8; 32];
+        let consensus_key = [9u8; 32];
+        state.active_validator_set.insert(validator_id, freedom_types::ValidatorSetEntry {
+            validator_id,
+            owner: [0u8; 20],
+            consensus_key,
+            stake: 1,
+        });
+        let keys = state.bitcoin_recovery_validator_keys();
+        assert_eq!(keys.get(&validator_id), Some(&consensus_key));
+        assert!(keys.get(&consensus_key).is_none());
     }
 }
