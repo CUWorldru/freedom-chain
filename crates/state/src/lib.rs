@@ -300,7 +300,17 @@ impl ChainState {
       }
       let certificate_keys=self.validator_set_history_sets.get(&certificate.from_epoch)
         .ok_or(StateError::InvalidBridgeWithdrawal)?;
-      if certificate.authenticated_vote_count(certificate_keys) < policy.validator_quorum {
+      let mut previous_bytes=Vec::new();
+      for (id,key) in certificate_keys {
+        previous_bytes.extend_from_slice(id);
+        previous_bytes.extend_from_slice(key);
+      }
+      let previous_key_snapshot_hash=freedom_primitives::hash_bytes(&previous_bytes);
+      if previous_key_snapshot_hash==[0;32] || certificate_keys.is_empty()
+        || certificate.authenticated_vote_count(certificate_keys) < policy.validator_quorum {
+        return Err(StateError::InvalidBridgeWithdrawal);
+      }
+      if !self.validator_set_history.contains_key(&certificate.from_epoch) {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
     }
