@@ -1406,3 +1406,8 @@ Bridge pause authorization and bridge mint/withdrawal approval quorum checks now
 ## M225 — Bridge Approval Admission Hardening
 
 Stored bridge message approval sets are now canonicalized and restricted to the active validator set at admission. Validator IDs must be strictly ascending and every approval signer must belong to the active set, preventing inactive or duplicate/non-canonical approval records from entering bridge state.
+
+
+## M226 — Withdrawal Quorum Active-Validator Binding
+
+Bridge withdrawal approval quorum authentication now uses the active validator set. A validator remaining in the historical registry but removed from the active set cannot satisfy the current withdrawal quorum.
