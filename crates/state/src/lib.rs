@@ -234,7 +234,7 @@ impl ChainState {
   if !envelope.validate_structure(){return Err(StateError::InvalidBridgeWithdrawal);}
   let policy=self.bridge_security_policies.get(&envelope.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let canonical=self.bitcoin_canonical_tips.get(&envelope.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  if envelope.chain_id!=policy.chain_id{return Err(StateError::InvalidBridgeWithdrawal);}
+  if envelope.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID{return Err(StateError::InvalidBridgeWithdrawal);}
   if envelope.proof_kind==freedom_types::CrossChainProofKind::BitcoinUtxo {
     if envelope.finalized_height<canonical.height || envelope.finalized_height!=canonical.height+1{return Err(StateError::InvalidBridgeWithdrawal);}
     if envelope.previous_state_root==envelope.state_root{return Err(StateError::InvalidBridgeWithdrawal);}
@@ -244,6 +244,54 @@ impl ChainState {
   }
   Ok(())
  }
+#[cfg(test)]
+mod m215_cross_chain_finality_bitcoin_binding_tests {
+    use super::*;
+
+    fn state_with_bitcoin_finality() -> ChainState {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bitcoin_canonical_tips.insert([7;32], freedom_types::BitcoinChainCheckpoint {
+            height: 100, block_hash: [8;32], chainwork: [9;32],
+        });
+        state
+    }
+
+    fn envelope(chain_id: u32) -> freedom_types::CrossChainFinalityEnvelope {
+        freedom_types::CrossChainFinalityEnvelope {
+            bridge_id: [7;32],
+            chain_id,
+            sequence: 1,
+            proof_kind: freedom_types::CrossChainProofKind::BitcoinUtxo,
+            finalized_height: 101,
+            finalized_hash: [9;32],
+            state_root: [10;32],
+            previous_state_root: [11;32],
+            proof_hash: [12;32],
+        }
+    }
+
+    #[test]
+    fn state_finality_rejects_non_bitcoin_chain_id() {
+        let state = state_with_bitcoin_finality();
+        assert_eq!(
+            state.validate_cross_chain_finality_envelope(&envelope(1)),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn state_finality_accepts_protocol_bitcoin_chain_id_before_sequence_checks() {
+        let state = state_with_bitcoin_finality();
+        assert_ne!(
+            state.validate_cross_chain_finality_envelope(
+                &envelope(freedom_types::BITCOIN_MAINNET_CHAIN_ID)
+            ),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+}
+
  pub fn validate_cross_chain_proof_adapter(&self,envelope:&freedom_types::CrossChainFinalityEnvelope)->Result<(),StateError>{
   match envelope.proof_kind {
     freedom_types::CrossChainProofKind::BitcoinUtxo => freedom_types::BitcoinUtxoFinalityAdapter::default().verify_envelope(envelope),
