@@ -1588,3 +1588,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Fixed the finality gate so the persisted Bitcoin UTXO attestation is treated as the candidate transition being finalized.
 - Removed the contradictory stored-sequence-plus-one requirement from envelope validation.
 - Sequence continuity remains enforced at attestation registration, while finality requires the envelope sequence to equal the authenticated persisted attestation sequence.
+
+
+### M257 — Validator-set transition binding
+- Validator-set certificates now require a non-zero, distinct previous and new set hash.
+- Every vote must carry exactly the certificate's epoch and set-transition fields.
+- Finality rejects certificates whose votes describe a different transition than the certificate itself.
