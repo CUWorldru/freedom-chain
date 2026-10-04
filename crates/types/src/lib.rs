@@ -2082,16 +2082,34 @@ pub fn bitcoin_chain_contains_deposit(
     deposit_height: u64,
     deposit_header: &BitcoinBlockHeader,
 ) -> bool {
-    if !chain.validate() || deposit_height == 0 || deposit_height > chain.tip_height {
+    if !chain.validate()
+        || deposit_height < chain.start_height
+        || deposit_height > chain.tip_height
+    {
         return false;
     }
-    let offset = deposit_height
-        .checked_sub(chain.tip_height.saturating_sub(chain.headers.len() as u64 - 1))
-        .unwrap_or(u64::MAX);
-    if offset as usize >= chain.headers.len() {
+
+    let offset = match deposit_height.checked_sub(chain.start_height) {
+        Some(value) => value as usize,
+        None => return false,
+    };
+    if offset >= chain.headers.len() || chain.headers[offset] != *deposit_header {
         return false;
     }
-    chain.headers[offset as usize] == *deposit_header
+
+    if offset > 0 {
+        if chain.headers[offset].previous_block_hash
+            != chain.headers[offset - 1].block_hash()
+        {
+            return false;
+        }
+    } else if chain.base_headers.last().map(|h| h.block_hash())
+        != Some(chain.headers[offset].previous_block_hash)
+    {
+        return false;
+    }
+
+    true
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2628,6 +2646,9 @@ impl BitcoinUtxoProof {
             .as_ref()
             .ok_or(BridgeAdapterError::InvalidProof)?;
         self.verify_bitcoin_chain()?;
+        if !bitcoin_chain_contains_deposit(context, self.block_height, deposit_header) {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
         context.verify_header_chain(self.block_height, deposit_header)?;
         if !bitcoin_chain_contains_deposit(context, self.block_height, deposit_header) {
             return Err(BridgeAdapterError::InvalidProof);
