@@ -1539,3 +1539,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Standalone Bitcoin UTXO commitment-attestation validation now enforces canonical attestation structure before signature acceptance.
 - The attestation sequence must start at `1` and then advance exactly by one from the stored bridge attestation.
 - Sequence jumps and overflow are rejected, preventing a detached attestation from bypassing the registered attestation history.
+
+
+### M249 — Bitcoin attestation policy binding
+- Bitcoin UTXO commitment attestations must bind their signed `policy_id` to the active bridge security policy.
+- A valid signature set cannot authorize an attestation under a foreign or stale policy identity.
+- The finality sequence rules remain unchanged: first attestation is sequence `1`, subsequent envelopes advance exactly one step.
