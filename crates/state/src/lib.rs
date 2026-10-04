@@ -1541,14 +1541,21 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     bytes.extend_from_slice(&entry.stake.to_le_bytes());
    }
    let set_hash=freedom_primitives::hash_bytes(&bytes);
-   if self.validator_set_history.get(&self.epoch).copied()!=Some(set_hash) {
-    self.validator_set_history.insert(self.epoch,set_hash);
-   }
    let key_snapshot=self.active_validator_set.iter().map(|(id,entry)|(*id,entry.consensus_key)).collect::<BTreeMap<_,_>>();
    let mut key_bytes=Vec::new();
    for (id,key) in &key_snapshot { key_bytes.extend_from_slice(id); key_bytes.extend_from_slice(key); }
+   let key_hash=freedom_primitives::hash_bytes(&key_bytes);
+   let entry_snapshot=self.active_validator_set.clone();
+   if self.validator_set_history.get(&self.epoch).copied().map(|h|h!=set_hash).unwrap_or(false)
+     || self.validator_set_history_sets.get(&self.epoch).map(|s|s!=&key_snapshot).unwrap_or(false)
+     || self.validator_set_history_key_hashes.get(&self.epoch).copied().map(|h|h!=key_hash).unwrap_or(false)
+     || self.validator_set_history_entries.get(&self.epoch).map(|s|s!=&entry_snapshot).unwrap_or(false) {
+    return;
+   }
+   self.validator_set_history.insert(self.epoch,set_hash);
    self.validator_set_history_sets.insert(self.epoch,key_snapshot);
-   self.validator_set_history_key_hashes.insert(self.epoch,freedom_primitives::hash_bytes(&key_bytes));
+   self.validator_set_history_key_hashes.insert(self.epoch,key_hash);
+   self.validator_set_history_entries.insert(self.epoch,entry_snapshot);
    self.epoch_issuance=0;
   }
  }
@@ -3535,5 +3542,25 @@ mod m268_validator_set_binding_tests {
         let before=state.state_root();
         state.validator_set_history_entries.get_mut(&0).unwrap().values_mut().next().unwrap().stake=101;
         assert_ne!(before,state.state_root());
+    }
+}
+
+
+#[cfg(test)]
+mod m269_epoch_snapshot_atomicity_tests {
+    use super::*;
+
+    #[test]
+    fn epoch_transition_records_full_historical_snapshot_together() {
+        let key=[7u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let validator=freedom_types::Validator{validator_id:id,owner:[8;32],consensus_key:key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+        let mut state=ChainState::genesis(&freedom_types::Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
+        state.epoch_length=1;
+        state.height=1;
+        state.maybe_advance_epoch();
+        assert_eq!(state.validator_set_history.get(&1).copied(),Some({ let mut b=Vec::new(); for (id,e) in &state.active_validator_set {b.extend_from_slice(id);b.extend_from_slice(&e.owner);b.extend_from_slice(&e.consensus_key);b.extend_from_slice(&e.stake.to_le_bytes());} freedom_primitives::hash_bytes(&b)}));
+        assert_eq!(state.validator_set_history_entries.get(&1),Some(&state.active_validator_set));
+        assert_eq!(state.validator_set_history_sets.get(&1).unwrap().len(),state.validator_set_history_entries.get(&1).unwrap().len());
     }
 }
