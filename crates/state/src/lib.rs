@@ -325,7 +325,7 @@ impl ChainState {
  }
  pub fn validate_bitcoin_block_utxo_transition(&self,transition:&freedom_types::BitcoinUtxoAccumulatorTransition,previous:&[freedom_types::BitcoinUtxoStateEntry],block:&freedom_types::BitcoinSpendScanBlock)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  if transition.previous_tip!=*canonical || block.height!=canonical.height+1 || transition.next_tip.height!=block.height || transition.next_tip.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
+  if transition.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID || transition.previous_tip!=*canonical || block.height!=canonical.height+1 || transition.next_tip.height!=block.height || transition.next_tip.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
   block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   let (root,count)=freedom_types::BitcoinUtxoAccumulatorTransition::verify_block_against_header(previous,block).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if root!=transition.next_root||count!=transition.next_leaf_count{return Err(StateError::InvalidBridgeWithdrawal)}
@@ -333,7 +333,7 @@ impl ChainState {
  }
  pub fn validate_bitcoin_utxo_transition(&self,transition:&freedom_types::BitcoinUtxoAccumulatorTransition,previous:&[freedom_types::BitcoinUtxoStateEntry])->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  if transition.previous_tip.block_hash!=canonical.block_hash || transition.previous_tip.height!=canonical.height { return Err(StateError::InvalidBridgeWithdrawal); }
+  if transition.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID || transition.previous_tip.block_hash!=canonical.block_hash || transition.previous_tip.height!=canonical.height { return Err(StateError::InvalidBridgeWithdrawal); }
   transition.verify_transition(previous).map_err(|_|StateError::InvalidBridgeWithdrawal)
  }
  pub fn validate_bitcoin_utxo_accumulator_proof(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoAccumulatorProof)->Result<(),StateError>{
@@ -1673,6 +1673,70 @@ mod m211_bitcoin_merkle_proof_chain_id_tests {
                 &[],
             ),
             Err(StateError::BitcoinReorgDetected)
+        );
+    }
+}
+
+
+#[cfg(test)]
+mod m212_bitcoin_utxo_transition_chain_id_tests {
+    use super::*;
+    use freedom_types::{BitcoinChainCheckpoint, BitcoinUtxoAccumulatorTransition};
+
+    fn transition(chain_id: u32) -> BitcoinUtxoAccumulatorTransition {
+        BitcoinUtxoAccumulatorTransition {
+            bridge_id: [7; 32],
+            chain_id,
+            previous_tip: BitcoinChainCheckpoint { height: 100, block_hash: [8; 32], chainwork: [9; 32] },
+            next_tip: BitcoinChainCheckpoint { height: 101, block_hash: [10; 32], chainwork: [11; 32] },
+            previous_root: [12; 32],
+            previous_leaf_count: 1,
+            spent: vec![],
+            created: vec![],
+            next_root: [13; 32],
+            next_leaf_count: 1,
+        }
+    }
+
+    #[test]
+    fn block_transition_rejects_non_bitcoin_chain_id() {
+        let state = {
+            let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+            let mut state = ChainState::genesis(&genesis);
+            state.bitcoin_canonical_tips.insert([7; 32], BitcoinChainCheckpoint {
+                height: 100, block_hash: [8; 32], chainwork: [9; 32],
+            });
+            state
+        };
+        let transition = transition(1);
+        let block = freedom_types::BitcoinSpendScanBlock {
+            height: 101,
+            header: freedom_types::BitcoinBlockHeader {
+                version: 1, prev_block_hash: [8; 32], merkle_root: [14; 32],
+                timestamp: 1, bits: 0, nonce: 0,
+            },
+            raw_transactions: vec![],
+        };
+        assert_eq!(
+            state.validate_bitcoin_block_utxo_transition(&transition, &[], &block),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn accumulator_transition_rejects_non_bitcoin_chain_id() {
+        let state = {
+            let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+            let mut state = ChainState::genesis(&genesis);
+            state.bitcoin_canonical_tips.insert([7; 32], BitcoinChainCheckpoint {
+                height: 100, block_hash: [8; 32], chainwork: [9; 32],
+            });
+            state
+        };
+        let transition = transition(1);
+        assert_eq!(
+            state.validate_bitcoin_utxo_transition(&transition, &[]),
+            Err(StateError::InvalidBridgeWithdrawal)
         );
     }
 }
