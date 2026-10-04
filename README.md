@@ -1671,6 +1671,11 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Added regression coverage for duplicate, unsorted and canonical vote sets.
 
 
+### M272 — Cross-chain finality state-root coverage
+- Audited the state consumed by Bitcoin UTXO finality validation.
+- Canonical Bitcoin tips, bridge security policy, validator transition certificate, historical validator snapshots, UTXO attestations, and UTXO commitments are all committed into the canonical state root.
+- Added regression coverage proving independent mutations of these finality-critical categories produce distinct state roots.
+
 ### M271 — Validator-history write boundary
 - Historical validator snapshots can no longer be partially created through `record_validator_set_epoch_hash()`.
 - The method is now validation-only and requires the full set snapshot, key snapshot, key hash, and cross-binding to already exist and agree.
