@@ -170,7 +170,7 @@ impl ChainState {
   let policy=self.bridge_security_policies.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgePauseAuthorization)?;
   if auth_set.bridge_id!=bridge_id||auth_set.nonce==0||auth_set.authorizations.is_empty(){return Err(StateError::InvalidBridgePauseAuthorization);}
   if let Some(previous)=self.bridge_pause_authorizations.get(&bridge_id){if auth_set.nonce<=previous.nonce{return Err(StateError::InvalidBridgePauseAuthorization);}}
-  let keys=self.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
+  let keys=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
   if auth_set.authenticated_count(&keys)<policy.validator_quorum{return Err(StateError::InvalidBridgePauseAuthorization);}
   if auth_set.authorizations.iter().any(|a|a.bridge_id!=bridge_id||a.nonce!=auth_set.nonce||!keys.contains_key(&a.validator_id)){return Err(StateError::InvalidBridgePauseAuthorization);}
   let mut next=policy.clone();next.emergency_paused=auth_set.authorizations.first().map(|a|a.paused).ok_or(StateError::InvalidBridgePauseAuthorization)?;
@@ -714,7 +714,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     return Err(StateError::InvalidBridgeMessage);
   }
 
-  let keys = self.validators.iter()
+  let keys = self.active_validator_set.iter()
     .map(|(id, v)| (*id, v.consensus_key))
     .collect::<BTreeMap<Hash, [u8; 32]>>();
   if !approvals.authorized(policy, &keys)
