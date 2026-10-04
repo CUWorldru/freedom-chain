@@ -1243,7 +1243,10 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    return Err(StateError::InsufficientBalance);
   }
   let policy=self.bridge_security_policies.get(&payload.message.bridge_id).ok_or(StateError::InvalidBridgeMintTransaction)?;
-  let keys=self.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
+  if payload.message.source_chain_id == freedom_types::BITCOIN_MAINNET_CHAIN_ID {
+    self.validate_bitcoin_bridge_safety(payload.message.bridge_id)?;
+  }
+  let keys=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
   let expected=BridgeMintAuthorization::from_authenticated_message(
    &payload.message,&payload.deposit,&payload.approvals,policy,&keys
   ).map_err(|_|StateError::InvalidBridgeMintTransaction)?;
@@ -2632,5 +2635,47 @@ mod m238_bitcoin_mint_reorg_gate_tests {
         evidence.fingerprint = evidence.compute_fingerprint();
         state.bitcoin_reorg_evidence.insert(bridge_id, vec![evidence]);
         assert_eq!(state.validate_bitcoin_bridge_safety(bridge_id), Err(StateError::BitcoinReorgDetected));
+    }
+}
+
+
+#[cfg(test)]
+mod m241_bridge_mint_execution_security_tests {
+    use super::*;
+
+    #[test]
+    fn bridge_mint_execution_key_map_excludes_registry_only_validator() {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let active_id = [11u8; 32];
+        let active_key = [12u8; 32];
+        let registry_only_id = [13u8; 32];
+        let registry_only_key = [14u8; 32];
+
+        state.active_validator_set.insert(
+            active_id,
+            freedom_types::ValidatorSetEntry {
+                validator_id: active_id,
+                owner: [0u8; 20],
+                consensus_key: active_key,
+                stake: 1,
+            },
+        );
+        state.validators.insert(
+            registry_only_id,
+            freedom_types::Validator {
+                validator_id: registry_only_id,
+                owner: [0u8; 20],
+                consensus_key: registry_only_key,
+                stake: 1,
+            },
+        );
+
+        let keys = state.active_validator_set.iter()
+            .map(|(id, v)| (*id, v.consensus_key))
+            .collect::<BTreeMap<Hash, [u8; 32]>>();
+
+        assert_eq!(keys.get(&active_id), Some(&active_key));
+        assert!(!keys.contains_key(&registry_only_id));
     }
 }
