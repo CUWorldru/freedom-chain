@@ -1436,3 +1436,8 @@ Withdrawal approval in `Threshold` and `QuorumAndThreshold` modes no longer trus
 ### M231 — overflow-safe bridge policy quorum validation
 
 `BridgeSecurityPolicy::validate()` now evaluates the validator supermajority rule in a wider integer type, preventing `u16` multiplication overflow at extreme validator counts. The policy format and quorum rule remain unchanged; only the arithmetic domain is hardened.
+
+
+### M232 — Bitcoin UTXO attestation binds chain identity and chainwork
+
+The direct Bitcoin UTXO commitment-attestation validation path now requires the protocol Bitcoin chain ID and exact canonical-tip chainwork, in addition to the existing bridge, height, block-hash, root-continuity, commitment, and active-validator signature checks. This prevents a structurally valid attestation from being rebound to another chain or a weaker/different canonical chainwork value.
