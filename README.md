@@ -1299,3 +1299,10 @@ The Bitcoin BridgeMint admission gate now uses the protocol-defined `BITCOIN_MAI
 Bitcoin UTXO commitment attestations are now rejected at state registration unless their signed chain_id is exactly BITCOIN_MAINNET_CHAIN_ID.
 
 This closes the state-level identity gap left by M205–M207: an attestation cannot be registered into the Bitcoin UTXO state path under an unrelated external chain ID. Runtime mint admission already binds the same value through the protocol-defined Bitcoin chain ID.
+
+
+## M209 — Bitcoin State-Proof Chain-ID Binding
+
+Bitcoin UTXO state validators now require the protocol-defined Bitcoin mainnet chain ID across accumulator membership proofs, spend-state proofs, and direct UTXO deposit proofs.
+
+This keeps all state-level Bitcoin proof entry points aligned with the M207/M208 chain identity binding and prevents a non-Bitcoin proof from entering a Bitcoin-specific state path.
