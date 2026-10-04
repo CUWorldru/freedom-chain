@@ -247,6 +247,31 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m225_bridge_approval_set_active_validator_tests {
+    use super::*;
+
+    #[test]
+    fn approval_set_rejects_inactive_validator() {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bridge_security_policies.insert([7;32], freedom_types::BridgeSecurityPolicy {
+            bridge_id:[7;32], approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:1, max_withdrawal_amount:1,
+            daily_limit:1, emergency_paused:false, nonce_floor:0,
+        });
+        let set = freedom_types::BridgeMessageApprovalSet {
+            bridge_id:[7;32], message_hash:[8;32], approvals: vec![
+                freedom_types::BridgeMessageApproval {
+                    bridge_id:[7;32], message_hash:[8;32], validator_id:[13;32], signature:vec![0;64],
+                }
+            ]
+        };
+        assert_eq!(state.record_bridge_approval_set(set), Err(StateError::InvalidBridgeWithdrawal));
+    }
+}
+
+#[cfg(test)]
 mod m223_bitcoin_reorg_recovery_active_validator_tests {
     use super::*;
 
@@ -650,6 +675,13 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   let policy_id=set.approvals.first().map(|a|a.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let policy=self.bridge_security_policies.get(&policy_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if set.approvals.iter().any(|a|a.bridge_id!=policy.bridge_id||a.request_id!=set.request_id||!a.structurally_valid()){return Err(StateError::InvalidBridgeWithdrawal);}
+  if !set.approvals.windows(2).all(|pair| pair[0].validator_id < pair[1].validator_id) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+  let active_ids=self.active_validator_set.keys().collect::<std::collections::BTreeSet<_>>();
+  if set.approvals.iter().any(|a| !active_ids.contains(&a.validator_id)) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
   self.bridge_approval_sets.insert(set.request_id,set); Ok(())
  }
  pub fn bridge_approval_set(&self, request_id:&Hash)->Option<&BridgeApprovalSet>{self.bridge_approval_sets.get(request_id)}
