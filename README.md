@@ -1552,3 +1552,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Added an authoritative registration/read path for block commitments.
 - Registration reuses canonical Bitcoin block validation and rejects stale/duplicate heights or broken UTXO-root continuity.
 - This makes the commitment referenced by M247/M249 an actual persisted bridge-state object rather than an implicit test-only map.
+
+
+### M251 — Authenticated Bitcoin attestation finality gate
+- Bitcoin UTXO finality envelopes now require a persisted, structurally valid commitment attestation.
+- The attestation must match the envelope sequence, Bitcoin finalized height/hash, and previous/next UTXO roots.
+- A commitment alone is therefore insufficient to authorize cross-chain finality; validator-attested state is mandatory.
