@@ -1669,3 +1669,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Validator-set transition certificates now require strictly ascending, unique validator vote IDs.
 - Every vote must carry the exact transition epochs and set hashes encoded by the certificate.
 - Added regression coverage for duplicate, unsorted and canonical vote sets.
+
+
+### M269 — Atomic epoch validator snapshots
+- Epoch transitions now derive full-set hash, key snapshot, key hash, and full entry snapshot before mutating historical state.
+- Existing historical data cannot be silently overwritten with a different snapshot.
+- Added regression coverage for complete snapshot creation at epoch transition.
