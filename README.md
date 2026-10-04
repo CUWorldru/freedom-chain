@@ -1695,3 +1695,8 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Epoch transitions now derive full-set hash, key snapshot, key hash, and full entry snapshot before mutating historical state.
 - Existing historical data cannot be silently overwritten with a different snapshot.
 - Added regression coverage for complete snapshot creation at epoch transition.
+
+
+## M274 — Bitcoin UTXO attestation signer-set canonicalization
+
+Bitcoin UTXO commitment attestations now require a canonical signer representation. The validator ID list must be strictly ascending, each signature must occupy the matching validator-ID position, duplicate or reordered signer sets are rejected, and authenticated signatures are accepted only when the validator ID equals the hash of the supplied consensus public key. This removes ambiguous signer-set encodings and prevents validator identity substitution during attestation verification.
