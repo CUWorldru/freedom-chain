@@ -1386,3 +1386,8 @@ Bitcoin UTXO attestation and cross-chain finality sequence transitions now rejec
 ## M221 — Bitcoin UTXO Attestation Active-Validator Binding
 
 Bitcoin UTXO commitment attestations are now authenticated against the active validator set rather than the broader validator registry. Any attestation naming a signer outside the current active set is rejected before signature verification.
+
+
+## M222 — Bitcoin Commitment Attestation Active-Validator Binding
+
+The Bitcoin UTXO commitment-application path now enforces the same active-validator binding as attestation registration. Attestations naming validators outside the current active set are rejected before commitment application and signature quorum validation.
