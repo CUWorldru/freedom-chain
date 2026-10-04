@@ -1519,3 +1519,10 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - The stored message must still have a valid message_hash and its replay key must recompute to the map key.
 - This prevents a stale Accepted state from being usable with a mutated or cryptographically inconsistent stored message.
 - Added regression coverage for message-hash integrity and replay-key recomputation.
+
+
+### M246 — Cross-chain finality envelope commitment
+- Finality envelope `proof_hash` is now a real commitment over the envelope payload.
+- The hash preimage excludes `proof_hash` itself, avoiding a self-referential hash.
+- `validate_structure()` now rejects any mutated envelope carrying a stale or forged proof hash.
+- Added regression coverage for valid, mutated-payload, and mutated-hash envelopes.
