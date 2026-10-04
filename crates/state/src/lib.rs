@@ -250,6 +250,51 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m229_withdrawal_request_policy_tests {
+    use super::*;
+
+    fn state() -> ChainState {
+        let genesis = freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bridge_security_policies.insert([9;32], freedom_types::BridgeSecurityPolicy {
+            bridge_id:[9;32], approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:1000, max_withdrawal_amount:100,
+            daily_limit:100, emergency_paused:false, nonce_floor:5,
+        });
+        state
+    }
+
+    fn withdrawal(amount:u128, nonce:u64) -> freedom_types::BridgeWithdrawal {
+        let mut w=freedom_types::BridgeWithdrawal {
+            withdrawal_id:[0;32], bridge_id:[9;32], asset_id:*[0;32].as_ref(),
+            destination_chain_id:2, amount, sender:[6;32], recipient:vec![7],
+            nonce, request_hash:[0;32],
+        };
+        w.asset_id=[1;32];
+        w.request_hash=w.compute_hash();
+        w.withdrawal_id=w.compute_id();
+        w
+    }
+
+    #[test]
+    fn request_rejects_amount_above_policy() {
+        let mut state=state();
+        let asset=*state.asset_registry.keys().next().unwrap();
+        let mut w=withdrawal(101,5); w.asset_id=asset; w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id();
+        assert_eq!(state.request_bridge_withdrawal(w), Err(StateError::InvalidBridgeWithdrawal));
+    }
+
+    #[test]
+    fn request_rejects_nonce_below_policy_floor() {
+        let mut state=state();
+        let asset=*state.asset_registry.keys().next().unwrap();
+        let mut w=withdrawal(10,4); w.asset_id=asset; w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id();
+        assert_eq!(state.request_bridge_withdrawal(w), Err(StateError::InvalidBridgeWithdrawal));
+    }
+}
+
+#[cfg(test)]
 mod m228_withdrawal_policy_boundary_tests {
     use super::*;
 
