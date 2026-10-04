@@ -1105,12 +1105,14 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   Ok(replay_key)
  }
  pub fn accept_bridge_message(&mut self,replay_key:Hash)->Result<(),StateError>{
-  if !self.processed_bridge_messages.contains_key(&replay_key) { return Err(StateError::InvalidBridgeMessage); }
-  if !self.bridge_message_status.contains_key(&replay_key) {
-   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Verified);
+  let message=self.processed_bridge_messages.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
+  if message.replay_key()!=replay_key {
+   return Err(StateError::InvalidBridgeMessage);
   }
   let status=self.bridge_message_status.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
-  if *status != BridgeMessageStatus::Verified { return Err(StateError::InvalidBridgeMessage); }
+  if *status != BridgeMessageStatus::Verified {
+   return Err(StateError::InvalidBridgeMessage);
+  }
   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Accepted);
   Ok(())
  }
@@ -2768,5 +2770,50 @@ mod m243_direct_bridge_mint_bitcoin_gate_tests {
             Ok(())
         );
         assert!(state.validate_bridge_message(&message).is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod m244_bridge_acceptance_boundary_tests {
+    use super::*;
+
+    fn setup() -> (ChainState, Hash) {
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let bridge = [31u8; 32];
+        let asset_id = [32u8; 32];
+        state.register_asset(AssetDefinition {
+            asset_id, source_chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            asset_type: AssetType::Bridged, contract_address: b"BTC".to_vec(), symbol: "BTC".into(),
+            decimals: 8, issuer: [33u8; 32], bridge_id: bridge, status: AssetStatus::Active,
+        }).unwrap();
+        let mut message = BridgeMessage {
+            protocol_version: freedom_types::BRIDGE_MESSAGE_PROTOCOL_VERSION,
+            source_chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            destination_chain_id: freedom_primitives::CHAIN_ID, bridge_id: bridge, asset_id,
+            source_tx_hash: [34u8; 32], source_event_index: 0, nonce: 1, amount: 1,
+            recipient: [35u8; 32], message_hash: [0u8; 32],
+        };
+        message.message_hash = message.compute_hash();
+        let key = state.record_bridge_message(message).unwrap();
+        (state, key)
+    }
+
+    #[test]
+    fn acceptance_rejects_missing_status_instead_of_promoting_it() {
+        let (mut state, key) = setup();
+        state.bridge_message_status.remove(&key);
+        assert_eq!(state.accept_bridge_message(key), Err(StateError::InvalidBridgeMessage));
+        assert!(!state.bridge_message_status.contains_key(&key));
+    }
+
+    #[test]
+    fn acceptance_rejects_replay_key_mismatch() {
+        let (mut state, key) = setup();
+        let message = state.processed_bridge_messages.get_mut(&key).unwrap();
+        message.source_event_index = message.source_event_index.saturating_add(1);
+        assert_eq!(state.accept_bridge_message(key), Err(StateError::InvalidBridgeMessage));
+        assert_eq!(state.bridge_message_status.get(&key), Some(&BridgeMessageStatus::Verified));
     }
 }
