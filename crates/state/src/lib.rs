@@ -247,6 +247,43 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m226_withdrawal_quorum_active_validator_tests {
+    use super::*;
+
+    #[test]
+    fn withdrawal_quorum_uses_active_validator_set() {
+        let key = [7u8; 32];
+        let validator_id = freedom_primitives::hash_bytes(&key);
+        let v = freedom_types::Validator {
+            validator_id, owner:[1;32], consensus_key:key, stake:100, unbonding_stake:0,
+            blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let genesis = freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![v.clone()] };
+        let mut state = ChainState::genesis(&genesis);
+        state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
+            bridge_id:[9;32], approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:1000, max_withdrawal_amount:1000,
+            daily_limit:1000, emergency_paused:false, nonce_floor:0,
+        }).unwrap();
+        state.active_validator_set.clear();
+        let id=[3;32]; let request=[4;32];
+        state.bridge_withdrawals.insert(id, freedom_types::BridgeWithdrawal {
+            withdrawal_id:id, bridge_id:[9;32], asset_id:[5;32], destination_chain_id:2,
+            amount:10, sender:[6;32], recipient:vec![7], nonce:1, request_hash:[8;32],
+        });
+        state.bridge_withdrawal_status.insert(id, freedom_types::BridgeWithdrawalStatus::Validated);
+        state.bridge_approval_sets.insert(request, freedom_types::BridgeApprovalSet {
+            request_id:request, approvals:vec![], threshold_signatures:0,
+        });
+        assert_eq!(
+            state.approve_bridge_with_authenticated_set(id,request),
+            Err(StateError::InvalidBridgeWithdrawalTransition)
+        );
+    }
+}
+
+#[cfg(test)]
 mod m225_bridge_approval_set_active_validator_tests {
     use super::*;
 
