@@ -1292,3 +1292,10 @@ Bitcoin BridgeMint admission now requires a state-held, quorum-authenticated `Bi
 ## M207 — Bitcoin Mainnet Chain-ID Binding
 
 The Bitcoin BridgeMint admission gate now uses the protocol-defined `BITCOIN_MAINNET_CHAIN_ID` instead of a legacy numeric literal. This keeps M205/M206 Bitcoin finality and UTXO-attestation enforcement aligned with the canonical bridge network identity used by the external-proof verifier.
+
+
+## M208 — Bitcoin UTXO Attestation Chain-ID Binding
+
+Bitcoin UTXO commitment attestations are now rejected at state registration unless their signed chain_id is exactly BITCOIN_MAINNET_CHAIN_ID.
+
+This closes the state-level identity gap left by M205–M207: an attestation cannot be registered into the Bitcoin UTXO state path under an unrelated external chain ID. Runtime mint admission already binds the same value through the protocol-defined Bitcoin chain ID.
