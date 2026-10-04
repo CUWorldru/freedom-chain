@@ -199,6 +199,15 @@ impl ChainState {
  pub fn bitcoin_reorg_severity(&self,bridge_id:Hash,e:&BitcoinReorgEvidence)->Result<freedom_types::BitcoinReorgSeverity,StateError>{let cp=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;let p=self.bitcoin_reorg_policy.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if !e.validate()||!p.validate(){return Err(StateError::BitcoinReorgDetected)}Ok(p.classify(cp,e))}
  pub fn record_bitcoin_reorg_evidence(&mut self,bridge_id:Hash,e:BitcoinReorgEvidence)->Result<(),StateError>{
   if bridge_id==[0;32]||!e.validate(){return Err(StateError::BitcoinReorgDetected);}
+  let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
+  if e.checkpoint_height!=checkpoint.height
+    || e.checkpoint_hash!=checkpoint.block_hash
+    || e.candidate_tip_height<=e.checkpoint_height
+    || e.candidate_chainwork<=checkpoint.chainwork {
+    return Err(StateError::BitcoinReorgDetected);
+  }
+  let policy=self.bitcoin_reorg_policy.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
+  if !policy.validate(){return Err(StateError::BitcoinReorgDetected);}
   let journal=self.bitcoin_reorg_evidence.entry(bridge_id).or_default();
   if journal.iter().any(|x|x.fingerprint==e.fingerprint){return Ok(());}
   journal.push(e);
