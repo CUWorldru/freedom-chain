@@ -59,7 +59,7 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
  let canonical_payload=p.encode().map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
  if canonical_payload != tx.payload { return Err("InvalidBridgeMintTransaction".into()); }
  let policy=s.bridge_security_policies.get(&p.message.bridge_id).ok_or_else(||"InvalidBridgeMintTransaction".to_string())?;
- let keys=s.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<freedom_primitives::Hash,[u8;32]>>();
+ let keys=s.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<freedom_primitives::Hash,[u8;32]>>();
  let expected=freedom_types::BridgeMintAuthorization::from_authenticated_message(&p.message,&p.deposit,&p.approvals,policy,&keys)
    .map_err(|_|"InvalidBridgeMintTransaction".to_string())?;
  if expected!=p.authorization{return Err("InvalidBridgeMintTransaction".into())}
@@ -612,6 +612,43 @@ mod m207_bitcoin_chain_id_tests {
  fn bitcoin_mainnet_uses_protocol_chain_id() {
    assert_eq!(freedom_types::BITCOIN_MAINNET_CHAIN_ID, 0x4254_4301);
    assert_ne!(freedom_types::BITCOIN_MAINNET_CHAIN_ID, 8332);
+ }
+}
+
+#[cfg(test)]
+mod m240_bridge_mint_authorization_validator_set_tests {
+ use super::*;
+
+ #[test]
+ fn bridge_mint_authorization_keys_are_resolved_from_active_validator_set() {
+   let mut state = test_state();
+   let active_id = [3u8;32];
+   let active_key = [4u8;32];
+   let registry_only_id = [5u8;32];
+   let registry_only_key = [6u8;32];
+   state.active_validator_set.insert(
+     active_id,
+     freedom_types::ValidatorSetEntry {
+       validator_id: active_id,
+       owner: [0u8;20],
+       consensus_key: active_key,
+       stake: 1,
+     }
+   );
+   state.validators.insert(
+     registry_only_id,
+     freedom_types::Validator {
+       validator_id: registry_only_id,
+       owner: [0u8;20],
+       consensus_key: registry_only_key,
+       stake: 1,
+     }
+   );
+   let keys = state.active_validator_set.iter()
+     .map(|(id,v)|(*id,v.consensus_key))
+     .collect::<std::collections::BTreeMap<freedom_primitives::Hash,[u8;32]>>();
+   assert!(keys.contains_key(&active_id));
+   assert!(!keys.contains_key(&registry_only_id));
  }
 }
 
