@@ -3029,3 +3029,17 @@ mod m245_authoritative_mint_message_integrity_tests {
         assert!(tampered.validate_hash());
     }
 }
+
+#[cfg(test)]
+mod m253_validator_certificate_finality_tests {
+    use super::*;
+
+    #[test]
+    fn activated_staking_without_validator_certificate_is_unready_for_finality() {
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![],
+        });
+        state.staking_activated=true;
+        assert!(state.validator_set_certificate.is_none());
+    }
+}
