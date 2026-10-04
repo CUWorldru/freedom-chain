@@ -246,6 +246,46 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m219_bitcoin_utxo_attestation_sequence_tests {
+    use super::*;
+
+    fn state_with_attestation(sequence: u64) -> ChainState {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bitcoin_canonical_tips.insert([7;32], freedom_types::BitcoinChainCheckpoint {
+            height: 100, block_hash: [8;32], chainwork: [9;32],
+        });
+        state.bitcoin_utxo_attestations.insert([7;32], freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id: [7;32],
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id: [6;32],
+            sequence,
+            bitcoin_tip_height: 100,
+            bitcoin_tip_hash: [8;32],
+            bitcoin_tip_chainwork: [9;32],
+            previous_utxo_root: [10;32],
+            accumulator_root: [11;32],
+            validator_ids: vec![],
+            signatures: vec![],
+            attestation_hash: [12;32],
+        });
+        state
+    }
+
+    #[test]
+    fn registration_rejects_sequence_gap() {
+        let mut state = state_with_attestation(4);
+        let attestation = state.bitcoin_utxo_attestations.get(&[7;32]).unwrap().clone();
+        let mut next = attestation.clone();
+        next.sequence = 6;
+        assert_eq!(
+            state.register_bitcoin_utxo_commitment_attestation(next),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+}
+
+#[cfg(test)]
 mod m215_cross_chain_finality_bitcoin_binding_tests {
     use super::*;
 
@@ -374,7 +414,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     if root!=commitment.previous_root { return Err(StateError::InvalidBridgeWithdrawal); }
   }
   if let Some(old)=self.bitcoin_utxo_attestations.get(&bridge_id) {
-    if attestation.sequence<=old.sequence { return Err(StateError::InvalidBridgeWithdrawal); }
+    if attestation.sequence!=old.sequence.saturating_add(1) { return Err(StateError::InvalidBridgeWithdrawal); }
   }
   let next=freedom_types::BitcoinChainCheckpoint{height:block.height,block_hash:block.header.block_hash(),chainwork:attestation.bitcoin_tip_chainwork};
   self.bitcoin_canonical_tips.insert(bridge_id,next);
@@ -389,7 +429,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   if attestation.bridge_id!=policy.bridge_id
     || attestation.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
     || !attestation.verify(canonical,&validators,policy.validator_quorum){return Err(StateError::InvalidBridgeWithdrawal);}
-  if let Some(previous)=self.bitcoin_utxo_attestations.get(&attestation.bridge_id){if attestation.sequence<=previous.sequence{return Err(StateError::InvalidBridgeWithdrawal);}}
+  if let Some(previous)=self.bitcoin_utxo_attestations.get(&attestation.bridge_id){if attestation.sequence!=previous.sequence.saturating_add(1){return Err(StateError::InvalidBridgeWithdrawal);}}
   self.bitcoin_utxo_attestations.insert(attestation.bridge_id,attestation);
   Ok(())
  }
