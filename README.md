@@ -1506,3 +1506,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 ### M243 — Direct Bitcoin mint helper hardened
 - The public `mint_bridge_authorized` state helper now independently enforces Bitcoin reorg safety, canonical-tip confirmations, and active-validator UTXO attestation before minting.
 - This closes the direct-helper path that could otherwise bypass the M242 transaction execution gate.
+
+
+### M244 — Bridge acceptance state-transition hardening
+- State `accept_bridge_message()` no longer creates a missing `Verified` status implicitly.
+- Acceptance now requires an existing `Verified` status and verifies that the supplied replay key matches the stored message replay key.
+- Added regression tests for missing-status promotion and replay-key mismatch.
