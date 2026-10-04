@@ -471,10 +471,16 @@ mod m234_bitcoin_apply_reorg_gate_tests {
   let mut state=ChainState::genesis(&genesis);
   let bridge=[7;32];
   state.bitcoin_canonical_tips.insert(bridge,freedom_types::BitcoinChainCheckpoint{height:100,block_hash:[8;32],chainwork:[9;32]});
-  state.bitcoin_reorg_evidence.insert(bridge,vec![freedom_types::BitcoinReorgEvidence{
-   bridge_id:bridge,old_tip_height:100,old_tip_hash:[8;32],new_tip_height:101,new_tip_hash:[13;32],
-   observed_at:1,fingerprint:[14;32],severity:freedom_types::BitcoinReorgSeverity::Critical,
-  }]);
+  let evidence=freedom_types::BitcoinReorgEvidence{
+   checkpoint_height:100,checkpoint_hash:[8;32],candidate_tip_height:101,candidate_tip_hash:[13;32],
+   candidate_chainwork:[15;32],fingerprint:[0;32],
+  };
+  let mut evidence=evidence;
+  evidence.fingerprint=evidence.compute_fingerprint();
+  state.bitcoin_reorg_evidence.insert(bridge,vec![evidence]);
+  state.bitcoin_reorg_policy.insert(bridge,freedom_types::BitcoinReorgPolicy{
+   elevated_confirmations:1,critical_chainwork_margin:[1;32],
+  });
   let block=freedom_types::BitcoinSpendScanBlock{height:101,header:freedom_types::BitcoinBlockHeader{version:1,previous_block_hash:[8;32],merkle_root:[0;32],timestamp:1,bits:0,nonce:0},raw_transactions:vec![]};
   let commitment=freedom_types::BitcoinUtxoBlockCommitment{block_height:101,block_hash:[13;32],previous_root:[10;32],next_root:[11;32],update_proof:freedom_types::BitcoinUtxoSmtUpdateProof{previous_root:[10;32],next_root:[11;32],steps:vec![]}};
   let attestation=freedom_types::BitcoinUtxoCommitmentAttestation{bridge_id:bridge,chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,policy_id:[6;32],sequence:1,bitcoin_tip_height:101,bitcoin_tip_hash:[13;32],bitcoin_tip_chainwork:[15;32],previous_utxo_root:[10;32],accumulator_root:[11;32],validator_ids:vec![],signatures:vec![],attestation_hash:[0;32]};
