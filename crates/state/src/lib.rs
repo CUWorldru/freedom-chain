@@ -240,7 +240,7 @@ impl ChainState {
     if envelope.previous_state_root==envelope.state_root{return Err(StateError::InvalidBridgeWithdrawal);}
   }
   if let Some(old)=self.bitcoin_utxo_attestations.get(&envelope.bridge_id) {
-    if envelope.sequence<=old.sequence{return Err(StateError::InvalidBridgeWithdrawal);}
+    if envelope.sequence<=old.sequence || envelope.previous_state_root!=old.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}
   }
   Ok(())
  }
@@ -269,6 +269,31 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
             previous_state_root: [11;32],
             proof_hash: [12;32],
         }
+    }
+
+    #[test]
+    fn state_finality_rejects_disconnected_previous_utxo_root() {
+        let mut state = state_with_bitcoin_finality();
+        state.bitcoin_utxo_attestations.insert([7;32], freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id:[7;32],
+            chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id:[6;32],
+            sequence:1,
+            bitcoin_tip_height:100,
+            bitcoin_tip_hash:[8;32],
+            bitcoin_tip_chainwork:[9;32],
+            previous_utxo_root:[10;32],
+            accumulator_root:[11;32],
+            validator_ids:vec![],
+            signatures:vec![],
+            attestation_hash:[12;32],
+        });
+        let mut e = envelope(freedom_types::BITCOIN_MAINNET_CHAIN_ID);
+        e.previous_state_root = [13;32];
+        assert_eq!(
+            state.validate_cross_chain_finality_envelope(&e),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
     }
 
     #[test]
