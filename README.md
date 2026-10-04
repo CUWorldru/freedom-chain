@@ -1490,3 +1490,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Runtime `BridgeMint` authorization now resolves validator keys from the active validator set rather than the full validator registry.
 - This closes the remaining authorization path where a validator removed from the active set could still authenticate a mint approval.
 - Added a regression test distinguishing active validators from registry-only validators.
+
+
+### M241 — State BridgeMint execution uses active validators
+- The state execution path for `BridgeMint` now resolves authorization keys from the active validator set, eliminating the full-registry bypass that remained below runtime admission.
+- Bitcoin BridgeMint execution also reuses the persisted Bitcoin bridge safety gate before authorization.
+- Added a regression test distinguishing active validators from registry-only validators.
