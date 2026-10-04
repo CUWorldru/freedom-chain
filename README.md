@@ -1441,3 +1441,8 @@ Withdrawal approval in `Threshold` and `QuorumAndThreshold` modes no longer trus
 ### M232 — Bitcoin UTXO attestation binds chain identity and chainwork
 
 The direct Bitcoin UTXO commitment-attestation validation path now requires the protocol Bitcoin chain ID and exact canonical-tip chainwork, in addition to the existing bridge, height, block-hash, root-continuity, commitment, and active-validator signature checks. This prevents a structurally valid attestation from being rebound to another chain or a weaker/different canonical chainwork value.
+
+
+### M233 — Bitcoin next-tip chainwork verification
+
+The attested Bitcoin UTXO commitment-application path now derives the submitted block's proof-of-work work from its header and requires the attested next-tip chainwork to equal the persisted canonical chainwork plus that block's work. This closes the gap between a valid PoW block and an independently supplied cumulative-chainwork value without comparing next-tip work directly to the previous canonical tip.
