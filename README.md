@@ -1671,6 +1671,11 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Added regression coverage for duplicate, unsorted and canonical vote sets.
 
 
+### M271 — Validator-history write boundary
+- Historical validator snapshots can no longer be partially created through `record_validator_set_epoch_hash()`.
+- The method is now validation-only and requires the full set snapshot, key snapshot, key hash, and cross-binding to already exist and agree.
+- Added regression coverage proving the legacy partial-write path cannot mutate authoritative history.
+
 ### M270 — Pre-mutation epoch transition integrity
 - The next epoch's validator snapshots are now derived entirely from the prospective active validator set before any epoch state is mutated.
 - A conflicting historical snapshot blocks the epoch transition without changing the epoch, active validator set, pending set, certificate, or epoch issuance.
