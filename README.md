@@ -1613,3 +1613,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Epoch activation now advances only when the computed epoch is strictly greater than the current epoch.
 - Repeated calls at the same block height cannot re-activate the validator set or mutate its history.
 - Regression tests cover activation hash correctness and history stability on repeated checks.
+
+
+### M261 — Certificate epoch binding
+- Activated-staking finality now requires the validator-set certificate to describe exactly the current epoch transition.
+- `from_epoch + 1 == to_epoch == state.epoch` is enforced.
+- A valid certificate from an older epoch cannot remain usable after the validator set advances.
