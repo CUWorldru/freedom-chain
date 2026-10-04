@@ -1739,7 +1739,13 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   for (k,v) in &self.validators{leaves.push(state_leaf(b"validator",k,&enc_validator(v)));}
   for (k,v) in &self.asset_registry{leaves.push(state_leaf(b"asset",k,&enc_asset(v)));} for (k,v) in &self.processed_bridge_messages{leaves.push(state_leaf(b"bridge_replay",k,&v.message_hash));} for (k,v) in &self.bridge_message_status{leaves.push(state_leaf(b"bridge_status",k,&[*v as u8]));} for (k,v) in &self.bridge_withdrawals{leaves.push(state_leaf(b"bridge_withdrawal",k,&serde_json::to_vec(v).expect("bridge withdrawal serialization")));} for (k,v) in &self.bridge_withdrawal_status{leaves.push(state_leaf(b"bridge_withdrawal_status",k,&[*v as u8]));} for (k,v) in &self.bridge_accounting{leaves.push(state_leaf(b"bridge_accounting",k,&serde_json::to_vec(v).expect("bridge accounting serialization")));} for (k,v) in &self.bridge_security_policies{leaves.push(state_leaf(b"bridge_security_policy",k,&serde_json::to_vec(v).expect("bridge security policy serialization")));} for (k,v) in &self.bridge_approval_sets{leaves.push(state_leaf(b"bridge_approval_set",k,&serde_json::to_vec(v).expect("bridge approval set serialization")));} for (k,v) in &self.bitcoin_canonical_tips{leaves.push(state_leaf(b"bitcoin_canonical_tip",k,&serde_json::to_vec(v).expect("bitcoin canonical tip serialization")));} for (k,v) in &self.bitcoin_reorg_recovery{leaves.push(state_leaf(b"bitcoin_reorg_recovery",k,&serde_json::to_vec(v).expect("bitcoin reorg recovery serialization")));} for (k,v) in &self.bitcoin_reorg_policy{leaves.push(state_leaf(b"bitcoin_reorg_policy",k,&serde_json::to_vec(v).expect("bitcoin reorg policy serialization")));} for (k,v) in &self.bitcoin_reorg_evidence{leaves.push(state_leaf(b"bitcoin_reorg_evidence",k,&serde_json::to_vec(v).expect("bitcoin reorg evidence serialization")));} for (k,v) in &self.bitcoin_checkpoints{leaves.push(state_leaf(b"bitcoin_checkpoint",k,&serde_json::to_vec(v).expect("bitcoin checkpoint serialization")));} for (k,v) in &self.bridge_nonce_registry{leaves.push(state_leaf(b"bridge_nonce_registry",k,&serde_json::to_vec(v).expect("bridge nonce registry serialization")));} for (k,v) in &self.bridge_pause_authorizations{leaves.push(state_leaf(b"bridge_pause_authorization",k,&serde_json::to_vec(v).expect("bridge pause authorization serialization")));} for (k,v) in &self.bridge_rate_limits{leaves.push(state_leaf(b"bridge_rate_limit",k,&serde_json::to_vec(v).expect("bridge rate limit serialization")));} for (k,v) in &self.bridge_deposit_replays{leaves.push(state_leaf(b"bridge_deposit_replay",k,&serde_json::to_vec(v).expect("bridge deposit replay serialization")));} for (k,v) in &self.bridge_mint_authorizations{leaves.push(state_leaf(b"bridge_mint_authorization",k,&serde_json::to_vec(v).expect("bridge mint authorization serialization")));} for (k,v) in &self.bridge_withdrawal_rate_limit_period{leaves.push(state_leaf(b"bridge_withdrawal_rate_limit_period",k,&serde_json::to_vec(v).expect("bridge withdrawal rate limit period serialization")));}
   for (k,v) in &self.unbonding{leaves.push(state_leaf(b"unbonding",k,&enc_unbonding(v)));}
-  for (k,v) in &self.active_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"active_validator",k,&x));} for (k,v) in &self.pending_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"pending_validator",k,&x));} if let Some(cert)=&self.validator_set_certificate{leaves.push(state_leaf(b"validator_set_certificate",&[0;1],&cert.hash()));}
+  for (k,v) in &self.active_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"active_validator",k,&x));} for (k,v) in &self.pending_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(state_leaf(b"pending_validator",k,&x));}
+  for (epoch,set_hash) in &self.validator_set_history{leaves.push(state_leaf(b"validator_set_history",&epoch.to_le_bytes(),set_hash));}
+  for (epoch,keys) in &self.validator_set_history_sets{let mut x=Vec::new();x.extend_from_slice(&(keys.len() as u64).to_le_bytes());for (id,key) in keys{x.extend_from_slice(id);x.extend_from_slice(key);}leaves.push(state_leaf(b"validator_set_history_keys",&epoch.to_le_bytes(),&x));}
+  for (epoch,key_hash) in &self.validator_set_history_key_hashes{leaves.push(state_leaf(b"validator_set_history_key_hash",&epoch.to_le_bytes(),key_hash));}
+  if let Some(cert)=&self.validator_set_certificate{leaves.push(state_leaf(b"validator_set_certificate",&[0;1],&cert.hash()));}
+  for (k,v) in &self.bitcoin_utxo_attestations{leaves.push(state_leaf(b"bitcoin_utxo_attestation",k,&serde_json::to_vec(v).expect("bitcoin utxo attestation serialization")));}
+  for (k,v) in &self.bitcoin_utxo_commitments{leaves.push(state_leaf(b"bitcoin_utxo_commitment",k,&serde_json::to_vec(v).expect("bitcoin utxo commitment serialization")));}
   for (k,v) in &self.evidence{leaves.push(state_leaf(b"evidence",k,&enc_evidence(v)));}
   for (k,v) in &self.slashed_evidence{leaves.push(state_leaf(b"slashed_evidence",k,&v.to_le_bytes()));}
   for (k,v) in &self.nodes{leaves.push(state_leaf(b"node",k,&enc_node(v)));}
@@ -3313,5 +3319,83 @@ mod m264_validator_snapshot_hash_tests {
         let mut bytes=Vec::new();
         for (id,key) in keys { bytes.extend_from_slice(id); bytes.extend_from_slice(key); }
         assert_eq!(state.validator_set_history_key_hashes.get(&0),Some(&freedom_primitives::hash_bytes(&bytes)));
+    }
+}
+
+
+#[cfg(test)]
+mod m265_state_commitment_finality_data_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![freedom_types::GenesisValidator {
+                validator_id: [1u8; 32],
+                owner: [2u8; 20],
+                consensus_key: [3u8; 32],
+                stake: 10,
+            }],
+        })
+    }
+
+    #[test]
+    fn validator_history_mutation_changes_state_root() {
+        let mut state = genesis();
+        let before = state.state_root();
+        state.validator_set_history.get_mut(&0).unwrap()[0] ^= 1;
+        assert_ne!(before, state.state_root());
+    }
+
+    #[test]
+    fn historical_validator_key_snapshot_mutation_changes_state_root() {
+        let mut state = genesis();
+        let before = state.state_root();
+        state.validator_set_history_sets.get_mut(&0).unwrap().get_mut(&[1u8; 32]).unwrap()[0] ^= 1;
+        assert_ne!(before, state.state_root());
+    }
+
+    #[test]
+    fn bitcoin_finality_attestation_mutation_changes_state_root() {
+        let mut state = genesis();
+        let bridge = [7u8; 32];
+        state.bitcoin_utxo_attestations.insert(bridge, freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id: bridge,
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id: [8u8; 32],
+            sequence: 1,
+            bitcoin_tip_height: 101,
+            bitcoin_tip_hash: [9u8; 32],
+            bitcoin_tip_chainwork: [10u8; 32],
+            previous_utxo_root: [11u8; 32],
+            accumulator_root: [12u8; 32],
+            validator_ids: vec![[1u8; 32]],
+            signatures: vec![],
+            attestation_hash: [13u8; 32],
+        });
+        let before = state.state_root();
+        state.bitcoin_utxo_attestations.get_mut(&bridge).unwrap().sequence = 2;
+        assert_ne!(before, state.state_root());
+    }
+
+    #[test]
+    fn bitcoin_finality_commitment_mutation_changes_state_root() {
+        let mut state = genesis();
+        let bridge = [14u8; 32];
+        state.bitcoin_utxo_commitments.insert(bridge, freedom_types::BitcoinUtxoBlockCommitment {
+            block_height: 101,
+            block_hash: [15u8; 32],
+            previous_root: [16u8; 32],
+            next_root: [17u8; 32],
+            update_proof: freedom_types::BitcoinUtxoSmtUpdateProof {
+                previous_root: [16u8; 32],
+                next_root: [17u8; 32],
+                steps: vec![],
+            },
+        });
+        let before = state.state_root();
+        state.bitcoin_utxo_commitments.get_mut(&bridge).unwrap().block_height = 102;
+        assert_ne!(before, state.state_root());
     }
 }
