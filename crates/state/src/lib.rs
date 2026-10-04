@@ -962,6 +962,9 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   let replay_key = message.replay_key();
   let stored = self.processed_bridge_messages.get(&replay_key)
     .ok_or(StateError::InvalidBridgeMessage)?;
+  if !stored.validate_hash() || stored.replay_key() != replay_key {
+    return Err(StateError::InvalidBridgeMessage);
+  }
   if stored != message {
     return Err(StateError::InvalidBridgeMessage);
   }
