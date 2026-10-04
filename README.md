@@ -1564,3 +1564,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Cross-chain finality no longer trusts the persisted Bitcoin attestation blindly.
 - Finality revalidates attestation structure/hash and verifies its validator signatures against the current active validator set and bridge quorum.
 - The attestation is also re-bound to the active bridge policy and finality envelope fields at the point of use.
+
+
+### M253 — Validator-set certificate readiness gate
+- When staking is activated, Bitcoin finality now requires a persisted validator-set certificate.
+- This prevents the finality path from treating an uncertified validator-set state as production-ready.
+- Existing genesis/non-staking behavior remains unchanged.
