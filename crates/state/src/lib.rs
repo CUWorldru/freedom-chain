@@ -272,7 +272,9 @@ impl ChainState {
     if self.staking_activated {
       let certificate=self.validator_set_certificate.as_ref()
         .ok_or(StateError::InvalidBridgeWithdrawal)?;
-      if !certificate.validate_transition_fields() {
+      if !certificate.validate_transition_fields()
+        || certificate.to_epoch != self.epoch
+        || certificate.from_epoch + 1 != self.epoch {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
       let active_set_hash = {
