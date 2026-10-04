@@ -236,6 +236,7 @@ impl ChainState {
   let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
   if commitment.block_height!=canonical.height+1
     || attestation.bridge_id!=bridge_id
+    || attestation.policy_id!=policy.bridge_id
     || attestation.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
     || attestation.bitcoin_tip_height!=commitment.block_height
     || attestation.bitcoin_tip_hash!=commitment.block_hash
@@ -278,6 +279,20 @@ impl ChainState {
   }
   if let Some(old)=self.bitcoin_utxo_attestations.get(&envelope.bridge_id) {
     if old.sequence==u64::MAX || envelope.sequence!=old.sequence+1 || envelope.previous_state_root!=old.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}
+  } else if envelope.sequence != 1 {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+  if envelope.proof_kind==freedom_types::CrossChainProofKind::BitcoinUtxo {
+    let attestation=self.bitcoin_utxo_attestations.get(&envelope.bridge_id)
+      .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    if attestation.sequence != envelope.sequence
+      || attestation.chain_id != envelope.chain_id
+      || attestation.bitcoin_tip_height != envelope.finalized_height
+      || attestation.bitcoin_tip_hash != envelope.finalized_hash
+      || attestation.previous_utxo_root != envelope.previous_state_root
+      || attestation.accumulator_root != envelope.state_root {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
   }
   Ok(())
  }
