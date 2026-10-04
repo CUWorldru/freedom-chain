@@ -86,7 +86,7 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
    // commitment itself mandatory without changing the BridgeMint payload ABI.
    let attestation=s.bitcoin_utxo_attestations.get(&p.message.bridge_id)
      .ok_or_else(||"BitcoinUtxoAttestationUnavailable".to_string())?;
-   let validator_keys=s.validators.iter()
+   let validator_keys=s.active_validator_set.iter()
      .map(|(id,v)|(*id,v.consensus_key))
      .collect::<std::collections::BTreeMap<freedom_primitives::Hash,[u8;32]>>();
    if attestation.bridge_id != p.message.bridge_id
