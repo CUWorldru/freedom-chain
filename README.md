@@ -1421,3 +1421,8 @@ Emergency pause authorization sets now require strictly ascending validator IDs 
 ## M228 — Withdrawal Policy Boundary Enforcement
 
 Bridge withdrawal approval now enforces the stored bridge security policy before quorum processing: the policy must be valid, the bridge must not be emergency-paused, the withdrawal amount must satisfy deposit/withdrawal limits, and the withdrawal nonce must meet the configured nonce floor. This closes an authorization-path bypass where a request could otherwise reach approval despite violating policy limits.
+
+
+## M229 — Withdrawal Request Policy Admission
+
+Bridge withdrawal requests are now checked against the stored security policy at creation time. Invalid policy state, emergency pause, amount limits, and nonce-floor violations are rejected before a withdrawal enters the request lifecycle, complementing the M228 approval-time enforcement.
