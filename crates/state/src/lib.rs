@@ -1484,6 +1484,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    if next_epoch<=self.epoch { return; }
    self.epoch=next_epoch;
    self.active_validator_set=self.pending_validator_set.clone();
+   self.validator_set_certificate=None;
    self.refresh_pending_validator_set();
    let mut bytes=Vec::new();
    for (id,entry) in &self.active_validator_set {
@@ -3240,5 +3241,24 @@ mod m261_certificate_epoch_binding_tests {
         };
         assert_eq!(cert.to_epoch,1);
         assert_ne!(cert.to_epoch,state.epoch);
+    }
+}
+
+
+#[cfg(test)]
+mod m262_certificate_lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn epoch_transition_clears_previous_validator_certificate() {
+        let genesis=freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] };
+        let mut state=ChainState::genesis(&genesis);
+        state.validator_set_certificate=Some(freedom_types::ValidatorSetCertificate {
+            from_epoch:0, to_epoch:1, previous_set_hash:[1u8;32], new_set_hash:[2u8;32], votes:vec![],
+        });
+        state.height=1000;
+        state.maybe_advance_epoch();
+        assert_eq!(state.epoch,1);
+        assert!(state.validator_set_certificate.is_none());
     }
 }
