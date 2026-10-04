@@ -1246,16 +1246,16 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   if payload.message.source_chain_id == freedom_types::BITCOIN_MAINNET_CHAIN_ID {
     self.validate_bitcoin_bridge_safety(payload.message.bridge_id)?;
     let canonical=self.bitcoin_canonical_tips.get(&payload.message.bridge_id)
-      .ok_or(StateError::BitcoinCanonicalTipUnavailable)?;
+      .ok_or(StateError::InvalidBridgeMessage)?;
     if !canonical.validate()
       || canonical.height < payload.deposit.block_or_slot
       || freedom_types::bitcoin_confirmations_at_tip(canonical.height,payload.deposit.block_or_slot)
-        .ok_or(StateError::BitcoinFinalityUnavailable)?
+        .ok_or(StateError::InvalidBridgeMessage)?
         < policy.min_external_confirmations {
-      return Err(StateError::BitcoinFinalityNotReached);
+      return Err(StateError::InvalidBridgeMessage);
     }
     let attestation=self.bitcoin_utxo_attestations.get(&payload.message.bridge_id)
-      .ok_or(StateError::BitcoinUtxoAttestationUnavailable)?;
+      .ok_or(StateError::InvalidBridgeMessage)?;
     if attestation.bridge_id != payload.message.bridge_id
       || attestation.chain_id != freedom_types::BITCOIN_MAINNET_CHAIN_ID
       || !attestation.verify(
@@ -1265,7 +1265,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
           .collect::<BTreeMap<Hash,[u8;32]>>(),
         policy.validator_quorum,
       ) {
-      return Err(StateError::BitcoinUtxoAttestationInvalid);
+      return Err(StateError::InvalidBridgeMessage);
     }
   }
   let keys=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
