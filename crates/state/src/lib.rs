@@ -3265,3 +3265,22 @@ mod m262_certificate_lifecycle_tests {
         assert!(state.validator_set_certificate.is_none());
     }
 }
+
+
+#[cfg(test)]
+mod m263_previous_set_certificate_tests {
+    use super::*;
+
+    #[test]
+    fn genesis_history_contains_previous_validator_keys() {
+        let genesis=freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
+            validators:vec![freedom_types::GenesisValidator {
+                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10,
+            }],
+        };
+        let state=ChainState::genesis(&genesis);
+        let keys=state.validator_set_history_sets.get(&0).unwrap();
+        assert_eq!(keys.get(&[1u8;32]),Some(&[3u8;32]));
+    }
+}
