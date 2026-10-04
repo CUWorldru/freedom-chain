@@ -1416,3 +1416,8 @@ Bridge withdrawal approval quorum authentication now uses the active validator s
 ## M227 — Bridge Pause Authorization Canonicalization
 
 Emergency pause authorization sets now require strictly ascending validator IDs before quorum authentication. Duplicate or non-canonical signer entries are rejected, keeping the persisted emergency-control evidence deterministic.
+
+
+## M228 — Withdrawal Policy Boundary Enforcement
+
+Bridge withdrawal approval now enforces the stored bridge security policy before quorum processing: the policy must be valid, the bridge must not be emergency-paused, the withdrawal amount must satisfy deposit/withdrawal limits, and the withdrawal nonce must meet the configured nonce floor. This closes an authorization-path bypass where a request could otherwise reach approval despite violating policy limits.
