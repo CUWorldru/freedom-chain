@@ -1496,3 +1496,8 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - The state execution path for `BridgeMint` now resolves authorization keys from the active validator set, eliminating the full-registry bypass that remained below runtime admission.
 - Bitcoin BridgeMint execution also reuses the persisted Bitcoin bridge safety gate before authorization.
 - Added a regression test distinguishing active validators from registry-only validators.
+
+
+### M242 — Consensus-state Bitcoin BridgeMint gate
+- State-level `BridgeMint` execution now enforces the persisted Bitcoin canonical tip, confirmation boundary, and quorum-authenticated UTXO attestation before minting Bitcoin-backed assets.
+- This mirrors the runtime admission boundary at the authoritative state execution layer, preventing a direct consensus execution path from bypassing Bitcoin finality checks.
