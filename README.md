@@ -1656,3 +1656,10 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Bound validator quorum policy to the exact historical validator-set size used to authenticate an epoch transition certificate.
 - Preserved the existing strict >2/3 quorum rule.
 - Added reusable policy validation and regression tests for validator-count mismatch and weakened quorum.
+
+
+### M268 — Historical validator-set binding
+- Added authoritative historical `ValidatorSetEntry` snapshots.
+- Bound historical key snapshots to the corresponding full validator-set hash.
+- Included historical validator entries in the canonical state root and finality-integrity checks.
+- Added regression tests for snapshot/hash mismatch and state-root mutation.
