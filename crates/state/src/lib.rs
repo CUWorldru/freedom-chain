@@ -269,6 +269,9 @@ impl ChainState {
     if envelope.previous_state_root==envelope.state_root{return Err(StateError::InvalidBridgeWithdrawal);}
     let attestation = self.bitcoin_utxo_attestations.get(&envelope.bridge_id)
       .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    if self.staking_activated && self.validator_set_certificate.is_none() {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
     let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
     if attestation.sequence != envelope.sequence
       || attestation.bridge_id != envelope.bridge_id
