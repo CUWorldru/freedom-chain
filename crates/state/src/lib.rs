@@ -2820,3 +2820,46 @@ mod m244_bridge_acceptance_boundary_tests {
         assert_eq!(state.bridge_message_status.get(&key), Some(&BridgeMessageStatus::Verified));
     }
 }
+
+
+#[cfg(test)]
+mod m245_authoritative_mint_message_integrity_tests {
+    use super::*;
+
+    fn message() -> BridgeMessage {
+        let mut message = BridgeMessage {
+            protocol_version: freedom_types::BRIDGE_MESSAGE_PROTOCOL_VERSION,
+            source_chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            destination_chain_id: freedom_primitives::CHAIN_ID,
+            bridge_id: [41u8; 32],
+            asset_id: [42u8; 32],
+            source_tx_hash: [43u8; 32],
+            source_event_index: 7,
+            nonce: 9,
+            amount: 100,
+            recipient: [44u8; 32],
+            message_hash: [0u8; 32],
+        };
+        message.message_hash = message.compute_hash();
+        message
+    }
+
+    #[test]
+    fn authoritative_mint_boundary_requires_valid_stored_message_hash() {
+        let mut stored = message();
+        assert!(stored.validate_hash());
+        stored.amount += 1;
+        assert!(!stored.validate_hash());
+    }
+
+    #[test]
+    fn authoritative_mint_boundary_requires_replay_key_to_match_message() {
+        let stored = message();
+        let key = stored.replay_key();
+        let mut tampered = stored.clone();
+        tampered.nonce += 1;
+        tampered.message_hash = tampered.compute_hash();
+        assert_ne!(tampered.replay_key(), key);
+        assert!(tampered.validate_hash());
+    }
+}
