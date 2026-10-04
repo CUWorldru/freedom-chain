@@ -616,6 +616,32 @@ mod m207_bitcoin_chain_id_tests {
 }
 
 #[cfg(test)]
+mod m239_bitcoin_mint_validator_set_tests {
+ use super::*;
+
+ #[test]
+ fn bitcoin_mint_attestation_keys_are_resolved_from_active_validator_set() {
+   let mut state = test_state();
+   let validator_id = [7u8;32];
+   let key = [9u8;32];
+   state.active_validator_set.insert(
+     validator_id,
+     freedom_types::ValidatorSetEntry {
+       validator_id,
+       owner: [0u8;20],
+       consensus_key: key,
+       stake: 1,
+     }
+   );
+   let keys = state.active_validator_set.iter()
+     .map(|(id,v)|(*id,v.consensus_key))
+     .collect::<std::collections::BTreeMap<freedom_primitives::Hash,[u8;32]>>();
+   assert_eq!(keys.get(&validator_id), Some(&key));
+   assert!(keys.get(&freedom_primitives::hash_bytes(&key)).is_none());
+ }
+}
+
+#[cfg(test)]
 mod m205_bitcoin_mint_admission_tests {
  use super::*;
 
