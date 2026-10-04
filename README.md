@@ -1446,3 +1446,8 @@ The direct Bitcoin UTXO commitment-attestation validation path now requires the 
 ### M233 — Bitcoin next-tip chainwork verification
 
 The attested Bitcoin UTXO commitment-application path now derives the submitted block's proof-of-work work from its header and requires the attested next-tip chainwork to equal the persisted canonical chainwork plus that block's work. This closes the gap between a valid PoW block and an independently supplied cumulative-chainwork value without comparing next-tip work directly to the previous canonical tip.
+
+
+### M234 — Reorg gate on Bitcoin UTXO commitment application
+
+The Bitcoin UTXO attested-commitment application path now passes through the existing Bitcoin reorg safety gate before advancing canonical state. If the latest reorg evidence is Elevated/Critical and has not been authenticated by the matching recovery record, the commitment cannot advance the canonical tip. This closes a direct state-path bypass of reorg recovery controls.
