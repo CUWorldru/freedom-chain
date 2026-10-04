@@ -183,6 +183,7 @@ impl ChainState {
   Ok(())
  }
  pub fn register_bitcoin_checkpoint(&mut self,bridge_id:Hash,checkpoint:BitcoinChainCheckpoint)->Result<(),StateError>{
+  self.bitcoin_bridge_gate(bridge_id)?;
   if bridge_id==[0;32]||!checkpoint.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if policy.bridge_id!=bridge_id||policy.min_external_confirmations==0{return Err(StateError::InvalidBridgeWithdrawal);}
@@ -214,7 +215,7 @@ impl ChainState {
   if journal.len()>freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT{let excess=journal.len()-freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT;journal.drain(0..excess);}
   Ok(())
  }
- pub fn persist_bitcoin_canonical_tip(&mut self,bridge_id:Hash,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;if !proof.verify(checkpoint){return Err(StateError::BitcoinReorgDetected);}let next=BitcoinChainCheckpoint{height:proof.tip_height,block_hash:proof.tip_hash,chainwork:proof.chainwork};if let Some(prev)=self.bitcoin_canonical_tips.get(&bridge_id){if next.height<prev.height||next.chainwork<prev.chainwork{return Err(StateError::BitcoinReorgDetected);}}self.bitcoin_canonical_tips.insert(bridge_id,next);Ok(())}
+ pub fn persist_bitcoin_canonical_tip(&mut self,bridge_id:Hash,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;if !proof.verify(checkpoint){return Err(StateError::BitcoinReorgDetected);}let next=BitcoinChainCheckpoint{height:proof.tip_height,block_hash:proof.tip_hash,chainwork:proof.chainwork};if let Some(prev)=self.bitcoin_canonical_tips.get(&bridge_id){if next.height<prev.height||next.chainwork<prev.chainwork{return Err(StateError::BitcoinReorgDetected);}}self.bitcoin_canonical_tips.insert(bridge_id,next);Ok(())}
  pub fn recover_bitcoin_reorg_with_tip(&mut self,recovery:freedom_types::BitcoinReorgRecovery,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{
   if !recovery.validate(){return Err(StateError::BitcoinReorgDetected);} if proof.tip_height!=recovery.canonical_height||proof.tip_hash!=recovery.canonical_block_hash||proof.chainwork!=recovery.canonical_chainwork{return Err(StateError::BitcoinReorgDetected);}
   let journal=self.bitcoin_reorg_evidence.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
@@ -2504,6 +2505,88 @@ mod m235_bitcoin_reorg_gate_validation_tests {
         };
         assert_eq!(
             state.validate_bitcoin_utxo_accumulator_proof([7; 32], &proof),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+}
+
+
+#[cfg(test)]
+mod m236_bitcoin_checkpoint_persistence_reorg_gate_tests {
+    use super::*;
+
+    fn state_with_unrecovered_reorg() -> (ChainState, Hash) {
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let bridge_id = [7; 32];
+        state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
+            bridge_id,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000,
+            max_withdrawal_amount: 1_000,
+            daily_limit: 1_000,
+            emergency_paused: false,
+            nonce_floor: 0,
+        }).unwrap();
+        state.bitcoin_checkpoints.insert(
+            bridge_id,
+            freedom_types::BitcoinChainCheckpoint {
+                height: 100,
+                block_hash: [8; 32],
+                chainwork: [9; 32],
+            },
+        );
+        state.bitcoin_reorg_policy.insert(
+            bridge_id,
+            freedom_types::BitcoinReorgPolicy {
+                elevated_confirmations: 1,
+                critical_chainwork_margin: [1; 32],
+            },
+        );
+        let mut evidence = freedom_types::BitcoinReorgEvidence {
+            checkpoint_height: 100,
+            checkpoint_hash: [8; 32],
+            candidate_tip_height: 101,
+            candidate_tip_hash: [10; 32],
+            candidate_chainwork: [11; 32],
+            fingerprint: [0; 32],
+        };
+        evidence.fingerprint = evidence.compute_fingerprint();
+        state.bitcoin_reorg_evidence.insert(bridge_id, vec![evidence]);
+        (state, bridge_id)
+    }
+
+    #[test]
+    fn checkpoint_registration_is_blocked_during_unrecovered_reorg() {
+        let (mut state, bridge_id) = state_with_unrecovered_reorg();
+        let checkpoint = freedom_types::BitcoinChainCheckpoint {
+            height: 101,
+            block_hash: [12; 32],
+            chainwork: [13; 32],
+        };
+        assert_eq!(
+            state.register_bitcoin_checkpoint(bridge_id, checkpoint),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+
+    #[test]
+    fn canonical_tip_persistence_is_blocked_during_unrecovered_reorg() {
+        let (mut state, bridge_id) = state_with_unrecovered_reorg();
+        let proof = freedom_types::BitcoinCanonicalTipProof {
+            start_height: 101,
+            headers: vec![],
+            tip_height: 101,
+            tip_hash: [12; 32],
+            chainwork: [13; 32],
+        };
+        assert_eq!(
+            state.persist_bitcoin_canonical_tip(bridge_id, &proof),
             Err(StateError::BitcoinReorgDetected)
         );
     }
