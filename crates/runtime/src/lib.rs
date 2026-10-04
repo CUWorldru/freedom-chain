@@ -69,7 +69,7 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
  // M205: Bitcoin bridge mints must be anchored to the state-held canonical tip.
  // M204 proves the chain/fork rules at verifier level; this admission gate makes
  // that finality boundary consensus-relevant for an actual BridgeMint tx.
- if p.message.source_chain_id == 8332 {
+ if p.message.source_chain_id == freedom_types::BITCOIN_MAINNET_CHAIN_ID {
    let canonical=s.bitcoin_canonical_tips.get(&p.message.bridge_id)
      .ok_or_else(||"BitcoinCanonicalTipUnavailable".to_string())?;
    if !canonical.validate()
@@ -602,6 +602,17 @@ pub fn build_next_block(
 }
 
 
+
+#[cfg(test)]
+mod m207_bitcoin_chain_id_tests {
+ use super::*;
+
+ #[test]
+ fn bitcoin_mainnet_uses_protocol_chain_id() {
+   assert_eq!(freedom_types::BITCOIN_MAINNET_CHAIN_ID, 0x4254_4301);
+   assert_ne!(freedom_types::BITCOIN_MAINNET_CHAIN_ID, 8332);
+ }
+}
 
 #[cfg(test)]
 mod m205_bitcoin_mint_admission_tests {
