@@ -1381,3 +1381,8 @@ This aligns the persisted Bitcoin UTXO attestation state machine with the strict
 ## M220 — Bitcoin Finality Sequence Overflow Safety
 
 Bitcoin UTXO attestation and cross-chain finality sequence transitions now reject the terminal u64::MAX state from being reused. Sequence progression requires a real +1 transition, preventing saturating arithmetic from accepting a repeated maximum sequence value.
+
+
+## M221 — Bitcoin UTXO Attestation Active-Validator Binding
+
+Bitcoin UTXO commitment attestations are now authenticated against the active validator set rather than the broader validator registry. Any attestation naming a signer outside the current active set is rejected before signature verification.
