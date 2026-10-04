@@ -2271,16 +2271,10 @@ impl BitcoinNetworkProfile {
 
     pub const MAINNET_CHECKPOINTS: &[(u64, Hash)] = &[
         (227_931, [
-            0x8b, 0x08, 0xc0, 0x59, 0x75, 0x6a, 0xdd, 0x15,
-            0x91, 0xb1, 0x7b, 0xa3, 0x9f, 0x0d, 0x3b, 0xa3,
-            0xfe, 0x9d, 0x0f, 0x2e, 0x42, 0x9a, 0x4b, 0x02,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ]),
-        (363_725, [
-            0x31, 0x50, 0x8b, 0x48, 0x91, 0x0a, 0x88, 0x1a,
-            0xf2, 0xc5, 0x7a, 0xe6, 0x46, 0x46, 0x3b, 0xc9,
-            0x8e, 0x8f, 0x0d, 0x4e, 0x1f, 0x0b, 0xc6, 0x08,
-            0x56, 0x75, 0x5d, 0x24, 0xb6, 0xc2, 0x04, 0x00,
+            0x8b, 0x08, 0x9c, 0x75, 0x6a, 0xdd, 0x15, 0x91,
+            0xb1, 0xd1, 0x7b, 0xab, 0x44, 0xbb, 0xa3, 0xfe,
+            0xd9, 0xe0, 0x2f, 0x94, 0x2a, 0xb4, 0x89, 0x4b,
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ]),
     ];
 
@@ -2386,24 +2380,55 @@ impl BitcoinChainContext {
         true
     }
 
-    fn verify_checkpoint_anchor(&self) -> bool {
+    fn verify_checkpoint_chain_link(&self) -> bool {
         if !self.profile.validate()
             || !self.checkpoint.validate()
             || self.checkpoint.profile != self.profile
-            || !self.profile.is_known_mainnet_checkpoint(
-                self.checkpoint.height,
-                self.checkpoint.block_hash,
-            )
             || self.checkpoint.height < self.base_start_height
             || self.checkpoint.height >= self.start_height
+            || self.base_headers.is_empty()
+            || self.headers.is_empty()
         {
             return false;
         }
+
         let checkpoint_index = (self.checkpoint.height - self.base_start_height) as usize;
         if checkpoint_index >= self.base_headers.len() {
             return false;
         }
-        self.base_headers[checkpoint_index].block_hash() == self.checkpoint.block_hash
+        if self.base_headers[checkpoint_index].block_hash() != self.checkpoint.block_hash {
+            return false;
+        }
+
+        for pair in self.base_headers[checkpoint_index..].windows(2) {
+            if pair[1].previous_block_hash != pair[0].block_hash() {
+                return false;
+            }
+        }
+
+        if self.base_headers.last().map(|h| h.block_hash())
+            != self.headers.first().and_then(|h| {
+                if h.previous_block_hash == [0u8; 32] {
+                    None
+                } else {
+                    Some(h.previous_block_hash)
+                }
+            })
+        {
+            return false;
+        }
+
+        for pair in self.headers.windows(2) {
+            if pair[1].previous_block_hash != pair[0].block_hash() {
+                return false;
+            }
+        }
+
+        self.headers.last().map(|h| h.block_hash()) == Some(self.tip_hash)
+    }
+
+    fn verify_checkpoint_anchor(&self) -> bool {
+        self.verify_checkpoint_chain_link()
     }
 
     pub fn cumulative_chainwork(&self) -> Result<BitcoinChainWork, BridgeAdapterError> {
