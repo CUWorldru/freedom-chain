@@ -1472,3 +1472,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Fixed Bitcoin reorg recovery quorum authentication to index active validator consensus keys by the authenticated `validator_id`, rather than by the raw consensus public key.
 - This aligns recovery signatures with the validator identity used by `BitcoinReorgRecovery` and prevents valid active-validator recovery signatures from being ignored.
 - Added a regression test confirming the recovery key map is keyed by validator ID.
+
+
+### M238 — Bitcoin BridgeMint reorg safety gate
+- Exposed the Bitcoin bridge safety gate to runtime admission and made Bitcoin `BridgeMint` transactions fail while an unresolved reorg is active.
+- This closes the runtime bypass where mint admission could read the persisted canonical tip directly without checking the reorg recovery gate.
+- Added a state regression test for the public Bitcoin bridge safety gate.
