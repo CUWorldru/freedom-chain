@@ -250,6 +250,35 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m227_pause_authorization_canonical_tests {
+    use super::*;
+
+    #[test]
+    fn pause_authorization_rejects_duplicate_validator_ids() {
+        let genesis = freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bridge_security_policies.insert([7;32], freedom_types::BridgeSecurityPolicy {
+            bridge_id:[7;32], approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:1, max_deposit_amount:1, max_withdrawal_amount:1,
+            daily_limit:1, emergency_paused:false, nonce_floor:0,
+        });
+        let auth = freedom_types::BridgePauseAuthorizationSet {
+            bridge_id:[7;32], nonce:1,
+            authorizations:vec![
+                freedom_types::BridgePauseAuthorization {
+                    bridge_id:[7;32], paused:true, nonce:1, validator_id:[13;32], signature:vec![0;64],
+                },
+                freedom_types::BridgePauseAuthorization {
+                    bridge_id:[7;32], paused:true, nonce:1, validator_id:[13;32], signature:vec![0;64],
+                },
+            ],
+        };
+        assert_eq!(state.apply_bridge_emergency_pause([7;32],auth), Err(StateError::InvalidBridgePauseAuthorization));
+    }
+}
+
+#[cfg(test)]
 mod m226_withdrawal_quorum_active_validator_tests {
     use super::*;
 
