@@ -271,6 +271,59 @@ impl ChainState {
   Ok(())
  }
 #[cfg(test)]
+mod m247_finality_commitment_binding_tests {
+    use super::*;
+
+    #[test]
+    fn bitcoin_finality_requires_matching_commitment_payload() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let bridge = [7u8;32];
+        state.bitcoin_canonical_tips.insert(bridge, freedom_types::BitcoinChainCheckpoint {
+            height: 100, block_hash: [8;32], chainwork: [9;32],
+        });
+        state.bridge_security_policies.insert(bridge, freedom_types::BridgeSecurityPolicy {
+            bridge_id: bridge,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1, validator_total: 1,
+            threshold_signers: 1, threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000,
+            max_withdrawal_amount: 1_000,
+            daily_limit: 1_000,
+            emergency_paused: false,
+            nonce_floor: 0,
+        });
+        let commitment = freedom_types::BitcoinUtxoBlockCommitment {
+            block_height: 101,
+            block_hash: [13;32],
+            previous_root: [10;32],
+            next_root: [11;32],
+            update_proof: freedom_types::BitcoinUtxoSmtUpdateProof {
+                previous_root: [10;32], next_root: [11;32], steps: vec![],
+            },
+        };
+        state.bitcoin_utxo_commitments.insert(bridge, commitment.clone());
+        let mut envelope = freedom_types::CrossChainFinalityEnvelope {
+            bridge_id: bridge,
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            sequence: 1,
+            proof_kind: freedom_types::CrossChainProofKind::BitcoinUtxo,
+            finalized_height: 101,
+            finalized_hash: [13;32],
+            state_root: [11;32],
+            previous_state_root: [10;32],
+            proof_hash: [0;32],
+        };
+        envelope.proof_hash = envelope.compute_hash();
+        assert_eq!(state.validate_cross_chain_finality_envelope(&envelope), Err(StateError::InvalidBridgeWithdrawal));
+    }
+}
+
+#[cfg(test)]
 mod m229_withdrawal_request_policy_tests {
     use super::*;
 
