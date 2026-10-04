@@ -358,6 +358,9 @@ impl ChainState {
       || attestation.policy_id != policy.bridge_id
       || attestation.bitcoin_tip_height != envelope.finalized_height
       || attestation.bitcoin_tip_hash != envelope.finalized_hash
+      || attestation.bitcoin_tip_height != canonical.height
+      || attestation.bitcoin_tip_hash != canonical.block_hash
+      || attestation.bitcoin_tip_chainwork != canonical.chainwork
       || attestation.previous_utxo_root != envelope.previous_state_root
       || attestation.accumulator_root != envelope.state_root
       || !attestation.validate_structure()
@@ -3813,5 +3816,44 @@ mod m272_finality_state_root_coverage_tests {
         roots.insert(state.state_root());
 
         assert_eq!(roots.len(),7);
+    }
+}
+
+
+#[cfg(test)]
+mod m273_bitcoin_chainwork_binding_tests {
+    use super::*;
+
+    #[test]
+    fn finality_path_requires_attestation_chainwork_to_match_canonical_tip() {
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID,
+            initial_supply:0,
+            validators:vec![],
+        });
+        let bridge=[91u8;32];
+        let canonical=freedom_types::BitcoinChainCheckpoint {
+            height:100,
+            block_hash:[92u8;32],
+            chainwork:[93u8;32],
+        };
+        state.bitcoin_canonical_tips.insert(bridge,canonical.clone());
+        let mut attestation=freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id:bridge,
+            chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id:bridge,
+            sequence:1,
+            bitcoin_tip_height:100,
+            bitcoin_tip_hash:canonical.block_hash,
+            bitcoin_tip_chainwork:[94u8;32],
+            previous_utxo_root:[95u8;32],
+            accumulator_root:[96u8;32],
+            validator_ids:vec![[1u8;32]],
+            signatures:vec![],
+            attestation_hash:[0u8;32],
+        };
+        attestation.attestation_hash=attestation.compute_hash();
+        assert_ne!(attestation.bitcoin_tip_chainwork,canonical.chainwork);
+        assert!(attestation.validate_structure());
     }
 }
