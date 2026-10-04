@@ -288,6 +288,14 @@ impl ChainState {
       if certificate.new_set_hash != active_set_hash {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
+      let previous_set_hash=self.validator_set_history.get(&certificate.from_epoch)
+        .ok_or(StateError::InvalidBridgeWithdrawal)?;
+      if *previous_set_hash != certificate.previous_set_hash {
+        return Err(StateError::InvalidBridgeWithdrawal);
+      }
+      if certificate.to_epoch != certificate.from_epoch + 1 {
+        return Err(StateError::InvalidBridgeWithdrawal);
+      }
       let certificate_keys=self.active_validator_set.iter()
         .map(|(id,v)|(*id,v.consensus_key))
         .collect::<std::collections::BTreeMap<_,_>>();
