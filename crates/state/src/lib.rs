@@ -980,6 +980,10 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   if withdrawal.destination_chain_id==freedom_primitives::CHAIN_ID || withdrawal.amount==0 || withdrawal.sender==[0;32] || withdrawal.recipient.is_empty() || !withdrawal.validate_hash() || withdrawal.compute_id()!=withdrawal.withdrawal_id { return Err(StateError::InvalidBridgeWithdrawal); }
   let asset=self.asset_registry.get(&withdrawal.asset_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if asset.asset_type!=AssetType::Bridged || asset.status!=AssetStatus::Active || asset.source_chain_id!=withdrawal.destination_chain_id || asset.bridge_id!=withdrawal.bridge_id { return Err(StateError::InvalidBridgeWithdrawal); }
+  let policy=self.bridge_security_policies.get(&withdrawal.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if !policy.validate() || !policy.withdrawal_allowed(withdrawal.amount) || !policy.nonce_allowed(withdrawal.nonce) {
+   return Err(StateError::InvalidBridgeWithdrawal);
+  }
   if self.bridge_withdrawals.contains_key(&withdrawal.withdrawal_id) { return Err(StateError::DuplicateBridgeWithdrawal); }
   let nonce_key=BridgeNonceKey{bridge_id:withdrawal.bridge_id,asset_id:withdrawal.asset_id,direction:BridgeDirection::Outbound}.key_hash();
   if self.bridge_nonce_registry.get(&nonce_key).map(|n|n.contains(&withdrawal.nonce)).unwrap_or(false){return Err(StateError::DuplicateBridgeNonce);}
