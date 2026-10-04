@@ -269,8 +269,27 @@ impl ChainState {
     if envelope.previous_state_root==envelope.state_root{return Err(StateError::InvalidBridgeWithdrawal);}
     let attestation = self.bitcoin_utxo_attestations.get(&envelope.bridge_id)
       .ok_or(StateError::InvalidBridgeWithdrawal)?;
-    if self.staking_activated && self.validator_set_certificate.is_none() {
-      return Err(StateError::InvalidBridgeWithdrawal);
+    if self.staking_activated {
+      let certificate=self.validator_set_certificate.as_ref()
+        .ok_or(StateError::InvalidBridgeWithdrawal)?;
+      if certificate.from_epoch >= certificate.to_epoch
+        || certificate.new_set_hash == [0;32]
+        || certificate.votes.is_empty() {
+        return Err(StateError::InvalidBridgeWithdrawal);
+      }
+      let active_set_hash = {
+        let mut bytes=Vec::new();
+        for (id, entry) in &self.active_validator_set {
+          bytes.extend_from_slice(id);
+          bytes.extend_from_slice(&entry.owner);
+          bytes.extend_from_slice(&entry.consensus_key);
+          bytes.extend_from_slice(&entry.stake.to_le_bytes());
+        }
+        freedom_primitives::hash_bytes(&bytes)
+      };
+      if certificate.new_set_hash != active_set_hash {
+        return Err(StateError::InvalidBridgeWithdrawal);
+      }
     }
     let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
     if attestation.sequence != envelope.sequence
