@@ -298,10 +298,9 @@ impl ChainState {
       if certificate.to_epoch != certificate.from_epoch + 1 {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
-      let certificate_keys=self.active_validator_set.iter()
-        .map(|(id,v)|(*id,v.consensus_key))
-        .collect::<std::collections::BTreeMap<_,_>>();
-      if certificate.authenticated_vote_count(&certificate_keys) < policy.validator_quorum {
+      let certificate_keys=self.validator_set_history_sets.get(&certificate.from_epoch)
+        .ok_or(StateError::InvalidBridgeWithdrawal)?;
+      if certificate.authenticated_vote_count(certificate_keys) < policy.validator_quorum {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
     }
