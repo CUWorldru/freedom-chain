@@ -210,7 +210,7 @@ impl ChainState {
   let policy=self.bitcoin_reorg_policy.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
   let mut ids=recovery.validator_ids.clone();ids.sort();ids.dedup();
   if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
-  let validators=self.validators.iter().map(|v|(v.consensus_key, v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
+  let validators=self.active_validator_set.values().map(|v|(v.consensus_key, v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
   if recovery.authenticated_count(&validators) < policy.validator_quorum{return Err(StateError::BitcoinReorgDetected);}
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
@@ -246,6 +246,34 @@ impl ChainState {
   }
   Ok(())
  }
+#[cfg(test)]
+mod m223_bitcoin_reorg_recovery_active_validator_tests {
+    use super::*;
+
+    #[test]
+    fn recovery_rejects_signer_outside_active_set() {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bitcoin_reorg_policy.insert([7;32], freedom_types::BitcoinReorgPolicy {
+            bridge_id:[7;32], max_reorg_depth:6, min_chainwork:[1;32], validator_quorum:1,
+        });
+        let recovery = freedom_types::BitcoinReorgRecovery {
+            bridge_id:[7;32], evidence_fingerprint:[8;32], nonce:1,
+            canonical_height:100, canonical_block_hash:[9;32],
+            canonical_chainwork:[10;32],
+            validator_ids:vec![[13;32]],
+            signatures:vec![freedom_types::BitcoinReorgRecoverySignature {
+                validator_id:[13;32], signature:vec![0;64],
+            }],
+            recovery_hash:[0;32],
+        };
+        assert_eq!(
+            state.register_bitcoin_reorg_recovery(recovery),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+}
+
 #[cfg(test)]
 mod m222_bitcoin_attestation_apply_active_validator_tests {
     use super::*;
