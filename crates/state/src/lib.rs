@@ -171,8 +171,11 @@ impl ChainState {
   if auth_set.bridge_id!=bridge_id||auth_set.nonce==0||auth_set.authorizations.is_empty(){return Err(StateError::InvalidBridgePauseAuthorization);}
   if let Some(previous)=self.bridge_pause_authorizations.get(&bridge_id){if auth_set.nonce<=previous.nonce{return Err(StateError::InvalidBridgePauseAuthorization);}}
   let keys=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
-  if auth_set.authenticated_count(&keys)<policy.validator_quorum{return Err(StateError::InvalidBridgePauseAuthorization);}
+  if auth_set.authorizations.windows(2).any(|pair| pair[0].validator_id >= pair[1].validator_id) {
+   return Err(StateError::InvalidBridgePauseAuthorization);
+  }
   if auth_set.authorizations.iter().any(|a|a.bridge_id!=bridge_id||a.nonce!=auth_set.nonce||!keys.contains_key(&a.validator_id)){return Err(StateError::InvalidBridgePauseAuthorization);}
+  if auth_set.authenticated_count(&keys)<policy.validator_quorum{return Err(StateError::InvalidBridgePauseAuthorization);}
   let mut next=policy.clone();next.emergency_paused=auth_set.authorizations.first().map(|a|a.paused).ok_or(StateError::InvalidBridgePauseAuthorization)?;
   if auth_set.authorizations.iter().any(|a|a.paused!=next.emergency_paused){return Err(StateError::InvalidBridgePauseAuthorization);}
   self.bridge_security_policies.insert(bridge_id,next);
