@@ -1461,3 +1461,8 @@ Bitcoin reorg evidence is now admitted only when it is bound to the bridge's per
 ## M235 — Bitcoin UTXO validation reorg gate
 
 Bitcoin UTXO commitment construction and validation paths now pass through the same reorg safety gate as canonical-commitment application. During an unresolved Elevated/Critical Bitcoin reorg, block commitments, compact UTXO transitions, accumulator proofs, spend-state proofs, and transition validation are rejected until matching recovery evidence is present. This prevents a reorged canonical tip from being used through a secondary proof-validation path.
+
+
+## M236 — Bitcoin checkpoint/canonical-tip persistence reorg gate
+
+Bitcoin checkpoint registration and canonical-tip persistence now pass through the reorg safety gate. An unresolved Elevated/Critical reorg therefore cannot be bypassed by replacing the checkpoint anchor or persisting a new canonical tip through a direct state-persistence path; recovery remains the explicit path for resolving the reorg.
