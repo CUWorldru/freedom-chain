@@ -1341,3 +1341,10 @@ This prevents a standalone proof path from introducing a disconnected UTXO state
 The Bitcoin UTXO cross-chain finality adapter now requires the protocol-defined BITCOIN_MAINNET_CHAIN_ID before accepting a Bitcoin finality envelope.
 
 Regression coverage verifies rejection of a non-Bitcoin chain ID and acceptance of the protocol Bitcoin chain ID. No envelope payload structure or prior M-module architecture was changed.
+
+
+## M215 — Bitcoin Cross-Chain Finality State Binding
+
+The state-level cross-chain finality validator now binds Bitcoin UTXO finality envelopes directly to the protocol-defined BITCOIN_MAINNET_CHAIN_ID. This removes the invalid dependency on a non-existent chain_id field in BridgeSecurityPolicy and keeps the state boundary consistent with the Bitcoin finality adapter.
+
+Regression coverage verifies rejection of a non-Bitcoin chain ID. No envelope payload structure or prior M-module architecture was changed.
