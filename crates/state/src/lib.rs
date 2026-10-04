@@ -3169,3 +3169,55 @@ mod m256_finality_sequence_tests {
         assert_ne!(stored.sequence,stored.sequence+1);
     }
 }
+
+
+#[cfg(test)]
+mod m260_validator_history_transition_tests {
+    use super::*;
+
+    fn set_hash(set:&std::collections::BTreeMap<Hash,freedom_types::ValidatorSetEntry>)->Hash {
+        let mut bytes=Vec::new();
+        for (id,entry) in set {
+            bytes.extend_from_slice(id);
+            bytes.extend_from_slice(&entry.owner);
+            bytes.extend_from_slice(&entry.consensus_key);
+            bytes.extend_from_slice(&entry.stake.to_le_bytes());
+        }
+        freedom_primitives::hash_bytes(&bytes)
+    }
+
+    #[test]
+    fn epoch_transition_records_hash_of_activated_set() {
+        let genesis=freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
+            validators:vec![freedom_types::GenesisValidator {
+                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10,
+            }],
+        };
+        let mut state=ChainState::genesis(&genesis);
+        state.height=1000;
+        state.pending_validator_set.insert([9u8;32],freedom_types::ValidatorSetEntry {
+            validator_id:[9u8;32], owner:[8u8;20], consensus_key:[7u8;32], stake:20,
+        });
+        state.maybe_advance_epoch();
+        assert_eq!(state.epoch,1);
+        assert_eq!(state.active_validator_set,state.pending_validator_set);
+        assert_eq!(state.validator_set_history.get(&1),Some(&set_hash(&state.active_validator_set)));
+    }
+
+    #[test]
+    fn history_is_stable_on_repeated_epoch_check() {
+        let genesis=freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
+            validators:vec![freedom_types::GenesisValidator {
+                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10,
+            }],
+        };
+        let mut state=ChainState::genesis(&genesis);
+        state.height=1000;
+        state.maybe_advance_epoch();
+        let first=state.validator_set_history.get(&1).copied();
+        state.maybe_advance_epoch();
+        assert_eq!(state.validator_set_history.get(&1).copied(),first);
+    }
+}
