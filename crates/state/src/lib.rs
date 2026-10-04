@@ -230,6 +230,18 @@ impl ChainState {
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
  }
+ fn validate_bitcoin_attestation_validator_set_binding(
+  &self,
+  attestation:&freedom_types::BitcoinUtxoCommitmentAttestation
+ )->Result<(),StateError>{
+  let expected_hash=self.validator_set_history.get(&self.epoch)
+    .copied().ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if attestation.validator_set_epoch!=self.epoch
+    || attestation.validator_set_hash!=expected_hash {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+  Ok(())
+ }
  pub fn validate_bitcoin_utxo_attestation_for_commitment(&self,bridge_id:Hash,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -301,6 +313,7 @@ impl ChainState {
     if envelope.previous_state_root==envelope.state_root{return Err(StateError::InvalidBridgeWithdrawal);}
     let attestation = self.bitcoin_utxo_attestations.get(&envelope.bridge_id)
       .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    self.validate_bitcoin_attestation_validator_set_binding(attestation)?;
     if self.staking_activated {
       let certificate=self.validator_set_certificate.as_ref()
         .ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -843,6 +856,8 @@ mod m221_bitcoin_attestation_active_validator_tests {
             bridge_id:[7;32],
             chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
             policy_id:[6;32],
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence:1,
             bitcoin_tip_height:100,
             bitcoin_tip_hash:[8;32],
@@ -964,6 +979,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
             bridge_id:[7;32],
             chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
             policy_id:[6;32],
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence:4,
             bitcoin_tip_height:100,
             bitcoin_tip_hash:[8;32],
@@ -990,6 +1007,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
             bridge_id:[7;32],
             chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
             policy_id:[6;32],
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence:1,
             bitcoin_tip_height:100,
             bitcoin_tip_hash:[8;32],
@@ -1078,6 +1097,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
 
  pub fn register_bitcoin_utxo_commitment_attestation(&mut self,attestation:freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
+  self.validate_bitcoin_attestation_validator_set_binding(&attestation)?;
   let policy=self.bridge_security_policies.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let canonical=self.bitcoin_canonical_tips.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if attestation.validator_ids.iter().any(|id| !self.active_validator_set.contains_key(id)){return Err(StateError::InvalidBridgeWithdrawal);}
@@ -2418,6 +2438,8 @@ mod m208_bitcoin_attestation_chain_id_tests {
             bridge_id: [7; 32],
             chain_id,
             policy_id: [6; 32],
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence: 1,
             bitcoin_tip_height: 100,
             bitcoin_tip_hash: [8; 32],
@@ -2732,6 +2754,8 @@ mod m213_bitcoin_utxo_root_continuity_tests {
             bridge_id: [7;32],
             chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
             policy_id: [6;32],
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence: 1,
             bitcoin_tip_height: 100,
             bitcoin_tip_hash: [8;32],
@@ -3269,6 +3293,8 @@ mod m256_finality_sequence_tests {
             bridge_id,
             chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
             policy_id:[8u8;32],
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence:1,
             bitcoin_tip_height:1,
             bitcoin_tip_hash:[7u8;32],
@@ -3456,6 +3482,8 @@ mod m265_state_commitment_finality_data_tests {
             bridge_id: bridge,
             chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
             policy_id: [8u8; 32],
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence: 1,
             bitcoin_tip_height: 101,
             bitcoin_tip_hash: [9u8; 32],
@@ -3775,6 +3803,8 @@ mod m272_finality_state_root_coverage_tests {
             bridge_id:bridge,
             chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
             policy_id:bridge,
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence:1,
             bitcoin_tip_height:101,
             bitcoin_tip_hash:[79u8;32],
@@ -3822,6 +3852,84 @@ mod m272_finality_state_root_coverage_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m276_bitcoin_attestation_epoch_binding_tests {
+    use super::*;
+
+    #[test]
+    fn attestation_must_bind_to_current_validator_set_epoch_and_hash() {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let state = ChainState::genesis(&genesis);
+        let expected_hash = *state.validator_set_history.get(&state.epoch).unwrap();
+
+        let mut attestation = freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id: [7;32],
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id: [6;32],
+            validator_set_epoch: state.epoch,
+            validator_set_hash: expected_hash,
+            sequence: 1,
+            bitcoin_tip_height: 1,
+            bitcoin_tip_hash: [8;32],
+            bitcoin_tip_chainwork: [9;32],
+            previous_utxo_root: [10;32],
+            accumulator_root: [11;32],
+            validator_ids: vec![[12;32]],
+            signatures: vec![freedom_types::BitcoinReorgRecoverySignature {
+                validator_id: [12;32],
+                signature: vec![0;64],
+            }],
+            attestation_hash: [0;32],
+        };
+
+        assert_eq!(
+            state.validate_bitcoin_attestation_validator_set_binding(&attestation),
+            Ok(())
+        );
+
+        attestation.validator_set_epoch = state.epoch + 1;
+        assert_eq!(
+            state.validate_bitcoin_attestation_validator_set_binding(&attestation),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+
+        attestation.validator_set_epoch = state.epoch;
+        attestation.validator_set_hash = [99;32];
+        assert_eq!(
+            state.validate_bitcoin_attestation_validator_set_binding(&attestation),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn changing_attestation_validator_set_binding_changes_signed_identity() {
+        let mut attestation = freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id: [7;32],
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            policy_id: [6;32],
+            validator_set_epoch: 0,
+            validator_set_hash: [1;32],
+            sequence: 1,
+            bitcoin_tip_height: 1,
+            bitcoin_tip_hash: [8;32],
+            bitcoin_tip_chainwork: [9;32],
+            previous_utxo_root: [10;32],
+            accumulator_root: [11;32],
+            validator_ids: vec![[12;32]],
+            signatures: vec![freedom_types::BitcoinReorgRecoverySignature {
+                validator_id: [12;32],
+                signature: vec![0;64],
+            }],
+            attestation_hash: [0;32],
+        };
+        attestation.attestation_hash = attestation.compute_hash();
+        let original = attestation.attestation_hash;
+        attestation.validator_set_epoch = 1;
+        attestation.attestation_hash = attestation.compute_hash();
+        assert_ne!(original, attestation.attestation_hash);
+    }
+}
 
 #[cfg(test)]
 mod m275_bitcoin_attestation_quorum_binding_tests {
@@ -3880,6 +3988,8 @@ mod m273_bitcoin_chainwork_binding_tests {
             bridge_id:bridge,
             chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
             policy_id:bridge,
+            validator_set_epoch:0,
+            validator_set_hash:[1;32],
             sequence:1,
             bitcoin_tip_height:100,
             bitcoin_tip_hash:canonical.block_hash,
