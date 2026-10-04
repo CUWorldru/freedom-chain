@@ -65,6 +65,30 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
  if expected!=p.authorization{return Err("InvalidBridgeMintTransaction".into())}
  if p.message.destination_chain_id!=CHAIN_ID{return Err("InvalidBridgeMintTransaction".into())}
  if !p.message.validate_hash() || !p.message.matches_verified_deposit(&p.deposit){return Err("InvalidBridgeMintTransaction".into())}
+
+ // M205: Bitcoin bridge mints must be anchored to the state-held canonical tip.
+ // M204 proves the chain/fork rules at verifier level; this admission gate makes
+ // that finality boundary consensus-relevant for an actual BridgeMint tx.
+ if p.message.source_chain_id == 8332 {
+   let canonical=s.bitcoin_canonical_tips.get(&p.message.bridge_id)
+     .ok_or_else(||"BitcoinCanonicalTipUnavailable".to_string())?;
+   if !canonical.validate()
+      || canonical.height < p.deposit.block_or_slot
+      || freedom_types::bitcoin_confirmations_at_tip(canonical.height,p.deposit.block_or_slot)
+           .ok_or_else(||"BitcoinFinalityUnavailable".to_string())?
+           < policy.min_external_confirmations {
+     return Err("BitcoinMintFinalityNotReached".into());
+   }
+   if let Some(attestation)=s.bitcoin_utxo_attestations.get(&p.message.bridge_id) {
+     if attestation.bitcoin_tip_height != canonical.height
+        || attestation.bitcoin_tip_hash != canonical.block_hash
+        || attestation.bitcoin_tip_chainwork != canonical.chainwork
+     {
+       return Err("BitcoinAttestationTipMismatch".into());
+     }
+   }
+ }
+
  if s.bridge_message_status.contains_key(&p.message.replay_key()){return Err("DuplicateBridgeMessage".into())}
  Ok(())
 }
@@ -571,6 +595,38 @@ pub fn build_next_block(
     })
 }
 
+
+
+#[cfg(test)]
+mod m205_bitcoin_mint_admission_tests {
+ use super::*;
+
+ #[test]
+ fn bitcoin_confirmation_gate_is_tip_based() {
+   assert_eq!(freedom_types::bitcoin_confirmations_at_tip(100, 95), Some(6));
+   assert_eq!(freedom_types::bitcoin_confirmations_at_tip(100, 101), None);
+ }
+
+ #[test]
+ fn bitcoin_tip_is_consensus_state_for_mint_admission() {
+   let mut state = test_state();
+   let bridge=[9u8;32];
+   state.bitcoin_canonical_tips.insert(
+     bridge,
+     freedom_types::BitcoinChainCheckpoint {
+       height: 100,
+       block_hash:[1;32],
+       chainwork:[2;32],
+     }
+   );
+   let tip=state.bitcoin_canonical_tips.get(&bridge).unwrap();
+   assert!(tip.validate());
+   assert_eq!(
+     freedom_types::bitcoin_confirmations_at_tip(tip.height, 95),
+     Some(6)
+   );
+ }
+}
 
 #[cfg(test)]
 mod m29_tests {
