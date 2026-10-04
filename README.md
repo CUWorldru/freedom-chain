@@ -1466,3 +1466,9 @@ Bitcoin UTXO commitment construction and validation paths now pass through the s
 ## M236 — Bitcoin checkpoint/canonical-tip persistence reorg gate
 
 Bitcoin checkpoint registration and canonical-tip persistence now pass through the reorg safety gate. An unresolved Elevated/Critical reorg therefore cannot be bypassed by replacing the checkpoint anchor or persisting a new canonical tip through a direct state-persistence path; recovery remains the explicit path for resolving the reorg.
+
+
+### M237 — Bitcoin reorg recovery validator identity binding
+- Fixed Bitcoin reorg recovery quorum authentication to index active validator consensus keys by the authenticated `validator_id`, rather than by the raw consensus public key.
+- This aligns recovery signatures with the validator identity used by `BitcoinReorgRecovery` and prevents valid active-validator recovery signatures from being ignored.
+- Added a regression test confirming the recovery key map is keyed by validator ID.
