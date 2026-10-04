@@ -1601,3 +1601,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Activated-staking finality now requires `previous_set_hash` to equal the authoritative hash recorded for the certificate's `from_epoch`.
 - Validator-set certificates are restricted to a single epoch transition (`to_epoch = from_epoch + 1`).
 - Added an append-only recorder for future validator-set transitions; conflicting historical hashes are rejected.
+
+
+### M259 — Validator history follows epoch transitions
+- Validator-set hashes are now recorded automatically when `maybe_advance_epoch()` activates the pending set.
+- The history writer cannot assign an arbitrary hash to the current epoch; it must match the actual active validator set.
+- Historical epochs cannot be rewritten, and future epochs cannot be pre-populated through the recorder.
