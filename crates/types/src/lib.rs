@@ -5940,26 +5940,28 @@ impl BitcoinUtxoCommitmentAttestation {
             && self.accumulator_root != [0;32]
             && !self.validator_ids.is_empty()
             && self.validator_ids.len() == self.signatures.len()
+            && self.validator_ids.windows(2).all(|pair| pair[0] < pair[1])
+            && self.validator_ids.iter().zip(self.signatures.iter())
+                .all(|(id,sig)| *id == sig.validator_id && *id != [0;32] && sig.signature.len() == 64)
             && self.attestation_hash == self.compute_hash()
     }
 
     pub fn authenticated_count(&self, validators: &std::collections::BTreeMap<Hash,[u8;32]>) -> u16 {
-        let mut seen=std::collections::BTreeSet::new();
-        for sig in &self.signatures {
-            if sig.signature.len()!=64 || seen.contains(&sig.validator_id) {
+        if !self.validate_structure() {
+            return 0;
+        }
+        let mut authenticated=std::collections::BTreeSet::new();
+        for (validator_id,sig) in self.validator_ids.iter().zip(self.signatures.iter()) {
+            let Some(key)=validators.get(validator_id) else { continue };
+            if freedom_primitives::hash_bytes(key) != *validator_id {
                 continue;
             }
-            if !self.validator_ids.contains(&sig.validator_id) {
-                continue;
-            }
-            if let Some(key)=validators.get(&sig.validator_id) {
-                let Ok(signature)=sig.signature.as_slice().try_into() else { continue };
-                if freedom_crypto::verify(key,&self.signing_bytes(),signature) {
-                    seen.insert(sig.validator_id);
-                }
+            let Ok(signature)=sig.signature.as_slice().try_into() else { continue };
+            if freedom_crypto::verify(key,&self.signing_bytes(),signature) {
+                authenticated.insert(*validator_id);
             }
         }
-        seen.len() as u16
+        authenticated.len() as u16
     }
 
     pub fn verify_signatures(
@@ -7137,6 +7139,76 @@ mod m267_quorum_binding_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m274_bitcoin_attestation_signer_set_tests {
+    use super::*;
+
+    fn attestation(ids: Vec<Hash>, signatures: Vec<BitcoinReorgRecoverySignature>) -> BitcoinUtxoCommitmentAttestation {
+        let mut a = BitcoinUtxoCommitmentAttestation {
+            bridge_id:[1;32],
+            chain_id:BITCOIN_MAINNET_CHAIN_ID,
+            policy_id:[2;32],
+            sequence:1,
+            bitcoin_tip_height:100,
+            bitcoin_tip_hash:[3;32],
+            bitcoin_tip_chainwork:[4;32],
+            previous_utxo_root:[5;32],
+            accumulator_root:[6;32],
+            validator_ids:ids,
+            signatures,
+            attestation_hash:[0;32],
+        };
+        a.attestation_hash=a.compute_hash();
+        a
+    }
+
+    fn signature_for(id: Hash) -> BitcoinReorgRecoverySignature {
+        BitcoinReorgRecoverySignature { validator_id:id, signature:vec![0;64] }
+    }
+
+    #[test]
+    fn structure_rejects_duplicate_or_unsorted_signer_ids() {
+        assert!(!attestation(
+            vec![[1;32],[1;32]],
+            vec![signature_for([1;32]),signature_for([1;32])]
+        ).validate_structure());
+
+        assert!(!attestation(
+            vec![[2;32],[1;32]],
+            vec![signature_for([2;32]),signature_for([1;32])]
+        ).validate_structure());
+    }
+
+    #[test]
+    fn structure_requires_positional_validator_id_binding() {
+        assert!(!attestation(
+            vec![[1;32],[2;32]],
+            vec![signature_for([2;32]),signature_for([1;32])]
+        ).validate_structure());
+    }
+
+    #[test]
+    fn authenticated_count_requires_validator_id_to_hash_to_consensus_key() {
+        let key=freedom_crypto::generate_keypair();
+        let public_key=key.verifying_key().to_bytes();
+        let validator_id=freedom_primitives::hash_bytes(&public_key);
+        let mut a=attestation(vec![validator_id],vec![BitcoinReorgRecoverySignature {
+            validator_id,
+            signature:vec![0;64],
+        }]);
+        let signature=freedom_crypto::sign(&key,&a.signing_bytes());
+        a.signatures[0].signature=signature.to_vec();
+        a.attestation_hash=a.compute_hash();
+
+        let mut validators=std::collections::BTreeMap::new();
+        validators.insert(validator_id,public_key);
+        assert_eq!(a.authenticated_count(&validators),1);
+
+        validators.insert(validator_id,[9;32]);
+        assert_eq!(a.authenticated_count(&validators),0);
+    }
+}
 
 #[cfg(test)]
 mod m269_validator_certificate_canonical_tests {
