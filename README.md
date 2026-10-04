@@ -1526,3 +1526,10 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - The hash preimage excludes `proof_hash` itself, avoiding a self-referential hash.
 - `validate_structure()` now rejects any mutated envelope carrying a stale or forged proof hash.
 - Added regression coverage for valid, mutated-payload, and mutated-hash envelopes.
+
+
+### M247 — Bitcoin finality commitment binding
+- Bitcoin UTXO finality envelopes are now bound to the stored UTXO block commitment.
+- The validator requires matching finalized height/hash and previous/next UTXO roots.
+- A structurally valid envelope can no longer select an unrelated Bitcoin block hash or state-root transition.
+- Added regression coverage for commitment binding.
