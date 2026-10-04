@@ -1327,3 +1327,10 @@ Regression coverage verifies that a proof carrying an unrelated chain ID is reje
 Bitcoin UTXO accumulator transition entry points now require the transition chain_id to equal the protocol-defined BITCOIN_MAINNET_CHAIN_ID. This applies to both block-bound transition validation and standalone accumulator transition validation.
 
 Regression coverage verifies rejection of an Ethereum chain ID at both Bitcoin-specific state boundaries. No transition payload structure or previous M-module architecture was changed.
+
+
+## M213 — Bitcoin UTXO Root Continuity
+
+Bitcoin UTXO block-commitment and compact-transition validators now bind each new previous_root to the persisted Bitcoin UTXO attestation accumulator_root when one exists.
+
+This prevents a standalone proof path from introducing a disconnected UTXO state root between authenticated Bitcoin commitments. Existing payload structures and prior M-module architecture remain unchanged.
