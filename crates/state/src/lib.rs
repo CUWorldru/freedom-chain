@@ -242,8 +242,19 @@ impl ChainState {
     || attestation.previous_utxo_root!=commitment.previous_root
     || attestation.accumulator_root!=commitment.next_root
     || !commitment.verify()
+    || !attestation.validate_structure()
     || !attestation.verify_signatures(&validators,policy.validator_quorum) {
       return Err(StateError::InvalidBridgeWithdrawal);
+  }
+  match self.bitcoin_utxo_attestations.get(&bridge_id) {
+    Some(previous) if previous.sequence == u64::MAX
+      || attestation.sequence != previous.sequence + 1 => {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    None if attestation.sequence != 1 => {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    _ => {}
   }
   Ok(())
  } pub fn validate_cross_chain_finality_envelope(&self,envelope:&freedom_types::CrossChainFinalityEnvelope)->Result<(),StateError>{
