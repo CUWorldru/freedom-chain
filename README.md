@@ -1512,3 +1512,10 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - State `accept_bridge_message()` no longer creates a missing `Verified` status implicitly.
 - Acceptance now requires an existing `Verified` status and verifies that the supplied replay key matches the stored message replay key.
 - Added regression tests for missing-status promotion and replay-key mismatch.
+
+
+### M245 — Authoritative bridge-message integrity revalidation
+- The authoritative mint boundary now revalidates the stored bridge message before minting.
+- The stored message must still have a valid message_hash and its replay key must recompute to the map key.
+- This prevents a stale Accepted state from being usable with a mutated or cryptographically inconsistent stored message.
+- Added regression coverage for message-hash integrity and replay-key recomputation.
