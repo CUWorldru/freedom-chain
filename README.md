@@ -1362,3 +1362,10 @@ Regression coverage verifies rejection of a finality envelope with an unrelated 
 Bitcoin UTXO cross-chain finality envelopes now require a contiguous sequence transition: when a prior authenticated attestation exists, the next envelope sequence must equal the previous sequence plus one.
 
 This prevents gaps in the authenticated finality state machine while preserving the existing envelope structure and all previous M-module invariants.
+
+
+## M218 — Bitcoin Finality Bridge Policy Integrity
+
+Bitcoin UTXO finality state validation now requires the referenced bridge security policy to be internally valid and bound to the same bridge_id as the finality envelope.
+
+This closes a policy-integrity gap without inventing a future-block hash check that the current envelope payload cannot substantiate.
