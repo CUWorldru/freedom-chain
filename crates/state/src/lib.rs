@@ -338,12 +338,15 @@ impl ChainState {
  }
  pub fn validate_bitcoin_utxo_accumulator_proof(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoAccumulatorProof)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  if proof.accumulator.bridge_id!=bridge_id||!proof.verify_membership(canonical){return Err(StateError::InvalidBridgeWithdrawal);}
+  if proof.accumulator.bridge_id!=bridge_id
+    || proof.accumulator.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
+    || !proof.verify_membership(canonical){return Err(StateError::InvalidBridgeWithdrawal);}
   Ok(())
  }
  pub fn validate_bitcoin_utxo_spend_state(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoSpendStateProof)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  if proof.utxo.bridge_id!=bridge_id||proof.utxo.chain_id==0{return Err(StateError::InvalidBridgeWithdrawal);}
+  if proof.utxo.bridge_id!=bridge_id
+    || proof.utxo.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID{return Err(StateError::InvalidBridgeWithdrawal);}
   proof.verify_against_canonical_tip(canonical).map_err(|_|StateError::InvalidBridgeWithdrawal)
  }
  pub fn bitcoin_canonical_tip(&self,bridge_id:Hash)->Option<&BitcoinChainCheckpoint>{self.bitcoin_canonical_tips.get(&bridge_id)}
@@ -608,7 +611,9 @@ impl ChainState {
   }
   self.bridge_withdrawal_status.insert(id,next); Ok(())
  }
- pub fn validate_bitcoin_utxo_deposit(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoProof,expected_tx:Hash,expected_vout:u32,expected_amount:u64,expected_script:&[u8])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id||!proof.validate_binding(expected_tx,expected_vout,expected_amount,expected_script)||!proof.validate_output_binding()||proof.merkle_branch.is_empty()||proof.computed_tx_hash()!=Some(proof.tx_hash)||bitcoin_merkle_root(proof.tx_hash,&proof.merkle_branch,proof.merkle_index)==[0;32]||proof.block_height>tip.height||proof.confirmations!=tip.height.saturating_sub(proof.block_height).saturating_add(1)||proof.confirmations<policy.min_external_confirmations{return Err(StateError::BitcoinReorgDetected);}Ok(())}
+ pub fn validate_bitcoin_utxo_deposit(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoProof,expected_tx:Hash,expected_vout:u32,expected_amount:u64,expected_script:&[u8])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id
+  || proof.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
+  || !proof.validate_binding(expected_tx,expected_vout,expected_amount,expected_script)||!proof.validate_output_binding()||proof.merkle_branch.is_empty()||proof.computed_tx_hash()!=Some(proof.tx_hash)||bitcoin_merkle_root(proof.tx_hash,&proof.merkle_branch,proof.merkle_index)==[0;32]||proof.block_height>tip.height||proof.confirmations!=tip.height.saturating_sub(proof.block_height).saturating_add(1)||proof.confirmations<policy.min_external_confirmations{return Err(StateError::BitcoinReorgDetected);}Ok(())}
  pub fn validate_bitcoin_deposit_against_canonical_tip(&self,bridge_id:Hash,proof:&freedom_types::BitcoinMerkleProof,headers:&[freedom_types::BitcoinBlockHeader])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id||!proof.verify_against_canonical_tip(policy.min_external_confirmations,tip,headers){return Err(StateError::BitcoinReorgDetected);}Ok(())}
  pub fn bitcoin_deposit_allowed(&self,bridge_id:Hash)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)}
  pub fn record_verified_external_lock(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
@@ -1459,5 +1464,84 @@ mod m208_bitcoin_attestation_chain_id_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert!(state.bitcoin_utxo_commitment_attestation([7; 32]).is_none());
+    }
+}
+
+#[cfg(test)]
+mod m209_bitcoin_state_proof_chain_id_tests {
+    use super::*;
+    use freedom_types::{BitcoinChainCheckpoint, BitcoinUtxoAccumulator, BitcoinUtxoAccumulatorProof, BitcoinUtxoProof, BitcoinUtxoSpendStateProof};
+
+    fn state_with_tip() -> ChainState {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.bitcoin_canonical_tips.insert(
+            [7; 32],
+            BitcoinChainCheckpoint { height: 100, block_hash: [8; 32], chainwork: [9; 32] },
+        );
+        state
+    }
+
+    #[test]
+    fn accumulator_membership_rejects_wrong_chain_id() {
+        let state = state_with_tip();
+        let proof = BitcoinUtxoAccumulatorProof {
+            accumulator: BitcoinUtxoAccumulator {
+                bridge_id: [7; 32],
+                chain_id: 1,
+                tip_height: 100,
+                tip_hash: [8; 32],
+                tip_chainwork: [9; 32],
+                root: [10; 32],
+                leaf_count: 1,
+            },
+            tx_hash: [11; 32],
+            vout: 0,
+            amount_sat: 1,
+            script_pubkey: vec![0; 1],
+            leaf_index: 0,
+            siblings: vec![],
+            exists: true,
+        };
+        assert_eq!(
+            state.validate_bitcoin_utxo_accumulator_proof([7; 32], &proof),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn spend_state_rejects_wrong_chain_id() {
+        let state = state_with_tip();
+        let proof = BitcoinUtxoSpendStateProof {
+            utxo: BitcoinUtxoProof {
+                bridge_id: [7; 32],
+                chain_id: 1,
+                tx_hash: [11; 32],
+                vout: 0,
+                amount_sat: 1,
+                script_pubkey: vec![0; 1],
+                block_height: 100,
+                confirmations: 1,
+                merkle_branch: vec![],
+                merkle_index: 0,
+            },
+            inclusion_header: freedom_types::BitcoinBlockHeader {
+                version: 1,
+                prev_block_hash: [0; 32],
+                merkle_root: [0; 32],
+                timestamp: 1,
+                bits: 0,
+                nonce: 0,
+            },
+            inclusion_block_transactions: vec![],
+            post_inclusion_blocks: vec![],
+            tip_height: 100,
+            tip_hash: [8; 32],
+            tip_chainwork: [9; 32],
+        };
+        assert_eq!(
+            state.validate_bitcoin_utxo_spend_state([7; 32], &proof),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
     }
 }
