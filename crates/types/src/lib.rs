@@ -7136,3 +7136,31 @@ mod m267_quorum_binding_tests {
         assert!(!policy(4,2).quorum_matches_validator_count(4));
     }
 }
+
+
+#[cfg(test)]
+mod m269_validator_certificate_canonical_tests {
+    use super::*;
+
+    fn vote(id: Hash) -> ValidatorSetVote {
+        ValidatorSetVote {
+            from_epoch: 0, to_epoch: 1, previous_set_hash: [7;32], new_set_hash: [8;32],
+            validator_id: id, signature: vec![0;64],
+        }
+    }
+
+    #[test]
+    fn certificate_rejects_duplicate_or_unsorted_validator_votes() {
+        let mut duplicate=ValidatorSetCertificate { from_epoch:0,to_epoch:1,previous_set_hash:[7;32],new_set_hash:[8;32],votes:vec![vote([1;32]),vote([1;32])] };
+        assert!(!duplicate.validate_transition_fields());
+        duplicate.votes=vec![vote([2;32]),vote([1;32])];
+        assert!(!duplicate.validate_transition_fields());
+    }
+
+    #[test]
+    fn certificate_accepts_strictly_canonical_vote_order() {
+        let certificate=ValidatorSetCertificate { from_epoch:0,to_epoch:1,previous_set_hash:[7;32],new_set_hash:[8;32],votes:vec![vote([1;32]),vote([2;32])] };
+        assert!(certificate.validate_transition_fields());
+        assert_ne!(certificate.hash(),[0;32]);
+    }
+}
