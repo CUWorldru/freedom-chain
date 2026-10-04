@@ -1451,3 +1451,8 @@ The attested Bitcoin UTXO commitment-application path now derives the submitted 
 ### M234 — Reorg gate on Bitcoin UTXO commitment application
 
 The Bitcoin UTXO attested-commitment application path now passes through the existing Bitcoin reorg safety gate before advancing canonical state. If the latest reorg evidence is Elevated/Critical and has not been authenticated by the matching recovery record, the commitment cannot advance the canonical tip. This closes a direct state-path bypass of reorg recovery controls.
+
+
+### M235 — Reorg evidence checkpoint binding
+
+Bitcoin reorg evidence is now admitted only when it is bound to the bridge's persisted checkpoint: matching checkpoint height/hash, a strictly later candidate tip, greater candidate chainwork, and a valid reorg policy are required. This prevents independently fabricated or stale reorg evidence from becoming an unlock target for recovery.
