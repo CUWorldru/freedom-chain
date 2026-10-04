@@ -1466,7 +1466,23 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn refresh_validator_set(&mut self){self.refresh_pending_validator_set();self.active_validator_set=self.pending_validator_set.clone();}
  pub fn maybe_advance_epoch(&mut self){
   self.release_mature_unbonding();
-  if self.epoch_length>0 && self.height>0 && self.height%self.epoch_length==0 {self.epoch=self.height/self.epoch_length;self.active_validator_set=self.pending_validator_set.clone();self.refresh_pending_validator_set();self.epoch_issuance=0;}
+  if self.epoch_length>0 && self.height>0 && self.height%self.epoch_length==0 {
+   self.epoch=self.height/self.epoch_length;
+   self.active_validator_set=self.pending_validator_set.clone();
+   self.refresh_pending_validator_set();
+   let mut bytes=Vec::new();
+   for (id,entry) in &self.active_validator_set {
+    bytes.extend_from_slice(id);
+    bytes.extend_from_slice(&entry.owner);
+    bytes.extend_from_slice(&entry.consensus_key);
+    bytes.extend_from_slice(&entry.stake.to_le_bytes());
+   }
+   let set_hash=freedom_primitives::hash_bytes(&bytes);
+   if self.validator_set_history.get(&self.epoch).copied()!=Some(set_hash) {
+    self.validator_set_history.insert(self.epoch,set_hash);
+   }
+   self.epoch_issuance=0;
+  }
  }
  fn release_mature_unbonding(&mut self){
   let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.release_height<=self.height).map(|(id,_)|*id).collect();
