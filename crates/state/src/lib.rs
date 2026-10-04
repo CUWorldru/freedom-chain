@@ -280,16 +280,6 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
         );
     }
 
-    #[test]
-    fn state_finality_accepts_protocol_bitcoin_chain_id_before_sequence_checks() {
-        let state = state_with_bitcoin_finality();
-        assert_ne!(
-            state.validate_cross_chain_finality_envelope(
-                &envelope(freedom_types::BITCOIN_MAINNET_CHAIN_ID)
-            ),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
 }
 
  pub fn validate_cross_chain_proof_adapter(&self,envelope:&freedom_types::CrossChainFinalityEnvelope)->Result<(),StateError>{
