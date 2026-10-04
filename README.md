@@ -1456,3 +1456,8 @@ The Bitcoin UTXO attested-commitment application path now passes through the exi
 ### M235 — Reorg evidence checkpoint binding
 
 Bitcoin reorg evidence is now admitted only when it is bound to the bridge's persisted checkpoint: matching checkpoint height/hash, a strictly later candidate tip, greater candidate chainwork, and a valid reorg policy are required. This prevents independently fabricated or stale reorg evidence from becoming an unlock target for recovery.
+
+
+## M235 — Bitcoin UTXO validation reorg gate
+
+Bitcoin UTXO commitment construction and validation paths now pass through the same reorg safety gate as canonical-commitment application. During an unresolved Elevated/Critical Bitcoin reorg, block commitments, compact UTXO transitions, accumulator proofs, spend-state proofs, and transition validation are rejected until matching recovery evidence is present. This prevents a reorged canonical tip from being used through a secondary proof-validation path.
