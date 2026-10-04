@@ -225,6 +225,8 @@ impl ChainState {
   let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
   if commitment.block_height!=canonical.height+1
     || attestation.bridge_id!=bridge_id
+    || attestation.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
+    || attestation.bitcoin_tip_chainwork!=canonical.chainwork
     || attestation.bitcoin_tip_height!=commitment.block_height
     || attestation.bitcoin_tip_hash!=commitment.block_hash
     || attestation.previous_utxo_root!=commitment.previous_root
@@ -459,6 +461,36 @@ mod m223_bitcoin_reorg_recovery_active_validator_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod m232_bitcoin_attestation_binding_tests {
+ use super::*;
+
+ fn setup()->(ChainState,freedom_types::BitcoinUtxoBlockCommitment,freedom_types::BitcoinUtxoCommitmentAttestation){
+  let genesis=freedom_types::Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![]};
+  let mut state=ChainState::genesis(&genesis);
+  state.bitcoin_canonical_tips.insert([7;32],freedom_types::BitcoinChainCheckpoint{height:100,block_hash:[8;32],chainwork:[9;32]});
+  state.bridge_security_policies.insert([7;32],freedom_types::BridgeSecurityPolicy{bridge_id:[7;32],approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000,max_withdrawal_amount:1_000,daily_limit:1_000,emergency_paused:false,nonce_floor:0});
+  let commitment=freedom_types::BitcoinUtxoBlockCommitment{block_height:101,block_hash:[13;32],previous_root:[10;32],next_root:[11;32],update_proof:freedom_types::BitcoinUtxoSmtUpdateProof{previous_root:[10;32],next_root:[11;32],steps:vec![]}};
+  let attestation=freedom_types::BitcoinUtxoCommitmentAttestation{bridge_id:[7;32],chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,policy_id:[6;32],sequence:1,bitcoin_tip_height:101,bitcoin_tip_hash:[13;32],bitcoin_tip_chainwork:[9;32],previous_utxo_root:[10;32],accumulator_root:[11;32],validator_ids:vec![],signatures:vec![],attestation_hash:[0;32]};
+  (state,commitment,attestation)
+ }
+
+ #[test]
+ fn commitment_validation_rejects_wrong_bitcoin_chain_id(){
+  let (state,commitment,mut attestation)=setup();
+  attestation.chain_id=1;
+  assert_eq!(state.validate_bitcoin_utxo_attestation_for_commitment([7;32],&commitment,&attestation),Err(StateError::InvalidBridgeWithdrawal));
+ }
+
+ #[test]
+ fn commitment_validation_rejects_wrong_tip_chainwork(){
+  let (state,commitment,mut attestation)=setup();
+  attestation.bitcoin_tip_chainwork=[12;32];
+  assert_eq!(state.validate_bitcoin_utxo_attestation_for_commitment([7;32],&commitment,&attestation),Err(StateError::InvalidBridgeWithdrawal));
+ }
+}
+
 
 #[cfg(test)]
 mod m222_bitcoin_attestation_apply_active_validator_tests {
