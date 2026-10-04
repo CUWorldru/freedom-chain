@@ -1391,3 +1391,8 @@ Bitcoin UTXO commitment attestations are now authenticated against the active va
 ## M222 — Bitcoin Commitment Attestation Active-Validator Binding
 
 The Bitcoin UTXO commitment-application path now enforces the same active-validator binding as attestation registration. Attestations naming validators outside the current active set are rejected before commitment application and signature quorum validation.
+
+
+## M223 — Bitcoin Reorg Recovery Active-Validator Binding
+
+Bitcoin reorg recovery quorum authentication now uses the active validator set. Signatures from validators that are no longer active cannot satisfy the recovery quorum, keeping reorg recovery aligned with the current bridge security authority.
