@@ -70,6 +70,7 @@ fn validate_bridge_mint_admission(s:&ChainState,tx:&Transaction)->Result<(),Stri
  // M204 proves the chain/fork rules at verifier level; this admission gate makes
  // that finality boundary consensus-relevant for an actual BridgeMint tx.
  if p.message.source_chain_id == freedom_types::BITCOIN_MAINNET_CHAIN_ID {
+   s.validate_bitcoin_bridge_safety(p.message.bridge_id).map_err(|_|"BitcoinReorgDetected".to_string())?;
    let canonical=s.bitcoin_canonical_tips.get(&p.message.bridge_id)
      .ok_or_else(||"BitcoinCanonicalTipUnavailable".to_string())?;
    if !canonical.validate()
