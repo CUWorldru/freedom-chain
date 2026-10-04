@@ -1594,3 +1594,10 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - Validator-set certificates now require a non-zero, distinct previous and new set hash.
 - Every vote must carry exactly the certificate's epoch and set-transition fields.
 - Finality rejects certificates whose votes describe a different transition than the certificate itself.
+
+
+### M258 — Authoritative validator-set history
+- Added epoch-indexed validator-set hash history, anchored at genesis epoch 0.
+- Activated-staking finality now requires `previous_set_hash` to equal the authoritative hash recorded for the certificate's `from_epoch`.
+- Validator-set certificates are restricted to a single epoch transition (`to_epoch = from_epoch + 1`).
+- Added an append-only recorder for future validator-set transitions; conflicting historical hashes are rejected.
