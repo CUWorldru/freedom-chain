@@ -189,7 +189,7 @@ impl ChainState {
  pub fn validate_bitcoin_checkpoint_binding(&self,bridge_id:Hash,descriptor:&freedom_types::BridgeAdapterDescriptor)->Result<(),StateError>{
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  if descriptor.bridge_id!=bridge_id||descriptor.chain_id==0||descriptor.kind!=freedom_types::BridgeAdapterKind::Bitcoin||descriptor.finality_model!=freedom_types::BridgeFinalityModel::Confirmations||descriptor.required_confirmations!=policy.min_external_confirmations||!checkpoint.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
+  if descriptor.bridge_id!=bridge_id||descriptor.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID||descriptor.kind!=freedom_types::BridgeAdapterKind::Bitcoin||descriptor.finality_model!=freedom_types::BridgeFinalityModel::Confirmations||descriptor.required_confirmations!=policy.min_external_confirmations||!checkpoint.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
   Ok(())
  }
  pub fn register_bitcoin_reorg_policy(&mut self,bridge_id:Hash,policy:freedom_types::BitcoinReorgPolicy)->Result<(),StateError>{if bridge_id==[0;32]||!policy.validate(){return Err(StateError::BitcoinReorgDetected);} self.bitcoin_reorg_policy.insert(bridge_id,policy);Ok(())}
@@ -1542,6 +1542,71 @@ mod m209_bitcoin_state_proof_chain_id_tests {
         assert_eq!(
             state.validate_bitcoin_utxo_spend_state([7; 32], &proof),
             Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+}
+
+
+#[cfg(test)]
+mod m210_bitcoin_adapter_chain_id_tests {
+    use super::*;
+    use freedom_types::{BitcoinChainCheckpoint, BridgeAdapterDescriptor, BridgeAdapterFinalityModel, BridgeAdapterKind};
+
+    fn state_with_bitcoin_bridge() -> ChainState {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
+            bridge_id: [7; 32],
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 6,
+            max_deposit_amount: 1_000_000,
+            max_withdrawal_amount: 1_000_000,
+            daily_limit: 1_000_000,
+            emergency_paused: false,
+            nonce_floor: 0,
+        }).unwrap();
+        state.register_bitcoin_checkpoint([7; 32], BitcoinChainCheckpoint {
+            height: 100,
+            block_hash: [8; 32],
+            chainwork: [9; 32],
+        }).unwrap();
+        state
+    }
+
+    fn descriptor(chain_id: u32) -> BridgeAdapterDescriptor {
+        BridgeAdapterDescriptor {
+            bridge_id: [7; 32],
+            chain_id,
+            kind: BridgeAdapterKind::Bitcoin,
+            finality_model: freedom_types::BridgeFinalityModel::Confirmations,
+            required_confirmations: 6,
+            native_asset: true,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn bitcoin_adapter_binding_rejects_non_bitcoin_chain_id() {
+        let state = state_with_bitcoin_bridge();
+        assert_eq!(
+            state.validate_bitcoin_checkpoint_binding([7; 32], &descriptor(1)),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn bitcoin_adapter_binding_accepts_protocol_bitcoin_chain_id() {
+        let state = state_with_bitcoin_bridge();
+        assert_eq!(
+            state.validate_bitcoin_checkpoint_binding(
+                [7; 32],
+                &descriptor(freedom_types::BITCOIN_MAINNET_CHAIN_ID)
+            ),
+            Ok(())
         );
     }
 }
