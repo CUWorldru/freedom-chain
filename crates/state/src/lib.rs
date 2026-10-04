@@ -771,6 +771,15 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if commitment.block_height!=block.height || commitment.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
   if attestation.bitcoin_tip_height!=block.height || attestation.bitcoin_tip_hash!=commitment.block_hash{return Err(StateError::InvalidBridgeWithdrawal);}
+  let block_work=freedom_types::bitcoin_header_work(&block.header).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let mut expected_chainwork=canonical.chainwork;
+  let mut carry=0u16;
+  for i in (0..32).rev() {
+    let sum=u16::from(expected_chainwork[i])+u16::from(block_work[i])+carry;
+    expected_chainwork[i]=(sum & 0xff) as u8;
+    carry=sum >> 8;
+  }
+  if carry!=0 || attestation.bitcoin_tip_chainwork!=expected_chainwork{return Err(StateError::InvalidBridgeWithdrawal);}
   self.validate_bitcoin_utxo_attestation_for_commitment(bridge_id,commitment,attestation)?;
   if let Some(root)=self.bitcoin_utxo_attestations.get(&bridge_id).map(|a|a.accumulator_root) {
     if root!=commitment.previous_root { return Err(StateError::InvalidBridgeWithdrawal); }
