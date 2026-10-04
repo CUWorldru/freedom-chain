@@ -1478,7 +1478,9 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn maybe_advance_epoch(&mut self){
   self.release_mature_unbonding();
   if self.epoch_length>0 && self.height>0 && self.height%self.epoch_length==0 {
-   self.epoch=self.height/self.epoch_length;
+   let next_epoch=self.height/self.epoch_length;
+   if next_epoch<=self.epoch { return; }
+   self.epoch=next_epoch;
    self.active_validator_set=self.pending_validator_set.clone();
    self.refresh_pending_validator_set();
    let mut bytes=Vec::new();
