@@ -1533,3 +1533,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - The validator requires matching finalized height/hash and previous/next UTXO roots.
 - A structurally valid envelope can no longer select an unrelated Bitcoin block hash or state-root transition.
 - Added regression coverage for commitment binding.
+
+
+### M248 — Bitcoin attestation sequence continuity
+- Standalone Bitcoin UTXO commitment-attestation validation now enforces canonical attestation structure before signature acceptance.
+- The attestation sequence must start at `1` and then advance exactly by one from the stored bridge attestation.
+- Sequence jumps and overflow are rejected, preventing a detached attestation from bypassing the registered attestation history.
