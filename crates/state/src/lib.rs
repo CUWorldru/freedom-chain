@@ -974,6 +974,28 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   if !policy.validate() || policy.emergency_paused || !policy.nonce_allowed(message.nonce) {
     return Err(StateError::InvalidBridgeMessage);
   }
+  if message.source_chain_id == freedom_types::BITCOIN_MAINNET_CHAIN_ID {
+    self.validate_bitcoin_bridge_safety(message.bridge_id)?;
+    let canonical = self.bitcoin_canonical_tips.get(&message.bridge_id)
+      .ok_or(StateError::InvalidBridgeMessage)?;
+    if !canonical.validate()
+      || canonical.height < deposit.block_or_slot
+      || freedom_types::bitcoin_confirmations_at_tip(canonical.height, deposit.block_or_slot)
+        .ok_or(StateError::InvalidBridgeMessage)?
+        < policy.min_external_confirmations {
+      return Err(StateError::InvalidBridgeMessage);
+    }
+    let attestation = self.bitcoin_utxo_attestations.get(&message.bridge_id)
+      .ok_or(StateError::InvalidBridgeMessage)?;
+    let validators = self.active_validator_set.iter()
+      .map(|(id, v)| (*id, v.consensus_key))
+      .collect::<BTreeMap<Hash, [u8; 32]>>();
+    if attestation.bridge_id != message.bridge_id
+      || attestation.chain_id != freedom_types::BITCOIN_MAINNET_CHAIN_ID
+      || !attestation.verify(canonical, &validators, policy.validator_quorum) {
+      return Err(StateError::InvalidBridgeMessage);
+    }
+  }
   if !authorization.validate()
     || !authorization.matches_message(message)
     || !authorization.replay_key_matches(deposit)
@@ -2699,5 +2721,52 @@ mod m241_bridge_mint_execution_security_tests {
 
         assert_eq!(keys.get(&active_id), Some(&active_key));
         assert!(!keys.contains_key(&registry_only_id));
+    }
+}
+
+
+#[cfg(test)]
+mod m243_direct_bridge_mint_bitcoin_gate_tests {
+    use super::*;
+
+    #[test]
+    fn direct_mint_helper_rejects_bitcoin_without_canonical_tip() {
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let bridge = [21u8; 32];
+        let policy = freedom_types::BridgeSecurityPolicy {
+            bridge_id: bridge,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000_000,
+            max_withdrawal_amount: 1_000_000,
+            daily_limit: 1_000_000,
+            emergency_paused: false,
+            nonce_floor: 1,
+        };
+        state.register_bridge_security_policy(policy).unwrap();
+        let message = freedom_types::BridgeMessage {
+            protocol_version: freedom_types::BRIDGE_MESSAGE_PROTOCOL_VERSION,
+            source_chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            destination_chain_id: freedom_primitives::CHAIN_ID,
+            bridge_id: bridge,
+            asset_id: [22u8; 32],
+            source_tx_hash: [23u8; 32],
+            source_event_index: 0,
+            nonce: 1,
+            amount: 1,
+            recipient: [24u8; 32],
+            message_hash: [0u8; 32],
+        };
+        assert!(state.bitcoin_canonical_tips.get(&bridge).is_none());
+        assert_eq!(
+            state.bitcoin_deposit_allowed(bridge),
+            Ok(())
+        );
+        assert!(state.validate_bridge_message(&message).is_err());
     }
 }
