@@ -1396,3 +1396,8 @@ The Bitcoin UTXO commitment-application path now enforces the same active-valida
 ## M223 — Bitcoin Reorg Recovery Active-Validator Binding
 
 Bitcoin reorg recovery quorum authentication now uses the active validator set. Signatures from validators that are no longer active cannot satisfy the recovery quorum, keeping reorg recovery aligned with the current bridge security authority.
+
+
+## M224 — Bridge Authorization Active-Validator Binding
+
+Bridge pause authorization and bridge mint/withdrawal approval quorum checks now authenticate against the active validator set rather than the broader validator registry. This prevents validators that are no longer active from satisfying current bridge security quorums.
