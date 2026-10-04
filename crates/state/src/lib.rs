@@ -3294,3 +3294,24 @@ mod m263_previous_set_certificate_tests {
         assert_eq!(keys.get(&[1u8;32]),Some(&[3u8;32]));
     }
 }
+
+
+#[cfg(test)]
+mod m264_validator_snapshot_hash_tests {
+    use super::*;
+
+    #[test]
+    fn genesis_validator_key_snapshot_has_authoritative_hash() {
+        let genesis=freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
+            validators:vec![freedom_types::GenesisValidator {
+                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10,
+            }],
+        };
+        let state=ChainState::genesis(&genesis);
+        let keys=state.validator_set_history_sets.get(&0).unwrap();
+        let mut bytes=Vec::new();
+        for (id,key) in keys { bytes.extend_from_slice(id); bytes.extend_from_slice(key); }
+        assert_eq!(state.validator_set_history_key_hashes.get(&0),Some(&freedom_primitives::hash_bytes(&bytes)));
+    }
+}
