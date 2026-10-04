@@ -1625,3 +1625,9 @@ Bitcoin checkpoint registration and canonical-tip persistence now pass through t
 - A validator-set certificate is now cleared atomically when a new epoch activates a new validator set.
 - Each epoch therefore starts without inheriting a stale certificate from the previous validator transition.
 - Finality must obtain a fresh certificate for the newly active epoch before staking-gated finality can proceed.
+
+
+### M263 — Previous-set certificate authentication
+- Validator-set certificate votes are now authenticated against the historical validator keys of `from_epoch`, not the newly activated set.
+- Epoch history retains validator-id → consensus-key snapshots alongside set hashes.
+- This closes the transition-authentication gap where a new validator set could otherwise sign its own activation certificate.
