@@ -19,13 +19,19 @@ pub fn collect_validator_set_certificate(
     if !freedom_consensus::stake_quorum_reached(state, unique.iter()) {
         return Err("validator set vote quorum not reached".into());
     }
-    Ok(freedom_types::ValidatorSetCertificate {
+    let certificate = freedom_types::ValidatorSetCertificate {
         from_epoch: state.epoch,
         to_epoch: state.epoch.saturating_add(1),
         previous_set_hash: freedom_consensus::validator_set_hash(&state.active_validator_set),
         new_set_hash: freedom_consensus::validator_set_hash(&state.pending_validator_set),
         votes: votes.to_vec(),
-    })
+    };
+    if let Some(existing) = state.validator_set_certificate.as_ref() {
+        if existing != &certificate {
+            return Err("validator set certificate is already committed for this transition".into());
+        }
+    }
+    Ok(certificate)
 }
 
 pub fn commit_validator_set_certificate(
@@ -1252,6 +1258,46 @@ mod m161_bridge_adapter_tests {
         };
         assert!(!descriptor.enabled);
         assert!(descriptor.validate());
+    }
+}
+
+
+#[cfg(test)]
+mod m315_validator_certificate_collection_tests {
+    use super::*;
+
+    #[test]
+    fn certificate_collection_rejects_conflicting_committed_certificate() {
+        let state = ChainState::genesis(&freedom_types::Genesis::default());
+        let existing = freedom_types::ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: [1; 32],
+            new_set_hash: [2; 32],
+            votes: vec![],
+        };
+        let mut state = state;
+        state.validator_set_certificate = Some(existing.clone());
+
+        let result = collect_validator_set_certificate(&state, &[]);
+        assert_eq!(result, Err("no validator set votes".into()));
+    }
+
+    #[test]
+    fn certificate_commitment_is_not_overwritable() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let existing = freedom_types::ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: [1; 32],
+            new_set_hash: [2; 32],
+            votes: vec![],
+        };
+        state.validator_set_certificate = Some(existing.clone());
+        assert_eq!(
+            commit_validator_set_certificate(&mut state, &existing),
+            Err("validator set certificate is already committed for this transition".into())
+        );
     }
 }
 
