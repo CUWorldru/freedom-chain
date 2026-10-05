@@ -1965,6 +1965,58 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   }
   self.active_validator_set=self.pending_validator_set.clone();
  }
+ fn validate_epoch_transition_certificate_binding(
+  &self,
+  next_epoch:u64,
+  next_validator_set:&BTreeMap<Hash,freedom_types::ValidatorSetEntry>,
+)->Result<(),StateError>{
+  if !self.staking_activated {
+    return Ok(());
+  }
+  let certificate=self.validator_set_certificate.as_ref()
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if !certificate.validate_transition_fields()
+    || certificate.from_epoch!=self.epoch
+    || certificate.to_epoch!=next_epoch {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
+  let hash_set=|set:&BTreeMap<Hash,freedom_types::ValidatorSetEntry>|{
+    let mut bytes=Vec::new();
+    bytes.extend_from_slice(b"FREEDOM-VALSET-HASH-V1");
+    for (id,entry) in set {
+      bytes.extend_from_slice(id);
+      bytes.extend_from_slice(&entry.owner);
+      bytes.extend_from_slice(&entry.consensus_key);
+      bytes.extend_from_slice(&entry.stake.to_le_bytes());
+    }
+    freedom_primitives::hash_bytes(&bytes)
+  };
+
+  if certificate.previous_set_hash!=hash_set(&self.active_validator_set)
+    || certificate.new_set_hash!=hash_set(next_validator_set) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
+  let previous_keys=self.validator_set_history_sets.get(&self.epoch)
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let previous_entries=self.validator_set_history_entries.get(&self.epoch)
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if previous_keys.is_empty()
+    || previous_entries.len()!=previous_keys.len()
+    || previous_entries.iter().any(|(id,entry)|
+      *id!=entry.validator_id
+        || previous_keys.get(id).copied()!=Some(entry.consensus_key)) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
+  let required_quorum=(previous_keys.len()*2)/3+1;
+  if certificate.authenticated_vote_count(previous_keys) as usize < required_quorum {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+  Ok(())
+ }
+
  pub fn maybe_advance_epoch(&mut self){
   self.release_mature_unbonding();
   if self.epoch_length>0 && self.height>0 && self.height%self.epoch_length==0 {
@@ -1994,6 +2046,14 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
      .collect::<BTreeMap<Hash,freedom_types::ValidatorSetEntry>>();
    if self.pending_validator_set!=canonical_next_validator_set { return; }
    let next_active_validator_set=canonical_next_validator_set;
+   // Once staking is active, the validator-set transition itself must be
+   // authorized by the cryptographically authenticated certificate. Runtime
+   // block admission validates the same certificate before it reaches state;
+   // this guard closes direct state-transition callers as well.
+   if self.validate_epoch_transition_certificate_binding(
+     next_epoch,
+     &next_active_validator_set,
+   ).is_err() { return; }
    let mut bytes=Vec::new();
    for (id,entry) in &next_active_validator_set {
     bytes.extend_from_slice(id);
@@ -6398,6 +6458,54 @@ mod m280_validator_set_transition_hardening_tests {
             101
         );
         assert!(!state.validator_set_history.contains_key(&1));
+    }
+
+    #[test]
+    fn staking_epoch_transition_requires_authenticated_certificate() {
+        let mut state = genesis();
+        state.staking_activated = true;
+        state.height = state.epoch_length;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 0);
+        assert!(!state.validator_set_history.contains_key(&1));
+    }
+
+    #[test]
+    fn staking_epoch_transition_rejects_certificate_for_wrong_transition() {
+        let mut state = genesis();
+        state.staking_activated = true;
+        state.height = state.epoch_length;
+
+        let key = [3u8; 32];
+        let validator_id = freedom_primitives::hash_bytes(&key);
+        let owner = [2u8; 32];
+        let mut vote = freedom_types::ValidatorSetVote {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: [0; 32],
+            new_set_hash: [9; 32],
+            validator_id,
+            signature: vec![],
+        };
+        vote.signature = freedom_crypto::sign(
+            &ed25519_dalek::SigningKey::from_bytes(&key),
+            &vote.signing_bytes(),
+        ).to_vec();
+        state.validator_set_certificate = Some(freedom_types::ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 2,
+            previous_set_hash: [1; 32],
+            new_set_hash: [2; 32],
+            votes: vec![vote],
+        });
+        state.height = state.epoch_length;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 0);
+        assert_eq!(state.active_validator_set.get(&[1u8; 32]).unwrap().owner, owner);
     }
 }
 
