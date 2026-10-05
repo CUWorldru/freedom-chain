@@ -235,7 +235,8 @@ impl ChainState {
   // Validator::validator_id would otherwise be silently normalized by the
   // epoch candidate builder and could create an identity fork.
   for (id,validator) in &self.validators {
-    if *id != validator.validator_id {
+    if *id != validator.validator_id
+      || freedom_primitives::hash_bytes(&validator.consensus_key) != *id {
       return Err(StateError::InvalidBridgeWithdrawal);
     }
   }
@@ -4128,6 +4129,62 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m284_validator_consensus_identity_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: freedom_primitives::hash_bytes(&[3u8; 32]),
+                    owner: [2u8; 32],
+                    consensus_key: [3u8; 32],
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn validator_identity_must_bind_to_consensus_key() {
+        let mut state = genesis();
+        state.validators.get_mut(&freedom_primitives::hash_bytes(&[3u8; 32])).unwrap().consensus_key = [4u8; 32];
+
+        assert_eq!(
+            state.validate_validator_records_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn epoch_transition_rejects_consensus_key_identity_drift() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        state.validators.get_mut(&id).unwrap().consensus_key = [4u8; 32];
+        state.refresh_pending_validator_set();
+        state.height = state.epoch_length;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 0);
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn canonical_validator_consensus_identity_passes() {
+        let state = genesis();
+
+        assert_eq!(state.validate_validator_records_integrity(), Ok(()));
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
     }
 }
 
