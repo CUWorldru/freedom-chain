@@ -868,7 +868,11 @@ fn replay_persisted_blocks(
     blocks: &[freedom_types::Block],
 ) -> Result<(), String> {
     for block in blocks {
-        if block.header.height != state.height + 1 {
+        let expected_height = state
+            .height
+            .checked_add(1)
+            .ok_or_else(|| "stored chain height exceeds u64::MAX".to_string())?;
+        if block.header.height != expected_height {
             return Err(format!("stored chain height gap at {}", block.header.height));
         }
         if block.header.previous_hash != state.last_block_hash {
