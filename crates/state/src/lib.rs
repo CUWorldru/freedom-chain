@@ -288,6 +288,17 @@ impl ChainState {
   }
   Ok(())
  } pub fn validate_finality_state_integrity(&self)->Result<(),StateError>{
+  // Historical validator-set snapshots are authoritative and must form a
+  // contiguous chain from genesis through the current epoch. A missing
+  // historical epoch must never make an attestation history look valid.
+  for epoch in 0..=self.epoch {
+   if !self.validator_set_history.contains_key(&epoch)
+     || !self.validator_set_history_sets.contains_key(&epoch)
+     || !self.validator_set_history_entries.contains_key(&epoch)
+     || !self.validator_set_history_key_hashes.contains_key(&epoch) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
   for (epoch, keys) in &self.validator_set_history_sets {
    let mut bytes=Vec::new();
    for (id,key) in keys { bytes.extend_from_slice(id); bytes.extend_from_slice(key); }
@@ -3972,6 +3983,55 @@ mod m276_bitcoin_attestation_epoch_binding_tests {
         attestation.validator_set_epoch = 1;
         attestation.attestation_hash = attestation.compute_hash();
         assert_ne!(original, attestation.attestation_hash);
+    }
+}
+
+#[cfg(test)]
+mod m278_validator_history_continuity_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![freedom_types::GenesisValidator {
+                validator_id: [1u8; 32],
+                owner: [2u8; 32],
+                consensus_key: [3u8; 32],
+                stake: 100,
+            }],
+        })
+    }
+
+    #[test]
+    fn finality_integrity_rejects_missing_intermediate_epoch_snapshot() {
+        let mut state = genesis();
+        state.epoch = 2;
+
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn finality_integrity_accepts_complete_genesis_history() {
+        let state = genesis();
+        assert_eq!(state.epoch, 0);
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
+    }
+
+    #[test]
+    fn epoch_history_hash_recording_cannot_rewrite_existing_authoritative_hash() {
+        let mut state = genesis();
+        let original = state.validator_set_history.clone();
+        let replacement = [99u8; 32];
+
+        assert_eq!(
+            state.record_validator_set_epoch_hash(0, replacement),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+        assert_eq!(state.validator_set_history, original);
     }
 }
 
