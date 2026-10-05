@@ -295,8 +295,13 @@ fn build_local_proposal(
     round: u64,
 ) -> Result<(freedom_types::BlockProposal, freedom_types::Block), Box<dyn std::error::Error>> {
     let mempool = Mempool::new();
-    let epoch = if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 {
-        state.epoch.saturating_add(1)
+    let next_height = state.height
+        .checked_add(1)
+        .ok_or_else(|| "block height exceeds u64::MAX".to_string())?;
+    let epoch = if state.epoch_length > 0 && next_height % state.epoch_length == 0 {
+        state.epoch
+            .checked_add(1)
+            .ok_or_else(|| "epoch transition exceeds u64::MAX".to_string())?
     } else {
         state.epoch
     };
