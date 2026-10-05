@@ -1424,15 +1424,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Ok(cert) = freedom_runtime::collect_validator_set_certificate(&state, &votes) {
                                         if valset_certificate_broadcasted != Some(cert.hash()) {
                                             valset_certificate_broadcasted = Some(cert.hash());
-                                            state.validator_set_certificate = Some(cert.clone());
+                                            freedom_runtime::commit_validator_set_certificate(&mut state, &cert)?;
                                             publish(&mut swarm, &NetworkMessage::ValidatorSetCertificate(cert))?;
                                         }
                                     }
                                 }
                                 Ok(NetworkMessage::ValidatorSetCertificate(cert)) => {
                                     if !protocol.remember_message(cert.hash()) { continue; }
-                                    if freedom_consensus::validate_validator_set_certificate(&state, &cert).is_ok() {
-                                        state.validator_set_certificate = Some(cert);
+                                    if freedom_runtime::commit_validator_set_certificate(&mut state, &cert).is_ok() {
+                                        // Certificate is committed only through the runtime admission boundary.
                                     }
                                 }
                                 Ok(NetworkMessage::SyncRequest(_req)) => {
