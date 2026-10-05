@@ -1145,8 +1145,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     match request {
                                         SyncWireRequest::Blocks(req) => {
                                             let latest = state.height;
-                                            let to = req.to_height.min(latest).min(req.from_height.saturating_add(freedom_network::MAX_SYNC_BLOCKS.saturating_sub(1)));
-                                            if freedom_network::validate_sync_request(&req).is_ok() && req.from_height <= to {
+                                            if freedom_network::validate_sync_request(&req).is_err() {
+                                                continue;
+                                            }
+                                            let to = req.to_height.min(latest);
+                                            if req.from_height <= to {
                                                 if let Ok(blocks) = store.range(req.from_height, to) {
                                                     let response = SyncWireResponse::Blocks(SyncResponse { request_id: req.request_id, from_height: req.from_height, blocks });
                                                     let _ = swarm.behaviour_mut().sync.send_response(channel, response);
