@@ -348,6 +348,25 @@ impl ChainState {
   Ok(())
  }
 
+ fn validate_slashed_evidence_integrity(&self)->Result<(),StateError>{
+  for (evidence_hash,amount) in &self.slashed_evidence {
+    if *evidence_hash == [0;32] || *amount == 0 {
+      return Err(StateError::InvalidEvidence);
+    }
+    let evidence=self.evidence.get(evidence_hash)
+      .ok_or(StateError::InvalidEvidence)?;
+    let validator=self.validators.get(&evidence.validator_id)
+      .ok_or(StateError::InvalidEvidence)?;
+    let total=validator.stake.checked_add(validator.unbonding_stake)
+      .ok_or(StateError::InvalidEvidence)?;
+    let expected=self.deterministic_slash_amount(&evidence.kind,total);
+    if *amount != expected || *amount > total {
+      return Err(StateError::InvalidEvidence);
+    }
+  }
+  Ok(())
+ }
+
  fn validate_current_validator_set_history_binding(&self)->Result<(),StateError>{
   let epoch=self.epoch;
   let expected_set_hash=self.validator_set_history.get(&epoch)
@@ -485,6 +504,7 @@ impl ChainState {
   self.validate_validator_records_integrity()?;
   self.validate_unbonding_integrity()?;
   self.validate_evidence_integrity()?;
+  self.validate_slashed_evidence_integrity()?;
   self.validate_current_validator_set_history_binding()?;
   for (bridge_id,attestation) in &self.bitcoin_utxo_attestations {
    if *bridge_id==[0;32] || attestation.bridge_id!=*bridge_id || !attestation.validate_structure() { return Err(StateError::InvalidBridgeWithdrawal); }
@@ -4251,6 +4271,97 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m290_slashed_evidence_integrity_hardening_tests {
+    use super::*;
+
+    #[test]
+    fn orphan_slashed_evidence_is_rejected() {
+        let state = ChainState::genesis(&freedom_types::Genesis::default());
+        let mut state = state;
+        state.slashed_evidence.insert([7u8; 32], 1);
+
+        assert_eq!(
+            state.validate_slashed_evidence_integrity(),
+            Err(StateError::InvalidEvidence)
+        );
+    }
+
+    #[test]
+    fn zero_slash_amount_is_rejected() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let key = [3u8; 32];
+        let id = freedom_primitives::hash_bytes(&key);
+        let owner = [2u8; 32];
+        state.validators.insert(
+            id,
+            freedom_types::Validator {
+                validator_id: id,
+                owner,
+                consensus_key: key,
+                stake: 100,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            },
+        );
+        let mut evidence = freedom_types::EquivocationEvidence {
+            kind: freedom_types::EquivocationKind::DoubleProposal,
+            height: 0,
+            round: 0,
+            validator_id: id,
+            first: vec![1],
+            second: vec![2],
+            evidence_hash: [0; 32],
+        };
+        evidence.evidence_hash = freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash, evidence.clone());
+        state.slashed_evidence.insert(evidence.evidence_hash, 0);
+
+        assert_eq!(
+            state.validate_slashed_evidence_integrity(),
+            Err(StateError::InvalidEvidence)
+        );
+    }
+
+    #[test]
+    fn deterministic_slashed_evidence_passes() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let key = [3u8; 32];
+        let id = freedom_primitives::hash_bytes(&key);
+        let owner = [2u8; 32];
+        state.validators.insert(
+            id,
+            freedom_types::Validator {
+                validator_id: id,
+                owner,
+                consensus_key: key,
+                stake: 100,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            },
+        );
+        let mut evidence = freedom_types::EquivocationEvidence {
+            kind: freedom_types::EquivocationKind::DoubleProposal,
+            height: 0,
+            round: 0,
+            validator_id: id,
+            first: vec![1],
+            second: vec![2],
+            evidence_hash: [0; 32],
+        };
+        evidence.evidence_hash = freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash, evidence.clone());
+        let expected = state.deterministic_slash_amount(&evidence.kind, 100);
+        state.slashed_evidence.insert(evidence.evidence_hash, expected);
+
+        assert_eq!(state.validate_slashed_evidence_integrity(), Ok(()));
     }
 }
 
