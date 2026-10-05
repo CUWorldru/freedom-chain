@@ -93,10 +93,14 @@ pub fn proposer_for_height(state:&ChainState,height:u64)->Option<freedom_primiti
 pub fn validate_epoch_transition_certificate(state: &ChainState, block: &Block) -> Result<(), String> {
     let boundary = state.epoch_length > 0 && block.header.height > 0 && block.header.height % state.epoch_length == 0;
     if boundary {
+        let expected_epoch = state.epoch.saturating_add(1);
+        if block.header.epoch != expected_epoch {
+            return Err("epoch transition block target epoch must be the immediate successor".into());
+        }
         let cert = block.header.epoch_transition_certificate.as_ref()
             .ok_or_else(|| "epoch transition block requires validator set certificate".to_string())?;
         validate_validator_set_certificate(state, cert)?;
-        if cert.to_epoch != block.header.epoch {
+        if cert.to_epoch != expected_epoch || cert.to_epoch != block.header.epoch {
             return Err("validator set certificate target epoch mismatch".into());
         }
     } else if block.header.epoch_transition_certificate.is_some() {
@@ -620,6 +624,62 @@ mod m320_validator_certificate_admission_tests {
         assert_eq!(
             validate_validator_set_certificate(&state, &cert),
             Err("validator set certificate lacks validator-count quorum".into())
+        );
+    }
+}
+
+
+#[cfg(test)]
+mod m322_epoch_boundary_replay_tests {
+    use super::*;
+    use freedom_types::Genesis;
+
+    fn state() -> ChainState {
+        ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        })
+    }
+
+    fn boundary_block(epoch: u64) -> Block {
+        Block {
+            header: freedom_types::BlockHeader {
+                height: 1000,
+                round: 0,
+                previous_hash: [0; 32],
+                state_root: [0; 32],
+                tx_root: tx_root(&[]),
+                receipts_root: receipts_root(&[]),
+                timestamp: 1,
+                epoch,
+                proposer: [0; 32],
+                epoch_transition_certificate: None,
+            },
+            transactions: vec![],
+            receipts: vec![],
+        }
+    }
+
+    #[test]
+    fn boundary_rejects_epoch_skip_even_before_certificate_lookup() {
+        let mut state = state();
+        state.epoch_length = 1000;
+        state.epoch = 0;
+        assert_eq!(
+            validate_epoch_transition_certificate(&state, &boundary_block(2)),
+            Err("epoch transition block target epoch must be the immediate successor".into())
+        );
+    }
+
+    #[test]
+    fn boundary_rejects_replayed_current_epoch_as_transition() {
+        let mut state = state();
+        state.epoch_length = 1000;
+        state.epoch = 1;
+        assert_eq!(
+            validate_epoch_transition_certificate(&state, &boundary_block(1)),
+            Err("epoch transition block target epoch must be the immediate successor".into())
         );
     }
 }
