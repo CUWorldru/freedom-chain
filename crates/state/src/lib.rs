@@ -48,18 +48,49 @@ impl ChainState {
  }
  pub fn slash_evidence(&mut self,evidence_hash:Hash,amount:u128)->Result<u128,StateError>{
   if self.slashed_evidence.contains_key(&evidence_hash){return Ok(0)}
+  self.validate_validator_records_integrity()?;
+  self.validate_unbonding_integrity()?;
   let evidence=self.evidence.get(&evidence_hash).ok_or(StateError::InvalidEvidence)?;
-  let (owner,total)={let v=self.validators.get(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;(v.owner,v.stake.saturating_add(v.unbonding_stake))};
+  let (owner,total)={let v=self.validators.get(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;(v.owner,v.stake.checked_add(v.unbonding_stake).ok_or(StateError::InvalidEvidence)?)};
+  let account=self.accounts.get(&owner).ok_or(StateError::AccountNotFound)?;
+  if account.staked < total {
+    return Err(StateError::InvalidEvidence);
+  }
   let expected=self.deterministic_slash_amount(&evidence.kind,total);
   if amount!=expected{return Err(StateError::InvalidEvidence)}
   let slash=expected.min(total);
   let (active_cut,pending_cut)={let v=self.validators.get_mut(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;let x=slash.min(v.stake);v.stake-=x;let y=(slash-x).min(v.unbonding_stake);v.unbonding_stake-=y;(x,y)};
   if active_cut+pending_cut!=slash{return Err(StateError::InvalidEvidence)}
-  if let Some(a)=self.accounts.get_mut(&owner){a.staked=a.staked.saturating_sub(slash)}else{return Err(StateError::AccountNotFound)}
   let mut pending=pending_cut;
   let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.validator_id==evidence.validator_id).map(|(id,_)|*id).collect();
-  for id in ids { if pending==0{break} if let Some(e)=self.unbonding.get_mut(&id){let x=pending.min(e.amount);e.amount-=x;pending-=x;} if self.unbonding.get(&id).map(|e|e.amount==0).unwrap_or(false){self.unbonding.remove(&id);} }
+  let mut slash_plan=Vec::<(Hash,u128)>::new();
+  for id in ids {
+    if pending==0 { break; }
+    let e=self.unbonding.get(&id).ok_or(StateError::InvalidEvidence)?;
+    let cut=pending.min(e.amount);
+    if cut>0 {
+      slash_plan.push((id,cut));
+      pending-=cut;
+    }
+  }
   if pending!=0{return Err(StateError::InvalidEvidence)}
+
+  if let Some(a)=self.accounts.get_mut(&owner) {
+    a.staked=a.staked.checked_sub(slash).ok_or(StateError::InvalidEvidence)?;
+  } else {
+    return Err(StateError::AccountNotFound);
+  }
+
+  for (id,cut) in slash_plan {
+    let remove={
+      let e=self.unbonding.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
+      e.amount=e.amount.checked_sub(cut).ok_or(StateError::InvalidEvidence)?;
+      e.amount==0
+    };
+    if remove {
+      self.unbonding.remove(&id);
+    }
+  }
   self.slashed_evidence.insert(evidence_hash,slash);self.refresh_pending_validator_set();Ok(slash)
  }
  pub fn deterministic_slash_amount(&self,kind:&freedom_types::EquivocationKind,stake:u128)->u128{
@@ -4194,6 +4225,87 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m288_slash_atomicity_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        let key = [3u8; 32];
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: freedom_primitives::hash_bytes(&key),
+                    owner: [2u8; 32],
+                    consensus_key: key,
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn slash_rejects_corrupted_unbonding_before_mutation() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        let evidence_hash = [7u8; 32];
+        let unbonding_id = [8u8; 32];
+
+        state.validators.get_mut(&id).unwrap().unbonding_stake = 10;
+        state.unbonding.insert(
+            unbonding_id,
+            freedom_types::UnbondingEntry {
+                unbonding_id,
+                validator_id: id,
+                owner: [9u8; 32],
+                amount: 10,
+                requested_height: 1,
+                release_height: 201,
+            },
+        );
+
+        state.evidence.insert(
+            evidence_hash,
+            freedom_types::EquivocationEvidence {
+                evidence_hash,
+                validator_id: id,
+                kind: freedom_types::EquivocationKind::DoubleProposal,
+                height: 1,
+                first_block_hash: [1u8; 32],
+                second_block_hash: [2u8; 32],
+            },
+        );
+
+        let before_stake=state.validators.get(&id).unwrap().stake;
+        let result=state.slash_evidence(evidence_hash, 1);
+
+        assert_eq!(result, Err(StateError::InvalidBridgeWithdrawal));
+        assert_eq!(state.validators.get(&id).unwrap().stake, before_stake);
+        assert!(!state.slashed_evidence.contains_key(&evidence_hash));
+    }
+
+    #[test]
+    fn slash_plan_cannot_consume_more_unbonding_than_ledger() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        let unbonding_id = [8u8; 32];
+        state.validators.get_mut(&id).unwrap().unbonding_stake = 10;
+        state.unbonding.insert(
+            unbonding_id,
+            freedom_types::UnbondingEntry {
+                unbonding_id,
+                validator_id: id,
+                owner: [2u8; 32],
+                amount: 10,
+                requested_height: 1,
+                release_height: 201,
+            },
+        );
+        assert_eq!(state.validate_unbonding_integrity(), Ok(()));
     }
 }
 
