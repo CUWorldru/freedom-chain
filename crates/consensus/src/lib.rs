@@ -555,6 +555,51 @@ mod m335_active_validator_quorum_tests {
 }
 
 #[cfg(test)]
+mod m336_timeout_active_validator_quorum_tests {
+    use super::*;
+    use freedom_crypto::{generate_keypair, sign};
+    use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
+    use freedom_types::{Genesis, Validator, ValidatorTimeout, ValidatorSetEntry};
+
+    fn divergent_state() -> (ChainState, Vec<freedom_crypto::SigningKey>) {
+        let keys: Vec<_> = (0..5).map(|_| generate_keypair()).collect();
+        let validators = keys.iter().enumerate().map(|(i, key)| {
+            let public_key = key.verifying_key().to_bytes();
+            let id = hash_bytes(&[b'm', b'3', b'3', b'6', i as u8]);
+            (id, Validator {
+                validator_id: id, owner: address_from_public_key(&public_key),
+                consensus_key: public_key, stake: 0, unbonding_stake: 0,
+                blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            })
+        }).collect();
+        let mut state = ChainState::genesis(&Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: vec![] });
+        state.validators = validators;
+        for (i, key) in keys.iter().take(3).enumerate() {
+            let public_key = key.verifying_key().to_bytes();
+            let id = hash_bytes(&[b'm', b'3', b'3', b'6', i as u8]);
+            state.active_validator_set.insert(id, ValidatorSetEntry {
+                validator_id: id, owner: address_from_public_key(&public_key),
+                consensus_key: public_key, stake: 0,
+            });
+        }
+        (state, keys)
+    }
+
+    #[test]
+    fn timeout_quorum_uses_active_validator_count() {
+        let (state, keys) = divergent_state();
+        let timeouts: Vec<ValidatorTimeout> = state.active_validator_set.iter().enumerate().map(|(i, (id, _))| {
+            let mut timeout = ValidatorTimeout {
+                validator_id: *id, height: 1, round: 0, signature: vec![],
+            };
+            timeout.signature = sign(&keys[i], &timeout.signing_bytes()).to_vec();
+            timeout
+        }).collect();
+        assert!(validate_timeout_quorum(&state, 1, 0, &timeouts).is_ok());
+    }
+}
+
+#[cfg(test)]
 mod m328_epoch_overflow_tests {
     use super::*;
     use freedom_primitives::hash_bytes;
@@ -686,7 +731,7 @@ pub fn validate_timeout(state:&ChainState, timeout:&freedom_types::ValidatorTime
 pub fn validate_timeout_quorum(state:&ChainState,height:u64,round:u64,timeouts:&[freedom_types::ValidatorTimeout])->Result<(),String>{
  let mut seen=std::collections::BTreeSet::new();
  for t in timeouts{validate_timeout(state,t,height,round)?;if !seen.insert(t.validator_id){return Err("duplicate timeout validator".into())}}
- if seen.len()<quorum_threshold(state.validators.len()){return Err("timeout quorum not reached".into())}
+ if seen.len()<quorum_threshold(state.active_validator_set.len()){return Err("timeout quorum not reached".into())}
  if !stake_quorum_reached(state,&seen){return Err("timeout stake quorum not reached".into())}
  Ok(())
 }
