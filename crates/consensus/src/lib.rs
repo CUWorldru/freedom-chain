@@ -85,7 +85,7 @@ pub fn block_hash(block:&Block)->Hash{domain_hash(b"FREEDOM-BLOCK-HASH-V1",&[&ca
 pub fn proposer_for_height_round(state:&ChainState,height:u64,round:u64)->Option<freedom_primitives::Address>{
  if height == 0 || state.active_validator_set.is_empty(){return None}
  let mut ids:Vec<_>=state.active_validator_set.keys().copied().collect();ids.sort();
- let len=ids.len() as u64;let height_offset=(height-1)%len;let round_offset=round%len;let index=((height_offset+round_offset)%len) as usize;
+ let len=ids.len() as u64;let height_offset=(height-1)%len;let round_offset=round%len;let index=(height_offset.checked_add(round_offset)? % len) as usize;
  let id=ids[index];state.active_validator_set.get(&id).map(|v|v.owner)
 }
 pub fn proposer_for_height(state:&ChainState,height:u64)->Option<freedom_primitives::Address>{proposer_for_height_round(state,height,0)}
