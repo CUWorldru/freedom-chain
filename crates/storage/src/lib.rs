@@ -97,7 +97,9 @@ impl ChainStore {
             let bytes = serde_json::to_vec(block)
                 .map_err(|e| StorageError::Codec(e.to_string()))?;
             batch.put(Self::height_key(block.header.height), bytes);
-            expected_height = expected_height.saturating_add(1);
+            expected_height = expected_height
+                .checked_add(1)
+                .ok_or(StorageError::InvalidMetadata)?;
         }
 
         let tip = blocks.last().expect("non-empty batch");
