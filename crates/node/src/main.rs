@@ -1621,7 +1621,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             timeouts: protocol.timeouts.values().cloned().collect(),
                                         };
                                         let previous_round = round;
-                                        round = round.saturating_add(1);
+                                        round = round.checked_add(1).ok_or_else(|| "round exceeds u64::MAX".to_string())?;
                                         let locked_block = protocol.locked_block.clone();
                                         let locked_round = protocol.locked_round;
                                         let locked_precommits = protocol.precommits.values().cloned().collect::<Vec<_>>();
