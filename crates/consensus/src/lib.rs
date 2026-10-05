@@ -121,16 +121,27 @@ pub fn quorum_threshold(validator_count: usize) -> usize {
 }
 
 pub fn total_active_stake(state: &ChainState) -> u128 {
-    state.active_validator_set.values().map(|v| v.stake).sum()
+    state.active_validator_set.values()
+        .map(|v| v.stake)
+        .try_fold(0u128, |acc, stake| acc.checked_add(stake))
+        .unwrap_or(u128::MAX)
 }
 
 pub fn stake_quorum_reached(state: &ChainState, signers: &std::collections::BTreeSet<Hash>) -> bool {
-    let total = total_active_stake(state);
+    let total = match state.active_validator_set.values()
+        .map(|v| v.stake)
+        .try_fold(0u128, |acc, stake| acc.checked_add(stake)) {
+        Some(value) => value,
+        None => return false,
+    };
     if total == 0 { return signers.len() >= quorum_threshold(state.active_validator_set.len()); }
-    let signed = signers.iter()
+    let signed = match signers.iter()
         .filter_map(|id| state.active_validator_set.get(id))
         .map(|v| v.stake)
-        .sum::<u128>();
+        .try_fold(0u128, |acc, stake| acc.checked_add(stake)) {
+        Some(value) => value,
+        None => return false,
+    };
     // Avoid saturating multiplication: for 0 <= signed <= total,
     // 3*signed >= 2*total is exactly equivalent to
     // signed >= total - floor(total/3), with no u128 overflow.
@@ -721,7 +732,7 @@ mod m323_stake_quorum_overflow_tests {
     fn huge_stake_does_not_turn_two_thirds_quorum_into_one_third() {
         let total = u128::MAX;
         let state = state_with_stakes(&[total / 3 + 1, total - (total / 3 + 1)]);
-        let first = *state.active_validator_set.keys().next().unwrap();
+        let first = hash_bytes(&[b"m323-validator", &[1u8]].concat());
 
         let mut signers = std::collections::BTreeSet::new();
         signers.insert(first);
@@ -734,11 +745,59 @@ mod m323_stake_quorum_overflow_tests {
         let total = u128::MAX;
         let required = total - total / 3;
         let state = state_with_stakes(&[required, total - required]);
-        let first = *state.active_validator_set.keys().next().unwrap();
+        let first = hash_bytes(&[b"m323-validator", &[1u8]].concat());
 
         let mut signers = std::collections::BTreeSet::new();
         signers.insert(first);
 
         assert!(stake_quorum_reached(&state, &signers));
+    }
+}
+
+
+#[cfg(test)]
+mod m324_stake_sum_overflow_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Genesis, Validator};
+
+    fn state_with_max_plus_one_total() -> ChainState {
+        let stakes = [u128::MAX, 1u128];
+        let validators = stakes.iter().enumerate().map(|(i, stake)| {
+            let key = [i as u8 + 20; 32];
+            let id = hash_bytes(&[b"m324-validator", &[i as u8 + 20]].concat());
+            Validator {
+                validator_id: id,
+                owner: freedom_primitives::address_from_public_key(&key),
+                consensus_key: key,
+                stake: *stake,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect::<Vec<_>>();
+        ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators,
+        })
+    }
+
+    #[test]
+    fn total_active_stake_does_not_wrap() {
+        let state = state_with_max_plus_one_total();
+        assert_eq!(total_active_stake(&state), u128::MAX);
+    }
+
+    #[test]
+    fn stake_quorum_rejects_overflowing_signer_sum() {
+        let state = state_with_max_plus_one_total();
+        let ids: Vec<_> = state.active_validator_set.keys().copied().collect();
+        let mut signers = std::collections::BTreeSet::new();
+        signers.insert(ids[0]);
+        signers.insert(ids[1]);
+
+        assert!(!stake_quorum_reached(&state, &signers));
     }
 }
