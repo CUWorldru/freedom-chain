@@ -157,7 +157,7 @@ pub fn validate_transaction_auth(state:&ChainState, tx:&Transaction)->Result<(),
  if !verify(&account.public_key,&tx.signing_bytes(),&sig){return Err("invalid transaction signature".into())}
  Ok(())
 }
-pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{let expected_height=state.height.checked_add(1).ok_or_else(||"block height exceeds u64::MAX".to_string())?;if block.header.height!=expected_height{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}for tx in &block.transactions{validate_transaction_auth(state,tx)?;}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
+pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{let expected_height=state.height.checked_add(1).ok_or_else(||"block height exceeds u64::MAX".to_string())?;if block.header.height!=expected_height{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}let mut next_nonces=std::collections::BTreeMap::new();for tx in &block.transactions{validate_transaction_auth(state,tx)?;let expected=*next_nonces.entry(tx.sender).or_insert_with(||state.accounts.get(&tx.sender).map(|a|a.nonce).unwrap_or(0));if tx.nonce!=expected{return Err("transaction nonce is not the next sender nonce".into())}let next=expected.checked_add(1).ok_or_else(||"transaction nonce exceeds u64::MAX".to_string())?;next_nonces.insert(tx.sender,next);}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
 #[cfg(test)]
 mod m329_block_height_overflow_tests {
     use super::*;
@@ -263,6 +263,76 @@ mod m331_transaction_auth_boundary_tests {
         let (state, mut tx, _) = state_and_tx();
         tx.signature.clear();
         assert_eq!(validate_transaction_auth(&state, &tx), Err("invalid transaction signature length".into()));
+    }
+}
+
+#[cfg(test)]
+mod m332_block_nonce_sequence_tests {
+    use super::*;
+    use freedom_crypto::{generate_keypair, sign};
+    use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
+    use freedom_types::{Genesis, Transaction, TxKind, Validator};
+
+    #[test]
+    fn block_rejects_duplicate_sender_nonce() {
+        let key = generate_keypair();
+        let public_key = key.verifying_key().to_bytes();
+        let owner = address_from_public_key(&public_key);
+        let validator = Validator {
+            validator_id: hash_bytes(b"m332-validator"),
+            owner,
+            consensus_key: public_key,
+            stake: 1,
+            unbonding_stake: 0,
+            blocks_proposed: 0,
+            blocks_finalized: 0,
+            missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![validator],
+        });
+        state.accounts.insert(owner, Account::new(public_key, 100));
+        let make_tx = |payload: Vec<u8>| {
+            let mut tx = Transaction {
+                chain_id: CHAIN_ID, sender: owner, nonce: 0, kind: TxKind::Transfer,
+                payload, fee: 0, signature: vec![],
+            };
+            tx.signature = sign(&key, &tx.signing_bytes()).to_vec();
+            tx
+        };
+        let tx1 = make_tx(vec![1]);
+        let tx2 = make_tx(vec![2]);
+        let block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: state.last_block_hash,
+                state_root: state.state_root(), tx_root: tx_root(&[tx1.clone(), tx2.clone()]),
+                receipts_root: receipts_root(&[]), timestamp: 0, epoch: state.epoch,
+                proposer: owner, epoch_transition_certificate: None,
+            },
+            transactions: vec![tx1, tx2],
+            receipts: vec![],
+        };
+        assert_eq!(validate_block_commitments(&state, &block), Err("transaction/receipt count mismatch".into()));
+    }
+
+    #[test]
+    fn nonce_overflow_is_rejected() {
+        let key = generate_keypair();
+        let public_key = key.verifying_key().to_bytes();
+        let owner = address_from_public_key(&public_key);
+        let validator = Validator {
+            validator_id: hash_bytes(b"m332-overflow-validator"),
+            owner, consensus_key: public_key, stake: 1, unbonding_stake: 0,
+            blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: vec![validator] });
+        state.accounts.insert(owner, Account::new(public_key, 100));
+        let mut tx = Transaction { chain_id: CHAIN_ID, sender: owner, nonce: u64::MAX, kind: TxKind::Transfer, payload: vec![1], fee: 0, signature: vec![] };
+        tx.signature = sign(&key, &tx.signing_bytes()).to_vec();
+        let block = Block { header: BlockHeader { height: 1, round: 0, previous_hash: state.last_block_hash, state_root: state.state_root(), tx_root: tx_root(&[tx.clone()]), receipts_root: receipts_root(&[Receipt{tx_hash:tx.hash(),success:true,gas_used:0,events:vec![]}]), timestamp: 0, epoch: state.epoch, proposer: owner, epoch_transition_certificate: None }, transactions: vec![tx], receipts: vec![Receipt{tx_hash:[0;32],success:true,gas_used:0,events:vec![]}] };
+        assert_eq!(validate_block_commitments(&state, &block), Err("transaction nonce is not the next sender nonce".into()));
     }
 }
 
