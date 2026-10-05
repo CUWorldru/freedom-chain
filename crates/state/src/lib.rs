@@ -1982,8 +1982,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   }
 
   let hash_set=|set:&BTreeMap<Hash,freedom_types::ValidatorSetEntry>|{
+    // Must match ChainState's authoritative validator-set history encoding.
     let mut bytes=Vec::new();
-    bytes.extend_from_slice(b"FREEDOM-VALSET-HASH-V1");
     for (id,entry) in set {
       bytes.extend_from_slice(id);
       bytes.extend_from_slice(&entry.owner);
