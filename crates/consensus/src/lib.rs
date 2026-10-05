@@ -40,7 +40,7 @@ pub fn validate_validator_set_certificate(
     if previous_keys.is_empty() {
         return Err("validator set certificate previous validator keys empty".into());
     }
-    let required_quorum = (previous_keys.len() * 2) / 3 + 1;
+    let required_quorum = quorum_threshold(previous_keys.len());
     let mut ids = std::collections::BTreeSet::new();
     for vote in &cert.votes {
         if vote.from_epoch != cert.from_epoch
@@ -157,7 +157,9 @@ use freedom_crypto::verify;
 
 pub fn quorum_threshold(validator_count: usize) -> usize {
     if validator_count == 0 { return usize::MAX; }
-    (validator_count * 2) / 3 + 1
+    // Equivalent to floor(2*n/3) + 1, without overflowing n * 2.
+    let ceil_third = validator_count / 3 + usize::from(validator_count % 3 != 0);
+    validator_count - ceil_third + 1
 }
 
 pub fn total_active_stake(state: &ChainState) -> u128 {
@@ -215,6 +217,26 @@ pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, round:
     Ok(())
 }
 
+
+#[cfg(test)]
+mod m327_quorum_threshold_overflow_tests {
+    use super::*;
+
+    #[test]
+    fn quorum_threshold_matches_current_formula_for_small_counts() {
+        let expected = [usize::MAX, 1, 2, 3, 3, 4, 5, 5, 6, 7, 7, 8];
+        for (count, expected_threshold) in expected.into_iter().enumerate() {
+            assert_eq!(quorum_threshold(count), expected_threshold);
+        }
+    }
+
+    #[test]
+    fn quorum_threshold_is_overflow_safe_at_usize_max() {
+        let n = usize::MAX;
+        let ceil_third = n / 3 + usize::from(n % 3 != 0);
+        assert_eq!(quorum_threshold(n), n - ceil_third + 1);
+    }
+}
 
 #[cfg(test)]
 mod quorum_tests {
