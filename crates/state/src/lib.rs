@@ -481,7 +481,9 @@ impl ChainState {
     }
     let evidence=self.evidence.get(evidence_hash)
       .ok_or(StateError::InvalidEvidence)?;
-    if !self.validators.contains_key(&evidence.validator_id) {
+    if evidence.evidence_hash != *evidence_hash
+      || freedom_primitives::hash_bytes(&evidence.signing_bytes()) != *evidence_hash
+      || !self.validators.contains_key(&evidence.validator_id) {
       return Err(StateError::InvalidEvidence);
     }
     // The deterministic slash amount is authenticated at mutation time by
@@ -4445,6 +4447,59 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m311_slashed_evidence_commitment_tests {
+    use super::*;
+
+    #[test]
+    fn slashed_registry_rejects_corrupted_evidence_commitment() {
+        let key=[37u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash,evidence.clone());
+        state.slashed_evidence.insert(evidence.evidence_hash,10);
+        state.evidence.get_mut(&evidence.evidence_hash).unwrap().first=vec![9];
+        assert_eq!(
+            state.validate_slashed_evidence_integrity(),
+            Err(StateError::InvalidEvidence)
+        );
+    }
+
+    #[test]
+    fn valid_slashed_evidence_commitment_passes() {
+        let key=[38u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash,evidence.clone());
+        state.slashed_evidence.insert(evidence.evidence_hash,10);
+        assert_eq!(state.validate_slashed_evidence_integrity(),Ok(()));
     }
 }
 
