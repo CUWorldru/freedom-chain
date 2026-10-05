@@ -559,8 +559,8 @@ mod m320_validator_certificate_admission_tests {
     fn certificate_admission_rejects_unsorted_votes() {
         let state = state();
         let keys: Vec<_> = state.active_validator_set.keys().copied().collect();
-        let previous = freedom_consensus::validator_set_hash(&state.active_validator_set);
-        let new_set = freedom_consensus::validator_set_hash(&state.pending_validator_set);
+        let previous = validator_set_hash(&state.active_validator_set);
+        let new_set = validator_set_hash(&state.pending_validator_set);
         let mut votes = Vec::new();
         for id in keys.iter().take(3).rev() {
             let entry = state.active_validator_set.get(id).unwrap();
@@ -596,8 +596,8 @@ mod m320_validator_certificate_admission_tests {
         let state = state();
         let id = *state.active_validator_set.keys().next().unwrap();
         let entry = state.active_validator_set.get(&id).unwrap();
-        let previous = freedom_consensus::validator_set_hash(&state.active_validator_set);
-        let new_set = freedom_consensus::validator_set_hash(&state.pending_validator_set);
+        let previous = validator_set_hash(&state.active_validator_set);
+        let new_set = validator_set_hash(&state.pending_validator_set);
         let mut vote = freedom_types::ValidatorSetVote {
             from_epoch: 0,
             to_epoch: 1,
