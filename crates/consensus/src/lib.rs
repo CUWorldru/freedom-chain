@@ -1,6 +1,6 @@
 use freedom_primitives::{domain_hash, hash_bytes, merkle_root, Hash};
-use freedom_crypto::verify;
-use freedom_state::ChainState;
+use freedom_crypto::{sign, verify};
+use freedom_state::{Account, ChainState};
 use freedom_types::{Block, Event, Receipt, Transaction, ValidatorSetCertificate};
 #[derive(Clone, Debug)] pub struct ConsensusConfig { pub min_validators: usize }
 impl Default for ConsensusConfig { fn default()->Self{Self{min_validators:3}}}
@@ -149,7 +149,15 @@ pub fn validate_epoch_transition_certificate(state: &ChainState, block: &Block) 
     Ok(())
 }
 
-pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{let expected_height=state.height.checked_add(1).ok_or_else(||"block height exceeds u64::MAX".to_string())?;if block.header.height!=expected_height{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
+pub fn validate_transaction_auth(state:&ChainState, tx:&Transaction)->Result<(),String>{
+ let account=state.accounts.get(&tx.sender).ok_or_else(||"transaction sender account not found".to_string())?;
+ if freedom_primitives::address_from_public_key(&account.public_key)!=tx.sender{return Err("transaction sender/account key binding mismatch".into())}
+ if tx.signature.len()!=64{return Err("invalid transaction signature length".into())}
+ let mut sig=[0u8;64];sig.copy_from_slice(&tx.signature);
+ if !verify(&account.public_key,&tx.signing_bytes(),&sig){return Err("invalid transaction signature".into())}
+ Ok(())
+}
+pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{let expected_height=state.height.checked_add(1).ok_or_else(||"block height exceeds u64::MAX".to_string())?;if block.header.height!=expected_height{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}for tx in &block.transactions{validate_transaction_auth(state,tx)?;}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
 #[cfg(test)]
 mod m329_block_height_overflow_tests {
     use super::*;
@@ -193,6 +201,68 @@ mod m329_block_height_overflow_tests {
             validate_block_commitments(&state, &block),
             Err("block height exceeds u64::MAX".into())
         );
+    }
+}
+
+#[cfg(test)]
+mod m331_transaction_auth_boundary_tests {
+    use super::*;
+    use freedom_crypto::generate_keypair;
+    use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
+    use freedom_types::{Genesis, Transaction, TxKind, Validator};
+
+    fn state_and_tx() -> (ChainState, Transaction, ed25519_dalek::SigningKey) {
+        let key = generate_keypair();
+        let public_key = key.verifying_key().to_bytes();
+        let owner = address_from_public_key(&public_key);
+        let validator = Validator {
+            validator_id: hash_bytes(b"m331-validator"),
+            owner,
+            consensus_key: public_key,
+            stake: 1,
+            unbonding_stake: 0,
+            blocks_proposed: 0,
+            blocks_finalized: 0,
+            missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![validator],
+        });
+        state.accounts.insert(owner, Account::new(public_key, 100));
+        let mut tx = Transaction {
+            chain_id: CHAIN_ID,
+            sender: owner,
+            nonce: 0,
+            kind: TxKind::Transfer,
+            payload: vec![1],
+            fee: 0,
+            signature: vec![],
+        };
+        tx.signature = sign(&key, &tx.signing_bytes()).to_vec();
+        (state, tx, key)
+    }
+
+    #[test]
+    fn valid_external_transaction_signature_is_accepted() {
+        let (state, tx, _) = state_and_tx();
+        assert!(validate_transaction_auth(&state, &tx).is_ok());
+    }
+
+    #[test]
+    fn forged_transaction_signature_is_rejected() {
+        let (state, mut tx, _) = state_and_tx();
+        let other = generate_keypair();
+        tx.signature = sign(&other, &tx.signing_bytes()).to_vec();
+        assert_eq!(validate_transaction_auth(&state, &tx), Err("invalid transaction signature".into()));
+    }
+
+    #[test]
+    fn unsigned_transaction_is_rejected() {
+        let (state, mut tx, _) = state_and_tx();
+        tx.signature.clear();
+        assert_eq!(validate_transaction_auth(&state, &tx), Err("invalid transaction signature length".into()));
     }
 }
 
