@@ -6473,6 +6473,23 @@ mod m280_validator_set_transition_hardening_tests {
     }
 
     #[test]
+    fn staking_epoch_certificate_hash_matches_authoritative_history_encoding() {
+        let state = genesis();
+        let expected = *state.validator_set_history.get(&0).unwrap();
+        let actual = {
+            let mut bytes = Vec::new();
+            for (id, entry) in &state.active_validator_set {
+                bytes.extend_from_slice(id);
+                bytes.extend_from_slice(&entry.owner);
+                bytes.extend_from_slice(&entry.consensus_key);
+                bytes.extend_from_slice(&entry.stake.to_le_bytes());
+            }
+            freedom_primitives::hash_bytes(&bytes)
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn staking_epoch_transition_rejects_certificate_for_wrong_transition() {
         let mut state = genesis();
         state.staking_activated = true;
