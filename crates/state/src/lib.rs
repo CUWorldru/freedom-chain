@@ -2027,7 +2027,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
 
    self.epoch=next_epoch;
    self.active_validator_set=next_active_validator_set;
-   self.validator_set_certificate=None;
+   // Retain the certificate that authorized this transition as the
+   // authoritative certificate for the newly activated epoch.
    self.refresh_pending_validator_set();
    self.validator_set_history.insert(self.epoch,set_hash);
    self.validator_set_history_sets.insert(self.epoch,key_snapshot);
@@ -3858,20 +3859,43 @@ mod m261_certificate_epoch_binding_tests {
 
 
 #[cfg(test)]
-mod m262_certificate_lifecycle_tests {
+mod m313_certificate_lifecycle_tests {
     use super::*;
 
     #[test]
-    fn epoch_transition_clears_previous_validator_certificate() {
+    fn epoch_transition_retains_certificate_for_new_epoch() {
         let genesis=freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] };
         let mut state=ChainState::genesis(&genesis);
-        state.validator_set_certificate=Some(freedom_types::ValidatorSetCertificate {
+        let certificate=freedom_types::ValidatorSetCertificate {
             from_epoch:0, to_epoch:1, previous_set_hash:[1u8;32], new_set_hash:[2u8;32], votes:vec![],
-        });
+        };
+        state.validator_set_certificate=Some(certificate.clone());
         state.height=1000;
         state.maybe_advance_epoch();
         assert_eq!(state.epoch,1);
-        assert!(state.validator_set_certificate.is_none());
+        assert_eq!(state.validator_set_certificate,Some(certificate));
+    }
+
+    #[test]
+    fn later_epoch_transition_replaces_previous_certificate() {
+        let genesis=freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] };
+        let mut state=ChainState::genesis(&genesis);
+        let first=freedom_types::ValidatorSetCertificate {
+            from_epoch:0, to_epoch:1, previous_set_hash:[1u8;32], new_set_hash:[2u8;32], votes:vec![],
+        };
+        state.validator_set_certificate=Some(first);
+        state.height=1000;
+        state.maybe_advance_epoch();
+
+        let second=freedom_types::ValidatorSetCertificate {
+            from_epoch:1, to_epoch:2, previous_set_hash:[3u8;32], new_set_hash:[4u8;32], votes:vec![],
+        };
+        state.validator_set_certificate=Some(second.clone());
+        state.height=2000;
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch,2);
+        assert_eq!(state.validator_set_certificate,Some(second));
     }
 }
 
