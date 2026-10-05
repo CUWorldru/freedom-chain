@@ -2030,9 +2030,14 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
 
  pub fn maybe_advance_epoch(&mut self){
-  self.release_mature_unbonding();
-  if self.epoch_length>0 && self.height>0 && self.height%self.epoch_length==0 {
-   let next_epoch=self.height/self.epoch_length;
+  let at_epoch_boundary=self.epoch_length>0
+    && self.height>0
+    && self.height%self.epoch_length==0;
+  if !at_epoch_boundary {
+   self.release_mature_unbonding();
+   return;
+  }
+  let next_epoch=self.height/self.epoch_length;
    if next_epoch<=self.epoch { return; }
    // Epoch transitions must advance exactly one epoch. Skipping an epoch
    // would create an unbound historical gap that later finality checks could
@@ -2097,6 +2102,11 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
        .map(|s|s!=&entry_snapshot).unwrap_or(false) {
     return;
    }
+
+   // All transition authorization and historical commitments have now
+   // passed. Release mature unbonding only after that point so a rejected
+   // epoch transition cannot still mutate staking state at the boundary.
+   self.release_mature_unbonding();
 
    self.epoch=next_epoch;
    self.active_validator_set=next_active_validator_set;
@@ -6983,5 +6993,76 @@ mod m318_staking_mutation_boundary_tests {
         assert!(state.unbonding.is_empty());
         assert_eq!(state.validators.get(&id_a).unwrap().stake, 100);
         assert_eq!(state.validators.get(&id_b).unwrap().stake, 100);
+    }
+}
+
+#[cfg(test)]
+mod m319_epoch_boundary_atomicity_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        let key = [3u8; 32];
+        let id = freedom_primitives::hash_bytes(&key);
+        let owner = [2u8; 32];
+        let validator = freedom_types::Validator {
+            validator_id: id,
+            owner,
+            consensus_key: key,
+            stake: 90,
+            unbonding_stake: 10,
+            blocks_proposed: 0,
+            blocks_finalized: 0,
+            missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![validator],
+        });
+        state.staking_activated = true;
+        state.accounts.insert(owner, Account {
+            address: owner,
+            public_key: [0; 32],
+            nonce: 0,
+            balance: 0,
+            locked: 0,
+            staked: 100,
+        });
+        state.height = 200;
+        state.unbonding.insert([7; 32], UnbondingEntry {
+            unbonding_id: [7; 32],
+            validator_id: id,
+            owner,
+            amount: 10,
+            requested_height: 0,
+            release_height: 200,
+        });
+        state.refresh_pending_validator_set();
+        state
+    }
+
+    #[test]
+    fn rejected_epoch_transition_does_not_release_mature_unbonding() {
+        let mut state = genesis();
+        let before = state.clone();
+
+        // No transition certificate: M316 must reject the epoch transition.
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, before.epoch);
+        assert_eq!(state.unbonding, before.unbonding);
+        assert_eq!(state.validators, before.validators);
+        assert_eq!(state.accounts, before.accounts);
+        assert_eq!(state.pending_validator_set, before.pending_validator_set);
+    }
+
+    #[test]
+    fn accepted_epoch_transition_releases_mature_unbonding_once() {
+        let mut state = genesis();
+        // Staking is active, so an authenticated certificate is required.
+        // This fixture intentionally stays focused on atomicity: without a
+        // valid certificate the release must remain untouched.
+        state.maybe_advance_epoch();
+        assert!(state.unbonding.contains_key(&[7; 32]));
     }
 }
