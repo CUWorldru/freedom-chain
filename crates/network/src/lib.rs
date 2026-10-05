@@ -421,8 +421,12 @@ pub fn publish(
     Ok(swarm.behaviour_mut().gossipsub.publish(topic, bytes)?)
 }
 
-pub fn send_sync_request(swarm: &mut Swarm<FreedomBehaviour>, peer: PeerId, request: SyncWireRequest) -> request_response::OutboundRequestId {
-    swarm.behaviour_mut().sync.send_request(&peer, request)
+pub fn send_sync_request(swarm: &mut Swarm<FreedomBehaviour>, peer: PeerId, request: SyncWireRequest) -> Result<request_response::OutboundRequestId, String> {
+    match &request {
+        SyncWireRequest::Blocks(req) => validate_sync_request(req)?,
+        SyncWireRequest::Snapshot(req) => validate_snapshot_request(req)?,
+    }
+    Ok(swarm.behaviour_mut().sync.send_request(&peer, request))
 }
 
 #[cfg(test)]
