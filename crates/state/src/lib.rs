@@ -42,7 +42,7 @@ pub struct LedgerEntry { pub tx_hash:Hash, pub sender:Address, pub kind:u8, pub 
 
 #[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,#[serde(default)] pub unbonding:BTreeMap<Hash,UnbondingEntry>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,#[serde(rename="draw_prize_pool_native_units",alias="draw_prize_pool_mfdm")] pub draw_prize_pool_native_units:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch:u64,pub epoch_length:u64,pub active_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub asset_registry:BTreeMap<Hash,AssetDefinition>,#[serde(default)] pub cross_chain_asset_registries:BTreeMap<Hash,freedom_types::CrossChainAssetRegistry>,#[serde(default)] pub processed_bridge_messages:BTreeMap<Hash,BridgeMessage>,#[serde(default)] pub bridge_message_status:BTreeMap<Hash,BridgeMessageStatus>,#[serde(default)] pub bridge_withdrawals:BTreeMap<Hash,BridgeWithdrawal>,#[serde(default)] pub bridge_withdrawal_status:BTreeMap<Hash,BridgeWithdrawalStatus>,#[serde(default)] pub bridge_accounting:BTreeMap<Hash,BridgeAccounting>,#[serde(default)] pub bridge_security_policies:BTreeMap<Hash,BridgeSecurityPolicy>,#[serde(default)] pub bridge_approval_sets:BTreeMap<Hash,BridgeApprovalSet>,#[serde(default)] pub bridge_pause_authorizations:BTreeMap<Hash,BridgePauseAuthorizationSet>,#[serde(default)] pub bridge_nonce_registry:BTreeMap<Hash,BTreeSet<u64>>,#[serde(default)] pub bridge_rate_limits:BTreeMap<Hash,BridgeRateLimitUsage>,#[serde(default)] pub bridge_deposit_replays:BTreeMap<Hash,DepositReplayRecord>,#[serde(default)] pub bridge_mint_authorizations:BTreeMap<Hash,BridgeMintAuthorization>,#[serde(default)] pub bridge_withdrawal_rate_limit_period:BTreeMap<Hash,u64>,#[serde(default)] pub bitcoin_checkpoints:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_canonical_tips:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_reorg_evidence:BTreeMap<Hash,Vec<BitcoinReorgEvidence>>,#[serde(default)] pub bitcoin_reorg_policy:BTreeMap<Hash,freedom_types::BitcoinReorgPolicy>,#[serde(default)] pub bitcoin_reorg_recovery:BTreeMap<Hash,freedom_types::BitcoinReorgRecovery>,#[serde(default)] pub bitcoin_utxo_attestations:BTreeMap<Hash,freedom_types::BitcoinUtxoCommitmentAttestation>,#[serde(default)] pub bitcoin_utxo_attestation_policy_hashes:BTreeMap<Hash,Hash>,#[serde(default)] pub bitcoin_utxo_commitments:BTreeMap<Hash,freedom_types::BitcoinUtxoBlockCommitment>,#[serde(default)] pub pending_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub validator_set_history:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_history_sets:BTreeMap<u64,BTreeMap<Hash,[u8;32]>>,
 #[serde(default)] pub validator_set_history_entries:BTreeMap<u64,BTreeMap<Hash,freedom_types::ValidatorSetEntry>>,#[serde(default)] pub validator_set_history_key_hashes:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_certificate:Option<freedom_types::ValidatorSetCertificate>,#[serde(default)] pub staking_activated:bool,pub epoch_issuance:u128,pub epoch_cap:u128,pub evidence:BTreeMap<Hash,freedom_types::EquivocationEvidence>,pub slashed_evidence:BTreeMap<Hash,u128> }
-#[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected }
+#[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidChainId,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected }
 impl ChainState {
  fn validate_evidence_integrity(&self)->Result<(),StateError>{
   for (id,evidence) in &self.evidence {
@@ -2145,7 +2145,46 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
  pub fn insert_account(&mut self,a:Account){self.accounts.insert(a.address,a);}
  pub fn drain_events(&mut self)->Vec<Event>{std::mem::take(&mut self.events)}
- pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>self.claim_reward(tx),TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),TxKind::BridgeMint=>self.execute_bridge_mint(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
+ pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{if tx.chain_id!=freedom_primitives::CHAIN_ID{return Err(StateError::InvalidChainId)}let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>self.claim_reward(tx),TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),TxKind::BridgeMint=>self.execute_bridge_mint(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
+#[cfg(test)]
+mod m330_public_chain_id_boundary_tests {
+    use super::*;
+    use freedom_primitives::{address_from_public_key, CHAIN_ID};
+    use freedom_types::{Genesis, Transaction, TxKind, Validator};
+
+    #[test]
+    fn execute_transaction_rejects_foreign_chain_id() {
+        let key = [81u8; 32];
+        let owner = address_from_public_key(&key);
+        let validator = Validator {
+            validator_id: freedom_primitives::hash_bytes(b"m330-validator"),
+            owner,
+            consensus_key: key,
+            stake: 1,
+            unbonding_stake: 0,
+            blocks_proposed: 0,
+            blocks_finalized: 0,
+            missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![validator],
+        });
+        state.insert_account(Account::new(key, 100));
+        let tx = Transaction {
+            chain_id: CHAIN_ID.wrapping_add(1),
+            sender: owner,
+            nonce: 0,
+            kind: TxKind::Transfer,
+            payload: vec![],
+            fee: 0,
+            signature: vec![],
+        };
+        assert_eq!(state.execute_transaction(&tx), Err(StateError::InvalidChainId));
+    }
+}
+
  fn execute_bridge_mint(&mut self,tx:&Transaction)->Result<(),StateError>{
   let payload=BridgeMintTransactionPayload::decode(&tx.payload).map_err(|_|StateError::InvalidBridgeMintTransaction)?;
   if tx.fee>self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance {
