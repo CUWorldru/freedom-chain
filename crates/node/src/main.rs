@@ -1206,7 +1206,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let mut working_state = state.clone();
                                             let mut accepted_blocks = Vec::new();
                                             for block in entry.1.blocks.clone() {
-                                                if block.header.height != working_state.height + 1 { break; }
+                                                let expected_height = match working_state.height.checked_add(1) {
+                                                    Some(height) => height,
+                                                    None => {
+                                                        eprintln!("sync block rejected: state height exceeds u64::MAX");
+                                                        break;
+                                                    }
+                                                };
+                                                if block.header.height != expected_height { break; }
                                                 let expected = match proposer_for_height_round(&working_state, block.header.height, block.header.round) { Some(v) => v, None => break };
                                                 if expected != block.header.proposer { break; }
                                                 if let Err(e) = freedom_network::validate_block_transition(&working_state, &block) { eprintln!("sync block rejected at {}: {e}", block.header.height); break; }
