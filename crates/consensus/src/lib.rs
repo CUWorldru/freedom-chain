@@ -83,12 +83,52 @@ pub fn receipts_root(rs:&[Receipt])->Hash{let leaves:Vec<Hash>=rs.iter().map(|r|
 pub fn canonical_block_bytes(block:&Block)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BLOCK-V1");let h=&block.header;push_u64(&mut o,h.height);push_u64(&mut o,h.round);o.extend_from_slice(&h.previous_hash);o.extend_from_slice(&h.state_root);o.extend_from_slice(&h.tx_root);o.extend_from_slice(&h.receipts_root);push_u64(&mut o,h.timestamp);push_u64(&mut o,h.epoch);o.extend_from_slice(&h.proposer);match &h.epoch_transition_certificate{Some(cert)=>{o.push(1);o.extend_from_slice(&cert.hash());},None=>o.push(0)};push_u64(&mut o,block.transactions.len() as u64);for tx in &block.transactions{canonical_tx(&mut o,tx)}push_u64(&mut o,block.receipts.len() as u64);for r in &block.receipts{push_bytes(&mut o,&canonical_receipt_bytes(r))}o}
 pub fn block_hash(block:&Block)->Hash{domain_hash(b"FREEDOM-BLOCK-HASH-V1",&[&canonical_block_bytes(block)])}
 pub fn proposer_for_height_round(state:&ChainState,height:u64,round:u64)->Option<freedom_primitives::Address>{
- if state.active_validator_set.is_empty(){return None}
+ if height == 0 || state.active_validator_set.is_empty(){return None}
  let mut ids:Vec<_>=state.active_validator_set.keys().copied().collect();ids.sort();
  let index=((height-1).saturating_add(round)) as usize % ids.len();
  let id=ids[index];state.active_validator_set.get(&id).map(|v|v.owner)
 }
 pub fn proposer_for_height(state:&ChainState,height:u64)->Option<freedom_primitives::Address>{proposer_for_height_round(state,height,0)}
+
+#[cfg(test)]
+mod m326_proposer_height_boundary_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Genesis, Validator};
+
+    fn state_with_validator() -> ChainState {
+        let key = [51u8; 32];
+        ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![Validator {
+                validator_id: hash_bytes(b"m326-validator"),
+                owner: freedom_primitives::address_from_public_key(&key),
+                consensus_key: key,
+                stake: 1,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }],
+        })
+    }
+
+    #[test]
+    fn proposer_rejects_zero_height() {
+        let state = state_with_validator();
+        assert_eq!(proposer_for_height_round(&state, 0, 0), None);
+        assert_eq!(proposer_for_height(&state, 0), None);
+    }
+
+    #[test]
+    fn proposer_still_selects_first_validator_at_height_one() {
+        let state = state_with_validator();
+        let expected = state.active_validator_set.values().next().unwrap().owner;
+        assert_eq!(proposer_for_height_round(&state, 1, 0), Some(expected));
+    }
+}
+
 
 pub fn validate_epoch_transition_certificate(state: &ChainState, block: &Block) -> Result<(), String> {
     let boundary = state.epoch_length > 0 && block.header.height > 0 && block.header.height % state.epoch_length == 0;
