@@ -32,9 +32,15 @@ pub fn validate_validator_set_certificate(
     if cert.new_set_hash != validator_set_hash(&state.pending_validator_set) {
         return Err("validator set certificate new set mismatch".into());
     }
-    if cert.votes.is_empty() {
-        return Err("validator set certificate has no votes".into());
+    if !cert.validate_transition_fields() {
+        return Err("invalid validator set certificate transition fields".into());
     }
+    let previous_keys = state.validator_set_history_sets.get(&state.epoch)
+        .ok_or_else(|| "validator set certificate previous validator keys unavailable".to_string())?;
+    if previous_keys.is_empty() {
+        return Err("validator set certificate previous validator keys empty".into());
+    }
+    let required_quorum = (previous_keys.len() * 2) / 3 + 1;
     let mut ids = std::collections::BTreeSet::new();
     for vote in &cert.votes {
         if vote.from_epoch != cert.from_epoch
@@ -58,7 +64,10 @@ pub fn validate_validator_set_certificate(
             return Err("invalid validator set vote signature".into());
         }
     }
-    if !stake_quorum_reached(state, ids.iter()) {
+    if ids.len() < required_quorum {
+        return Err("validator set certificate lacks validator-count quorum".into());
+    }
+    if !stake_quorum_reached(state, &ids) {
         return Err("validator set certificate lacks stake quorum".into());
     }
     Ok(())
@@ -517,5 +526,100 @@ mod m26_stake_tests {
         let s=state([0,0,0]);
         let ids=std::collections::BTreeSet::new();
         assert!(!stake_quorum_reached(&s,&ids));
+    }
+}
+
+#[cfg(test)]
+mod m320_validator_certificate_admission_tests {
+    use super::*;
+
+    fn state() -> ChainState {
+        let validators = (1u8..=3u8).map(|byte| {
+            let key = [byte; 32];
+            let id = freedom_primitives::hash_bytes(&key);
+            freedom_types::Validator {
+                validator_id: id,
+                owner: [byte + 10; 32],
+                consensus_key: key,
+                stake: 100,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect();
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators,
+        })
+    }
+
+    #[test]
+    fn certificate_admission_rejects_unsorted_votes() {
+        let state = state();
+        let keys: Vec<_> = state.active_validator_set.keys().copied().collect();
+        let previous = freedom_consensus::validator_set_hash(&state.active_validator_set);
+        let new_set = freedom_consensus::validator_set_hash(&state.pending_validator_set);
+        let mut votes = Vec::new();
+        for id in keys.iter().take(3).rev() {
+            let entry = state.active_validator_set.get(id).unwrap();
+            let mut vote = freedom_types::ValidatorSetVote {
+                from_epoch: 0,
+                to_epoch: 1,
+                previous_set_hash: previous,
+                new_set_hash: new_set,
+                validator_id: *id,
+                signature: Vec::new(),
+            };
+            vote.signature = freedom_crypto::sign(
+                &ed25519_dalek::SigningKey::from_bytes(&entry.consensus_key),
+                &vote.signing_bytes(),
+            ).to_vec();
+            votes.push(vote);
+        }
+        let cert = freedom_types::ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: previous,
+            new_set_hash: new_set,
+            votes,
+        };
+        assert_eq!(
+            validate_validator_set_certificate(&state, &cert),
+            Err("invalid validator set certificate transition fields".into())
+        );
+    }
+
+    #[test]
+    fn certificate_admission_requires_strict_validator_count_quorum() {
+        let state = state();
+        let id = *state.active_validator_set.keys().next().unwrap();
+        let entry = state.active_validator_set.get(&id).unwrap();
+        let previous = freedom_consensus::validator_set_hash(&state.active_validator_set);
+        let new_set = freedom_consensus::validator_set_hash(&state.pending_validator_set);
+        let mut vote = freedom_types::ValidatorSetVote {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: previous,
+            new_set_hash: new_set,
+            validator_id: id,
+            signature: Vec::new(),
+        };
+        vote.signature = freedom_crypto::sign(
+            &ed25519_dalek::SigningKey::from_bytes(&entry.consensus_key),
+            &vote.signing_bytes(),
+        ).to_vec();
+        let cert = freedom_types::ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: previous,
+            new_set_hash: new_set,
+            votes: vec![vote],
+        };
+        assert_eq!(
+            validate_validator_set_certificate(&state, &cert),
+            Err("validator set certificate lacks validator-count quorum".into())
+        );
     }
 }
