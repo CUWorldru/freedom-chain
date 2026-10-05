@@ -71,7 +71,12 @@ impl ChainState {
   self.evidence.insert(evidence.evidence_hash,evidence); Ok(true)
  }
  pub fn slash_evidence(&mut self,evidence_hash:Hash,amount:u128)->Result<u128,StateError>{
-  if self.slashed_evidence.contains_key(&evidence_hash){return Ok(0)}
+  if let Some(recorded)=self.slashed_evidence.get(&evidence_hash) {
+    if amount != *recorded {
+      return Err(StateError::InvalidEvidence);
+    }
+    return Ok(0);
+  }
   self.validate_validator_records_integrity()?;
   self.validate_unbonding_integrity()?;
   self.validate_evidence_integrity()?;
@@ -4363,6 +4368,64 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m296_slash_replay_amount_hardening_tests {
+    use super::*;
+
+    #[test]
+    fn repeated_slash_with_same_amount_is_idempotent() {
+        let key=[8u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        state.insert_account(freedom_types::Account::new(key,100));
+        state.accounts.get_mut(&owner).unwrap().staked=100;
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash,evidence.clone());
+        assert_eq!(state.slash_evidence(evidence.evidence_hash,10),Ok(10));
+        assert_eq!(state.slash_evidence(evidence.evidence_hash,10),Ok(0));
+        assert_eq!(state.validators.get(&id).unwrap().stake,90);
+    }
+
+    #[test]
+    fn repeated_slash_with_different_amount_is_rejected() {
+        let key=[9u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        state.insert_account(freedom_types::Account::new(key,100));
+        state.accounts.get_mut(&owner).unwrap().staked=100;
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash,evidence.clone());
+        assert_eq!(state.slash_evidence(evidence.evidence_hash,10),Ok(10));
+        assert_eq!(
+            state.slash_evidence(evidence.evidence_hash,9),
+            Err(StateError::InvalidEvidence)
+        );
+        assert_eq!(state.validators.get(&id).unwrap().stake,90);
     }
 }
 
