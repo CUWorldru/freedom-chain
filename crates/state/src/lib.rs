@@ -57,6 +57,9 @@ impl ChainState {
  }
 
  pub fn record_equivocation(&mut self,evidence:freedom_types::EquivocationEvidence)->Result<bool,StateError>{
+  // Evidence insertion is consensus state mutation. Refuse to append new
+  // evidence while the authoritative validator registry is already corrupt.
+  self.validate_validator_records_integrity()?;
   if evidence.validator_id == [0;32]
     || evidence.first.is_empty()
     || evidence.second.is_empty()
@@ -4379,6 +4382,55 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m301_evidence_registry_integrity_tests {
+    use super::*;
+
+    #[test]
+    fn evidence_recording_rejects_corrupted_validator_registry() {
+        let key=[17u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+
+        state.validators.get_mut(&id).unwrap().consensus_key=[18u8;32];
+        assert_eq!(state.record_equivocation(evidence.clone()),Err(StateError::InvalidBridgeWithdrawal));
+        assert!(!state.evidence.contains_key(&evidence.evidence_hash));
+    }
+
+    #[test]
+    fn evidence_recording_accepts_consistent_validator_registry() {
+        let key=[19u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        assert_eq!(state.record_equivocation(evidence.clone()),Ok(true));
+        assert!(state.evidence.contains_key(&evidence.evidence_hash));
     }
 }
 
