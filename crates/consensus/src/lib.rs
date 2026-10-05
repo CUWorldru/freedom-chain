@@ -516,7 +516,7 @@ mod m335_active_validator_quorum_tests {
     use freedom_types::{Genesis, Validator, ValidatorSetEntry, ValidatorVote};
 
     fn state_with_divergent_validator_sets() -> (ChainState, Vec<freedom_crypto::SigningKey>) {
-        let keys = vec![generate_keypair(), generate_keypair(), generate_keypair()];
+        let keys = vec![generate_keypair(), generate_keypair(), generate_keypair(), generate_keypair(), generate_keypair()];
         let validators = keys.iter().enumerate().map(|(i, key)| {
             let public_key = key.verifying_key().to_bytes();
             let id = hash_bytes(&[b'm', b'3', b'3', b'5', i as u8]);
@@ -529,7 +529,7 @@ mod m335_active_validator_quorum_tests {
         let mut state = ChainState::genesis(&Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: vec![] });
         state.validators = validators;
         state.active_validator_set.clear();
-        for (i, key) in keys.iter().enumerate() {
+        for (i, key) in keys.iter().take(3).enumerate() {
             let public_key = key.verifying_key().to_bytes();
             let id = hash_bytes(&[b'm', b'3', b'3', b'5', i as u8]);
             state.active_validator_set.insert(id, ValidatorSetEntry {
