@@ -431,6 +431,11 @@ for tx in &block.transactions{receipts.push(execute_transaction(&mut working,tx)
 if block.header.receipts_root!=receipts_root(&receipts){return Err("receipts root mismatch".into())}
 if let Some(cert) = &block.header.epoch_transition_certificate {
     freedom_consensus::validate_validator_set_certificate(s, cert)?;
+    if let Some(existing) = s.validator_set_certificate.as_ref() {
+        if existing != cert {
+            return Err("validator set certificate is already committed for this transition".into());
+        }
+    }
     working.validator_set_certificate = Some(cert.clone());
 }
 working.height=block.header.height;
