@@ -996,28 +996,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut valset_votes: BTreeMap<Hash, freedom_types::ValidatorSetVote> = BTreeMap::new();
     let mut valset_certificate_broadcasted: Option<Hash> = None;
 
-    if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
+    let next_height = state.height
+        .checked_add(1)
+        .ok_or_else(|| "block height exceeds u64::MAX".to_string())?;
+    if proposer_for_height_round(&state, next_height, round) == Some(owner) {
         let (proposal, block) = build_local_proposal(&state, owner, &consensus_key, round)?;
         blocks.insert(proposal.block_hash, block);
-        println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(proposal.block_hash));
+        println!("proposing height={} round={} hash={}", next_height, round, hex::encode(proposal.block_hash));
         publish(&mut swarm, &NetworkMessage::Proposal(proposal))?;
     }
 
     loop {
+        let next_height = state.height
+            .checked_add(1)
+            .ok_or_else(|| "block height exceeds u64::MAX".to_string())?;
         tokio::select! {
             _ = timer.tick() => {
-                if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 {
+                if state.epoch_length > 0 && (next_height) % state.epoch_length == 0 {
                     let new_set_hash = freedom_consensus::validator_set_hash(&state.pending_validator_set);
-                    if let Ok(vote) = make_validator_set_vote(&state, validator_id, state.epoch.saturating_add(1), new_set_hash, &consensus_key) {
+                    if let Ok(vote) = make_validator_set_vote(&state, validator_id, state.epoch.checked_add(1).ok_or_else(|| "epoch transition exceeds u64::MAX".to_string())?, new_set_hash, &consensus_key) {
                         valset_votes.insert(vote.validator_id, vote.clone());
                         publish(&mut swarm, &NetworkMessage::ValidatorSetVote(vote))?;
                     }
                 }
                 if timeout_round_sent != Some(round) {
-                    let timeout = make_timeout(state.height + 1, round, validator_id, &consensus_key);
+                    let timeout = make_timeout(next_height, round, validator_id, &consensus_key);
                     publish(&mut swarm, &NetworkMessage::Timeout(timeout))?;
                     timeout_round_sent = Some(round);
-                    println!("timeout height={} round={}", state.height + 1, round);
+                    println!("timeout height={} round={}", next_height, round);
                 }
             }
             _ = sync_timer.tick() => {
@@ -1025,7 +1031,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     store.save_peer_reputation(&peer_reputations)?;
                 }
                 if !connected_peers.is_empty() && pending_sync.is_empty() {
-                    let from_height = state.height.saturating_add(1);
+                    let from_height = next_height;
                     let peer_count = connected_peers.len().min(2);
                     sync_required = peer_count.max(1);
                     sync_candidates.clear();
@@ -1063,8 +1069,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if pending_sync.is_empty() {
                             sync_required = 1;
                             let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer_id, validator_id, state.height);
-                            pending_sync.push((peer_id, sync_outbound_id, sync_id, state.height.saturating_add(1)));
-                            sync_round_peers.insert(peer_id, state.height.saturating_add(1));
+                            pending_sync.push((peer_id, sync_outbound_id, sync_id, next_height));
+                            sync_round_peers.insert(peer_id, next_height);
                         }
                         if !pending_snapshot.iter().any(|(pending_peer, ..)| *pending_peer == peer_id)
                             && pending_snapshot.len() < 2
@@ -1237,10 +1243,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 sync_required = 1;
                                                 round=0;
                                                 timeout_round_sent=None;
-                                                if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
+                                                if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                                     let (next_proposal, next_block) = build_local_proposal(&state, owner, &consensus_key, round)?;
                                                     blocks.insert(next_proposal.block_hash, next_block);
-                                                    println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(next_proposal.block_hash));
+                                                    println!("proposing height={} round={} hash={}", next_height, round, hex::encode(next_proposal.block_hash));
                                                     publish(&mut swarm, &NetworkMessage::Proposal(next_proposal))?;
                                                 }
                                             }
@@ -1415,10 +1421,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             protocol.reset_round();
                                             blocks.clear();
                                             println!("SNAPSHOT_ACTIVATED height={} hash={} bytes={}", response.height, hex::encode(response.block_hash), response.state_json.len());
-                                            if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
+                                            if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                                 let (next_proposal, next_block) = build_local_proposal(&state, owner, &consensus_key, round)?;
                                                 blocks.insert(next_proposal.block_hash, next_block);
-                                                println!("proposing height={} round={} hash={}", state.height + 1, round, hex::encode(next_proposal.block_hash));
+                                                println!("proposing height={} round={} hash={}", next_height, round, hex::encode(next_proposal.block_hash));
                                                 publish(&mut swarm, &NetworkMessage::Proposal(next_proposal))?;
                                             }
                                         }
@@ -1457,7 +1463,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 Ok(NetworkMessage::Proposal(proposal)) => {
                                     if !protocol.remember_message(proposal.message_id()) { continue; }
-                                    if proposal.height != state.height + 1 || proposal.round != round { continue; }
+                                    if proposal.height != next_height || proposal.round != round { continue; }
                                     if let Err(e) = freedom_network::validate_proposal(&state, &proposal) {
                                         eprintln!("proposal rejected: {e}");
                                         continue;
@@ -1485,7 +1491,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 Ok(NetworkMessage::Vote(vote)) => {
                                     if !protocol.remember_message(vote.message_id()) { continue; }
-                                    if vote.height != state.height + 1 || vote.round != round { continue; }
+                                    if vote.height != next_height || vote.round != round { continue; }
                                     let hash = vote.block_hash;
                                     if let Some(existing)=protocol.votes.get(&vote.validator_id) {
                                         if existing.block_hash != vote.block_hash || existing.round != vote.round {
@@ -1499,16 +1505,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             continue;
                                         }
                                     }
-                                    let ready = protocol.receive_vote(&state, vote, hash, state.height + 1, round)?;
+                                    let ready = protocol.receive_vote(&state, vote, hash, next_height, round)?;
                                     if ready {
                                         let block = blocks.get(&hash).ok_or_else(|| "prevote quorum block missing".to_string())?;
-                                        let precommit = protocol.lock_on_prevote_quorum(&state, hash, state.height + 1, round, block)?;
+                                        let precommit = protocol.lock_on_prevote_quorum(&state, hash, next_height, round, block)?;
                                         publish(&mut swarm, &NetworkMessage::Precommit(precommit))?;
                                     }
                                 }
                                 Ok(NetworkMessage::Precommit(precommit)) => {
                                     if !protocol.remember_message(precommit.message_id()) { continue; }
-                                    if precommit.height != state.height + 1 || precommit.round != round { continue; }
+                                    if precommit.height != next_height || precommit.round != round { continue; }
                                     let hash = precommit.block_hash;
                                     if let Some(existing)=protocol.precommits.get(&precommit.validator_id) {
                                         if existing.block_hash != precommit.block_hash || existing.round != precommit.round {
@@ -1522,7 +1528,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             continue;
                                         }
                                     }
-                                    let ready = protocol.receive_precommit(&state, precommit, hash, state.height + 1, round)?;
+                                    let ready = protocol.receive_precommit(&state, precommit, hash, next_height, round)?;
                                     if ready {
                                         if let Some(block) = blocks.get(&hash).cloned() {
                                             let finality_validator_set = state.active_validator_set.clone();
@@ -1547,7 +1553,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             blocks.clear();
                                             round = 0;
                                             timeout_round_sent = None;
-                                            let next_height = state.height + 1;
+                                            let next_height = next_height;
                                             if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                                 let (next_proposal, next_block) = build_local_proposal(&state, owner, &consensus_key, round)?;
                                                 blocks.insert(next_proposal.block_hash, next_block);
@@ -1565,16 +1571,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 Ok(NetworkMessage::Timeout(timeout)) => {
                                     if !protocol.remember_message(timeout.message_id()) { continue; }
-                                    if timeout.height != state.height + 1 || timeout.round != round { continue; }
+                                    if timeout.height != next_height || timeout.round != round { continue; }
                                     if let Some(existing)=protocol.timeouts.get(&timeout.validator_id) {
                                         if existing.signing_bytes() != timeout.signing_bytes() {
                                             eprintln!("timeout equivocation observed validator={}", hex::encode(timeout.validator_id));
                                             continue;
                                         }
                                     }
-                                    if protocol.receive_timeout(&state, timeout, state.height + 1, round)? {
+                                    if protocol.receive_timeout(&state, timeout, next_height, round)? {
                                         let timeout_certificate = freedom_types::TimeoutCertificate {
-                                            height: state.height + 1,
+                                            height: next_height,
                                             round,
                                             timeouts: protocol.timeouts.values().cloned().collect(),
                                         };
@@ -1586,17 +1592,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         protocol.reset_round();
                                         blocks.clear();
                                         timeout_round_sent = None;
-                                        println!("VIEW_CHANGE height={} new_round={}", state.height + 1, round);
-                                        if proposer_for_height_round(&state, state.height + 1, round) == Some(owner) {
+                                        println!("VIEW_CHANGE height={} new_round={}", next_height, round);
+                                        if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                             let (block, valid_round, valid_precommits) = if let (Some(block), Some(lr)) = (locked_block, locked_round) {
                                                 (block, Some(lr), locked_precommits)
                                             } else {
                                                 let mempool = Mempool::new();
-                                                (build_next_block(&state, &mempool, owner, 1, if state.epoch_length > 0 && (state.height + 1) % state.epoch_length == 0 { state.epoch.saturating_add(1) } else { state.epoch }, round, 100)?, None, Vec::new())
+                                                (build_next_block(&state, &mempool, owner, 1, if state.epoch_length > 0 && (next_height) % state.epoch_length == 0 { state.epoch.checked_add(1).ok_or_else(|| "epoch transition exceeds u64::MAX".to_string())? } else { state.epoch }, round, 100)?, None, Vec::new())
                                             };
                                             let proposal = make_proposal(block.clone(), round, &consensus_key, valid_round, valid_precommits, Some(timeout_certificate));
                                             blocks.insert(proposal.block_hash, block);
-                                            println!("proposing height={} round={} hash={} previous_round={}", state.height + 1, round, hex::encode(proposal.block_hash), previous_round);
+                                            println!("proposing height={} round={} hash={} previous_round={}", next_height, round, hex::encode(proposal.block_hash), previous_round);
                                             publish(&mut swarm, &NetworkMessage::Proposal(proposal))?;
                                         }
                                     }
