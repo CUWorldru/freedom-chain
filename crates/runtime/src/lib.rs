@@ -8,6 +8,12 @@ pub fn collect_validator_set_certificate(
     state: &ChainState,
     votes: &[freedom_types::ValidatorSetVote],
 ) -> Result<freedom_types::ValidatorSetCertificate, String> {
+    if let Some(existing) = state.validator_set_certificate.as_ref() {
+        // A transition certificate is immutable once committed. Do this
+        // before collecting new votes so no alternate collection path can
+        // manufacture a replacement certificate for the same epoch.
+        return Err("validator set certificate is already committed for this transition".into());
+    }
     if votes.is_empty() { return Err("no validator set votes".into()); }
     let mut unique = std::collections::BTreeSet::new();
     for vote in votes {
@@ -1267,35 +1273,18 @@ mod m315_validator_certificate_collection_tests {
     use super::*;
 
     #[test]
-    fn certificate_collection_rejects_conflicting_committed_certificate() {
-        let state = ChainState::genesis(&freedom_types::Genesis::default());
-        let existing = freedom_types::ValidatorSetCertificate {
-            from_epoch: 0,
-            to_epoch: 1,
-            previous_set_hash: [1; 32],
-            new_set_hash: [2; 32],
-            votes: vec![],
-        };
-        let mut state = state;
-        state.validator_set_certificate = Some(existing.clone());
-
-        let result = collect_validator_set_certificate(&state, &[]);
-        assert_eq!(result, Err("no validator set votes".into()));
-    }
-
-    #[test]
-    fn certificate_commitment_is_not_overwritable() {
+    fn certificate_collection_rejects_when_transition_is_already_committed() {
         let mut state = ChainState::genesis(&freedom_types::Genesis::default());
-        let existing = freedom_types::ValidatorSetCertificate {
+        state.validator_set_certificate = Some(freedom_types::ValidatorSetCertificate {
             from_epoch: 0,
             to_epoch: 1,
             previous_set_hash: [1; 32],
             new_set_hash: [2; 32],
             votes: vec![],
-        };
-        state.validator_set_certificate = Some(existing.clone());
+        });
+
         assert_eq!(
-            commit_validator_set_certificate(&mut state, &existing),
+            collect_validator_set_certificate(&state, &[]),
             Err("validator set certificate is already committed for this transition".into())
         );
     }
