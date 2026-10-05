@@ -430,7 +430,8 @@ fn validate_bridge_mint_block_set(transactions: &[Transaction]) -> Result<(), St
 }
 
 pub fn execute_block(s:&mut ChainState,block:&Block)->Result<Block,String>{
-if block.header.height!=s.height+1{return Err("invalid block height".into())}
+let expected_height=s.height.checked_add(1).ok_or_else(||"block height exceeds u64::MAX".to_string())?;
+if block.header.height!=expected_height{return Err("invalid block height".into())}
 if block.header.previous_hash!=s.last_block_hash{return Err("invalid previous block hash".into())}
 let expected_epoch=if s.epoch_length>0 && block.header.height%s.epoch_length==0{block.header.height/s.epoch_length}else{s.epoch};
 if block.header.epoch!=expected_epoch{return Err("invalid block epoch".into())}
@@ -653,6 +654,41 @@ pub fn build_next_block(
 }
 
 
+
+#[cfg(test)]
+mod m338_block_height_overflow_tests {
+    use super::*;
+    use freedom_types::Genesis;
+
+    #[test]
+    fn execute_block_rejects_height_overflow_at_u64_max() {
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.height = u64::MAX;
+        let block = Block {
+            header: freedom_types::BlockHeader {
+                height: u64::MAX,
+                previous_hash: state.last_block_hash,
+                tx_root: tx_root(&[]),
+                receipts_root: receipts_root(&[]),
+                state_root: state.state_root(),
+                proposer: [0; 32],
+                round: 0,
+                epoch: state.epoch,
+                epoch_transition_certificate: None,
+            },
+            transactions: vec![],
+            receipts: vec![],
+        };
+        assert_eq!(
+            execute_block(&mut state, &block),
+            Err("block height exceeds u64::MAX".into())
+        );
+    }
+}
 
 #[cfg(test)]
 mod m207_bitcoin_chain_id_tests {
