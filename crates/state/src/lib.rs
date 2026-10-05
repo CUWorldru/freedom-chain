@@ -35,7 +35,7 @@ pub struct LedgerEntry { pub tx_hash:Hash, pub sender:Address, pub kind:u8, pub 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct Ticket { pub ticket_id:Hash,pub owner:Address,pub draw_id:Hash,pub created_at:u64 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct DrawState { pub config:DrawConfig,pub total_tickets:u64,#[serde(rename="prize_pool_native_units",alias="prize_pool_mfdm")] pub prize_pool_native_units:u128,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,pub executed:bool }
 
-#[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,#[serde(default)] pub unbonding:BTreeMap<Hash,UnbondingEntry>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,#[serde(rename="draw_prize_pool_native_units",alias="draw_prize_pool_mfdm")] pub draw_prize_pool_native_units:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch:u64,pub epoch_length:u64,pub active_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub asset_registry:BTreeMap<Hash,AssetDefinition>,#[serde(default)] pub cross_chain_asset_registries:BTreeMap<Hash,freedom_types::CrossChainAssetRegistry>,#[serde(default)] pub processed_bridge_messages:BTreeMap<Hash,BridgeMessage>,#[serde(default)] pub bridge_message_status:BTreeMap<Hash,BridgeMessageStatus>,#[serde(default)] pub bridge_withdrawals:BTreeMap<Hash,BridgeWithdrawal>,#[serde(default)] pub bridge_withdrawal_status:BTreeMap<Hash,BridgeWithdrawalStatus>,#[serde(default)] pub bridge_accounting:BTreeMap<Hash,BridgeAccounting>,#[serde(default)] pub bridge_security_policies:BTreeMap<Hash,BridgeSecurityPolicy>,#[serde(default)] pub bridge_approval_sets:BTreeMap<Hash,BridgeApprovalSet>,#[serde(default)] pub bridge_pause_authorizations:BTreeMap<Hash,BridgePauseAuthorizationSet>,#[serde(default)] pub bridge_nonce_registry:BTreeMap<Hash,BTreeSet<u64>>,#[serde(default)] pub bridge_rate_limits:BTreeMap<Hash,BridgeRateLimitUsage>,#[serde(default)] pub bridge_deposit_replays:BTreeMap<Hash,DepositReplayRecord>,#[serde(default)] pub bridge_mint_authorizations:BTreeMap<Hash,BridgeMintAuthorization>,#[serde(default)] pub bridge_withdrawal_rate_limit_period:BTreeMap<Hash,u64>,#[serde(default)] pub bitcoin_checkpoints:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_canonical_tips:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_reorg_evidence:BTreeMap<Hash,Vec<BitcoinReorgEvidence>>,#[serde(default)] pub bitcoin_reorg_policy:BTreeMap<Hash,freedom_types::BitcoinReorgPolicy>,#[serde(default)] pub bitcoin_reorg_recovery:BTreeMap<Hash,freedom_types::BitcoinReorgRecovery>,#[serde(default)] pub bitcoin_utxo_attestations:BTreeMap<Hash,freedom_types::BitcoinUtxoCommitmentAttestation>,#[serde(default)] pub bitcoin_utxo_commitments:BTreeMap<Hash,freedom_types::BitcoinUtxoBlockCommitment>,#[serde(default)] pub pending_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub validator_set_history:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_history_sets:BTreeMap<u64,BTreeMap<Hash,[u8;32]>>,
+#[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,#[serde(default)] pub unbonding:BTreeMap<Hash,UnbondingEntry>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,#[serde(rename="draw_prize_pool_native_units",alias="draw_prize_pool_mfdm")] pub draw_prize_pool_native_units:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch:u64,pub epoch_length:u64,pub active_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub asset_registry:BTreeMap<Hash,AssetDefinition>,#[serde(default)] pub cross_chain_asset_registries:BTreeMap<Hash,freedom_types::CrossChainAssetRegistry>,#[serde(default)] pub processed_bridge_messages:BTreeMap<Hash,BridgeMessage>,#[serde(default)] pub bridge_message_status:BTreeMap<Hash,BridgeMessageStatus>,#[serde(default)] pub bridge_withdrawals:BTreeMap<Hash,BridgeWithdrawal>,#[serde(default)] pub bridge_withdrawal_status:BTreeMap<Hash,BridgeWithdrawalStatus>,#[serde(default)] pub bridge_accounting:BTreeMap<Hash,BridgeAccounting>,#[serde(default)] pub bridge_security_policies:BTreeMap<Hash,BridgeSecurityPolicy>,#[serde(default)] pub bridge_approval_sets:BTreeMap<Hash,BridgeApprovalSet>,#[serde(default)] pub bridge_pause_authorizations:BTreeMap<Hash,BridgePauseAuthorizationSet>,#[serde(default)] pub bridge_nonce_registry:BTreeMap<Hash,BTreeSet<u64>>,#[serde(default)] pub bridge_rate_limits:BTreeMap<Hash,BridgeRateLimitUsage>,#[serde(default)] pub bridge_deposit_replays:BTreeMap<Hash,DepositReplayRecord>,#[serde(default)] pub bridge_mint_authorizations:BTreeMap<Hash,BridgeMintAuthorization>,#[serde(default)] pub bridge_withdrawal_rate_limit_period:BTreeMap<Hash,u64>,#[serde(default)] pub bitcoin_checkpoints:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_canonical_tips:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_reorg_evidence:BTreeMap<Hash,Vec<BitcoinReorgEvidence>>,#[serde(default)] pub bitcoin_reorg_policy:BTreeMap<Hash,freedom_types::BitcoinReorgPolicy>,#[serde(default)] pub bitcoin_reorg_recovery:BTreeMap<Hash,freedom_types::BitcoinReorgRecovery>,#[serde(default)] pub bitcoin_utxo_attestations:BTreeMap<Hash,freedom_types::BitcoinUtxoCommitmentAttestation>,#[serde(default)] pub bitcoin_utxo_attestation_policy_hashes:BTreeMap<Hash,Hash>,#[serde(default)] pub bitcoin_utxo_commitments:BTreeMap<Hash,freedom_types::BitcoinUtxoBlockCommitment>,#[serde(default)] pub pending_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub validator_set_history:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_history_sets:BTreeMap<u64,BTreeMap<Hash,[u8;32]>>,
 #[serde(default)] pub validator_set_history_entries:BTreeMap<u64,BTreeMap<Hash,freedom_types::ValidatorSetEntry>>,#[serde(default)] pub validator_set_history_key_hashes:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_certificate:Option<freedom_types::ValidatorSetCertificate>,#[serde(default)] pub staking_activated:bool,pub epoch_issuance:u128,pub epoch_cap:u128,pub evidence:BTreeMap<Hash,freedom_types::EquivocationEvidence>,pub slashed_evidence:BTreeMap<Hash,u128> }
 #[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected }
 impl ChainState {
@@ -68,7 +68,7 @@ impl ChainState {
  }
 
  pub const UNBONDING_COOLDOWN: u64 = 200;
- pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis native asset supply must be zero");let validators=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators,nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_native_units:0,annual_reserve_native_units:0,draw_prize_pool_native_units:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),asset_registry: Self::genesis_asset_registry(),cross_chain_asset_registries: Self::genesis_cross_chain_asset_registries(),processed_bridge_messages:BTreeMap::new(),bridge_message_status:BTreeMap::new(),bridge_withdrawals:BTreeMap::new(),bridge_withdrawal_status:BTreeMap::new(),bridge_accounting:BTreeMap::new(),bridge_security_policies:BTreeMap::new(),bridge_approval_sets:BTreeMap::new(),bridge_pause_authorizations:BTreeMap::new(),bridge_nonce_registry:BTreeMap::new(),bridge_rate_limits:BTreeMap::new(),bridge_deposit_replays:BTreeMap::new(),bridge_mint_authorizations:BTreeMap::new(),bridge_withdrawal_rate_limit_period:BTreeMap::new(),bitcoin_checkpoints:BTreeMap::new(),bitcoin_canonical_tips:BTreeMap::new(),bitcoin_reorg_evidence:BTreeMap::new(),bitcoin_reorg_policy:BTreeMap::new(),bitcoin_reorg_recovery:BTreeMap::new(),bitcoin_utxo_attestations:BTreeMap::new(),bitcoin_utxo_commitments:BTreeMap::new(),pending_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),validator_set_history:{ let mut h=BTreeMap::new(); let mut bytes=Vec::new(); for (id,v) in validators.iter() { bytes.extend_from_slice(id); bytes.extend_from_slice(&v.owner); bytes.extend_from_slice(&v.consensus_key); bytes.extend_from_slice(&v.stake.to_le_bytes()); } h.insert(0,freedom_primitives::hash_bytes(&bytes)); h },validator_set_history_sets:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()); h },validator_set_history_entries:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect()); h },validator_set_history_key_hashes:{ let mut h=BTreeMap::new(); let mut b=Vec::new(); for (id,v) in validators.iter(){ b.extend_from_slice(id); b.extend_from_slice(&v.consensus_key); } h.insert(0,freedom_primitives::hash_bytes(&b)); h },validator_set_certificate:None,staking_activated:false,epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
+ pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis native asset supply must be zero");let validators=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators,nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_native_units:0,annual_reserve_native_units:0,draw_prize_pool_native_units:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),asset_registry: Self::genesis_asset_registry(),cross_chain_asset_registries: Self::genesis_cross_chain_asset_registries(),processed_bridge_messages:BTreeMap::new(),bridge_message_status:BTreeMap::new(),bridge_withdrawals:BTreeMap::new(),bridge_withdrawal_status:BTreeMap::new(),bridge_accounting:BTreeMap::new(),bridge_security_policies:BTreeMap::new(),bridge_approval_sets:BTreeMap::new(),bridge_pause_authorizations:BTreeMap::new(),bridge_nonce_registry:BTreeMap::new(),bridge_rate_limits:BTreeMap::new(),bridge_deposit_replays:BTreeMap::new(),bridge_mint_authorizations:BTreeMap::new(),bridge_withdrawal_rate_limit_period:BTreeMap::new(),bitcoin_checkpoints:BTreeMap::new(),bitcoin_canonical_tips:BTreeMap::new(),bitcoin_reorg_evidence:BTreeMap::new(),bitcoin_reorg_policy:BTreeMap::new(),bitcoin_reorg_recovery:BTreeMap::new(),bitcoin_utxo_attestations:BTreeMap::new(),bitcoin_utxo_attestation_policy_hashes:BTreeMap::new(),bitcoin_utxo_commitments:BTreeMap::new(),pending_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),validator_set_history:{ let mut h=BTreeMap::new(); let mut bytes=Vec::new(); for (id,v) in validators.iter() { bytes.extend_from_slice(id); bytes.extend_from_slice(&v.owner); bytes.extend_from_slice(&v.consensus_key); bytes.extend_from_slice(&v.stake.to_le_bytes()); } h.insert(0,freedom_primitives::hash_bytes(&bytes)); h },validator_set_history_sets:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()); h },validator_set_history_entries:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect()); h },validator_set_history_key_hashes:{ let mut h=BTreeMap::new(); let mut b=Vec::new(); for (id,v) in validators.iter(){ b.extend_from_slice(id); b.extend_from_slice(&v.consensus_key); } h.insert(0,freedom_primitives::hash_bytes(&b)); h },validator_set_certificate:None,staking_activated:false,epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
  pub fn genesis_cross_chain_asset_registries() -> BTreeMap<Hash, freedom_types::CrossChainAssetRegistry> {
   let mut registries = BTreeMap::new();
   for config in freedom_types::production_profiles() {
@@ -242,9 +242,23 @@ impl ChainState {
   }
   Ok(())
  }
+ fn validate_bitcoin_attestation_policy_binding(
+  &self,
+  bridge_id:Hash,
+  policy:&freedom_types::BridgeSecurityPolicy
+ )->Result<(),StateError>{
+  let expected=policy.commitment_hash();
+  if let Some(stored)=self.bitcoin_utxo_attestation_policy_hashes.get(&bridge_id) {
+    if *stored!=expected {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
+  }
+  Ok(())
+ }
  pub fn validate_bitcoin_utxo_attestation_for_commitment(&self,bridge_id:Hash,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  self.validate_bitcoin_attestation_policy_binding(bridge_id,policy)?;
   if attestation.validator_ids.iter().any(|id| !self.active_validator_set.contains_key(id)){return Err(StateError::InvalidBridgeWithdrawal);}
   if !policy.quorum_matches_validator_count(self.active_validator_set.len()){return Err(StateError::InvalidBridgeWithdrawal);}
   let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
@@ -294,6 +308,12 @@ impl ChainState {
   }
   for (bridge_id,attestation) in &self.bitcoin_utxo_attestations {
    if *bridge_id==[0;32] || attestation.bridge_id!=*bridge_id || !attestation.validate_structure() { return Err(StateError::InvalidBridgeWithdrawal); }
+   let policy=self.bridge_security_policies.get(bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if self.bitcoin_utxo_attestation_policy_hashes.get(bridge_id).copied()!=Some(policy.commitment_hash()) { return Err(StateError::InvalidBridgeWithdrawal); }
+  }
+  for (bridge_id,policy_hash) in &self.bitcoin_utxo_attestation_policy_hashes {
+   let policy=self.bridge_security_policies.get(bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if self.bitcoin_utxo_attestations.get(bridge_id).is_none() || *policy_hash!=policy.commitment_hash() { return Err(StateError::InvalidBridgeWithdrawal); }
   }
   for (bridge_id,commitment) in &self.bitcoin_utxo_commitments {
    if *bridge_id==[0;32] || !commitment.verify() { return Err(StateError::InvalidBridgeWithdrawal); }
@@ -314,6 +334,9 @@ impl ChainState {
     let attestation = self.bitcoin_utxo_attestations.get(&envelope.bridge_id)
       .ok_or(StateError::InvalidBridgeWithdrawal)?;
     self.validate_bitcoin_attestation_validator_set_binding(attestation)?;
+    if self.bitcoin_utxo_attestation_policy_hashes.get(&envelope.bridge_id).copied()!=Some(policy.commitment_hash()) {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
     if self.staking_activated {
       let certificate=self.validator_set_certificate.as_ref()
         .ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -1101,6 +1124,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   let next=freedom_types::BitcoinChainCheckpoint{height:block.height,block_hash:block.header.block_hash(),chainwork:attestation.bitcoin_tip_chainwork};
   self.bitcoin_canonical_tips.insert(bridge_id,next);
   self.bitcoin_utxo_attestations.insert(bridge_id,attestation.clone());
+  let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  self.bitcoin_utxo_attestation_policy_hashes.insert(bridge_id,policy.commitment_hash());
   Ok(())
  }
 
@@ -1108,6 +1133,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   self.validate_bitcoin_attestation_validator_set_binding(&attestation)?;
   let policy=self.bridge_security_policies.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let canonical=self.bitcoin_canonical_tips.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  self.validate_bitcoin_attestation_policy_binding(attestation.bridge_id,policy)?;
   if attestation.validator_ids.iter().any(|id| !self.active_validator_set.contains_key(id)){return Err(StateError::InvalidBridgeWithdrawal);}
   let validators=self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect::<std::collections::BTreeMap<_,_>>();
   if attestation.bridge_id!=policy.bridge_id
@@ -1116,6 +1142,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     || !attestation.verify(canonical,&validators,policy.validator_quorum){return Err(StateError::InvalidBridgeWithdrawal);}
   if let Some(previous)=self.bitcoin_utxo_attestations.get(&attestation.bridge_id){if previous.sequence==u64::MAX || attestation.sequence!=previous.sequence+1{return Err(StateError::InvalidBridgeWithdrawal);}}
   self.bitcoin_utxo_attestations.insert(attestation.bridge_id,attestation);
+  self.bitcoin_utxo_attestation_policy_hashes.insert(attestation.bridge_id,policy.commitment_hash());
   Ok(())
  }
  pub fn bitcoin_utxo_commitment_attestation(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoCommitmentAttestation>{self.bitcoin_utxo_attestations.get(&bridge_id)} pub fn register_bitcoin_block_utxo_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:freedom_types::BitcoinUtxoBlockCommitment)->Result<(),StateError>{
@@ -1865,6 +1892,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   for (epoch,entries) in &self.validator_set_history_entries{let mut x=Vec::new();x.extend_from_slice(&(entries.len() as u64).to_le_bytes());for (id,entry) in entries{x.extend_from_slice(id);x.extend_from_slice(&entry.owner);x.extend_from_slice(&entry.consensus_key);x.extend_from_slice(&entry.stake.to_le_bytes());}leaves.push(state_leaf(b"validator_set_history_entries",&epoch.to_le_bytes(),&x));}
   if let Some(cert)=&self.validator_set_certificate{leaves.push(state_leaf(b"validator_set_certificate",&[0;1],&cert.hash()));}
   for (k,v) in &self.bitcoin_utxo_attestations{leaves.push(state_leaf(b"bitcoin_utxo_attestation",k,&serde_json::to_vec(v).expect("bitcoin utxo attestation serialization")));}
+  for (k,v) in &self.bitcoin_utxo_attestation_policy_hashes{leaves.push(state_leaf(b"bitcoin_utxo_attestation_policy_hash",k,v));}
   for (k,v) in &self.bitcoin_utxo_commitments{leaves.push(state_leaf(b"bitcoin_utxo_commitment",k,&serde_json::to_vec(v).expect("bitcoin utxo commitment serialization")));}
   for (k,v) in &self.evidence{leaves.push(state_leaf(b"evidence",k,&enc_evidence(v)));}
   for (k,v) in &self.slashed_evidence{leaves.push(state_leaf(b"slashed_evidence",k,&v.to_le_bytes()));}
@@ -4011,5 +4039,68 @@ mod m273_bitcoin_chainwork_binding_tests {
         attestation.attestation_hash=attestation.compute_hash();
         assert_ne!(attestation.bitcoin_tip_chainwork,canonical.chainwork);
         assert!(attestation.validate_structure());
+    }
+}
+
+
+#[cfg(test)]
+mod m277_bitcoin_attestation_policy_binding_tests {
+    use super::*;
+
+    fn policy() -> freedom_types::BridgeSecurityPolicy {
+        freedom_types::BridgeSecurityPolicy {
+            bridge_id:[7;32], approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:3, validator_total:4, threshold_signers:1, threshold_total:1,
+            min_external_confirmations:6, max_deposit_amount:1000, max_withdrawal_amount:900,
+            daily_limit:900, emergency_paused:false, nonce_floor:0,
+        }
+    }
+
+    #[test]
+    fn policy_commitment_hash_binds_all_security_fields() {
+        let p=policy();
+        let original=p.commitment_hash();
+        let mut changed=p.clone();
+        changed.validator_quorum=4;
+        assert_ne!(original,changed.commitment_hash());
+        changed=p.clone();
+        changed.min_external_confirmations+=1;
+        assert_ne!(original,changed.commitment_hash());
+        changed=p.clone();
+        changed.emergency_paused=true;
+        assert_ne!(original,changed.commitment_hash());
+    }
+
+    #[test]
+    fn persisted_attestation_requires_authoritative_policy_snapshot() {
+        let bridge=[7;32];
+        let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] });
+        state.bridge_security_policies.insert(bridge,policy());
+        let mut attestation=freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id:bridge, chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID, policy_id:bridge,
+            validator_set_epoch:state.epoch, validator_set_hash:*state.validator_set_history.get(&state.epoch).unwrap(),
+            sequence:1, bitcoin_tip_height:1, bitcoin_tip_hash:[8;32], bitcoin_tip_chainwork:[9;32],
+            previous_utxo_root:[10;32], accumulator_root:[11;32], validator_ids:vec![[12;32]],
+            signatures:vec![freedom_types::BitcoinReorgRecoverySignature{validator_id:[12;32],signature:vec![0;64]}],
+            attestation_hash:[0;32],
+        };
+        attestation.attestation_hash=attestation.compute_hash();
+        state.bitcoin_utxo_attestations.insert(bridge,attestation);
+        assert_eq!(state.validate_finality_state_integrity(),Err(StateError::InvalidBridgeWithdrawal));
+        state.bitcoin_utxo_attestation_policy_hashes.insert(bridge,policy().commitment_hash());
+        assert!(state.validate_finality_state_integrity().is_ok());
+        state.bridge_security_policies.get_mut(&bridge).unwrap().validator_quorum=4;
+        assert_eq!(state.validate_finality_state_integrity(),Err(StateError::InvalidBridgeWithdrawal));
+    }
+
+    #[test]
+    fn policy_snapshot_mutation_changes_state_root() {
+        let bridge=[7;32];
+        let mut state=ChainState::genesis(&freedom_types::Genesis::default());
+        state.bridge_security_policies.insert(bridge,policy());
+        state.bitcoin_utxo_attestation_policy_hashes.insert(bridge,policy().commitment_hash());
+        let before=state.state_root();
+        state.bitcoin_utxo_attestation_policy_hashes.get_mut(&bridge).unwrap()[0]^=1;
+        assert_ne!(before,state.state_root());
     }
 }
