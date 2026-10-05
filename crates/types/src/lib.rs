@@ -1094,6 +1094,23 @@ impl BridgeSecurityPolicy {
             && self.daily_limit >= self.max_withdrawal_amount
     }
     pub fn quorum_reached(&self, approvals:u16)->bool { approvals >= self.validator_quorum }
+    pub fn commitment_hash(&self)->Hash {
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-BRIDGE-SECURITY-POLICY-V1");
+        o.extend_from_slice(&self.bridge_id);
+        o.push(self.approval_mode as u8);
+        o.extend_from_slice(&self.validator_quorum.to_le_bytes());
+        o.extend_from_slice(&self.validator_total.to_le_bytes());
+        o.extend_from_slice(&self.threshold_signers.to_le_bytes());
+        o.extend_from_slice(&self.threshold_total.to_le_bytes());
+        o.extend_from_slice(&self.min_external_confirmations.to_le_bytes());
+        o.extend_from_slice(&self.max_deposit_amount.to_le_bytes());
+        o.extend_from_slice(&self.max_withdrawal_amount.to_le_bytes());
+        o.extend_from_slice(&self.daily_limit.to_le_bytes());
+        o.push(self.emergency_paused as u8);
+        o.extend_from_slice(&self.nonce_floor.to_le_bytes());
+        freedom_primitives::hash_bytes(&o)
+    }
     pub fn quorum_matches_validator_count(&self, validator_count:usize)->bool {
         validator_count > 0
             && self.validator_total as usize == validator_count
