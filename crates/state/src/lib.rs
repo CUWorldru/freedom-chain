@@ -2188,6 +2188,12 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  fn stake(&mut self,tx:&Transaction)->Result<(),StateError>{
   let p=freedom_types::StakePayload::decode(&tx.payload).map_err(|_|StateError::UnsupportedTransaction)?;
   if p.amount==0{return Err(StateError::InvalidStakeAmount)}
+  // Validator selection is owner-based. Validate the authoritative registry
+  // before selecting a validator so duplicate/corrupt owner records cannot
+  // steer the stake mutation into an ambiguous validator entry.
+  self.validate_validator_records_integrity()?;
+  self.validate_unbonding_integrity()?;
+  self.validate_staking_activation_integrity()?;
   let id=self.validators.values().find(|v|v.owner==tx.sender).map(|v|v.validator_id).ok_or(StateError::InvalidEvidence)?;
   if self.staking_activated && (self.validator_lifecycle(id)?!=freedom_types::ValidatorLifecycle::Active || self.validators.get(&id).ok_or(StateError::InvalidEvidence)?.unbonding_stake>0){return Err(StateError::InvalidValidatorLifecycle)}
   let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
@@ -2201,6 +2207,12 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  fn unstake(&mut self,tx:&Transaction)->Result<(),StateError>{
   let p=freedom_types::UnstakePayload::decode(&tx.payload).map_err(|_|StateError::UnsupportedTransaction)?;
   if p.amount==0{return Err(StateError::InvalidUnbonding)}
+  // The owner -> validator lookup is ambiguous if the validator registry is
+  // already corrupted. Refuse the mutation before touching account or
+  // unbonding state.
+  self.validate_validator_records_integrity()?;
+  self.validate_unbonding_integrity()?;
+  self.validate_staking_activation_integrity()?;
   let id=self.validators.values().find(|v|v.owner==tx.sender).map(|v|v.validator_id).ok_or(StateError::InvalidEvidence)?;
   let owner=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?.owner;
   let active=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?.stake;
@@ -6915,3 +6927,61 @@ mod m277_bitcoin_attestation_policy_binding_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m318_staking_mutation_boundary_tests {
+    use super::*;
+
+    fn tx(sender: Address, kind: TxKind, amount: u128) -> Transaction {
+        Transaction {
+            chain_id: freedom_primitives::CHAIN_ID,
+            sender,
+            nonce: 0,
+            kind,
+            payload: amount.to_le_bytes().to_vec(),
+            fee: 0,
+            signature: vec![],
+        }
+    }
+
+    #[test]
+    fn stake_rejects_duplicate_owner_before_mutation() {
+        let key = [7u8; 32];
+        let owner = address_from_public_key(&key);
+        let key_a = [8u8; 32];
+        let key_b = [9u8; 32];
+        let id_a = freedom_primitives::hash_bytes(&key_a);
+        let id_b = freedom_primitives::hash_bytes(&key_b);
+        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        state.accounts.insert(owner, Account { address: owner, public_key: key, nonce: 0, balance: 1_000, locked: 0, staked: 0 });
+        state.validators.insert(id_a, Validator { validator_id: id_a, owner, consensus_key: key_a, stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0 });
+        state.validators.insert(id_b, Validator { validator_id: id_b, owner, consensus_key: key_b, stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0 });
+        let before = state.accounts.get(&owner).cloned().unwrap();
+        assert_eq!(state.stake(&tx(owner, TxKind::Stake, 100)), Err(StateError::InvalidBridgeWithdrawal));
+        assert_eq!(state.accounts.get(&owner).unwrap(), &before);
+        assert_eq!(state.validators.get(&id_a).unwrap().stake, 0);
+        assert_eq!(state.validators.get(&id_b).unwrap().stake, 0);
+        assert!(!state.staking_activated);
+    }
+
+    #[test]
+    fn unstake_rejects_duplicate_owner_before_mutation() {
+        let key = [17u8; 32];
+        let owner = address_from_public_key(&key);
+        let key_a = [18u8; 32];
+        let key_b = [19u8; 32];
+        let id_a = freedom_primitives::hash_bytes(&key_a);
+        let id_b = freedom_primitives::hash_bytes(&key_b);
+        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        state.accounts.insert(owner, Account { address: owner, public_key: key, nonce: 0, balance: 0, locked: 0, staked: 200 });
+        state.validators.insert(id_a, Validator { validator_id: id_a, owner, consensus_key: key_a, stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0 });
+        state.validators.insert(id_b, Validator { validator_id: id_b, owner, consensus_key: key_b, stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0 });
+        state.staking_activated = true;
+        let before = state.accounts.get(&owner).cloned().unwrap();
+        assert_eq!(state.unstake(&tx(owner, TxKind::Unstake, 50)), Err(StateError::InvalidBridgeWithdrawal));
+        assert_eq!(state.accounts.get(&owner).unwrap(), &before);
+        assert!(state.unbonding.is_empty());
+        assert_eq!(state.validators.get(&id_a).unwrap().stake, 100);
+        assert_eq!(state.validators.get(&id_b).unwrap().stake, 100);
+    }
+}
