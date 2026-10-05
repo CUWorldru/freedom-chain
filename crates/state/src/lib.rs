@@ -348,6 +348,63 @@ impl ChainState {
   Ok(())
  }
 
+ fn validate_validator_set_certificate_integrity(&self)->Result<(),StateError>{
+  let Some(certificate)=self.validator_set_certificate.as_ref() else {
+    return Ok(());
+  };
+  if !self.staking_activated
+    || !certificate.validate_transition_fields()
+    || certificate.hash() == [0;32]
+    || certificate.to_epoch != self.epoch
+    || certificate.from_epoch + 1 != self.epoch {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
+  let previous_set_hash=self.validator_set_history.get(&certificate.from_epoch)
+    .copied().ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if certificate.previous_set_hash != previous_set_hash {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
+  let previous_entries=self.validator_set_history_entries.get(&certificate.from_epoch)
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let previous_keys=self.validator_set_history_sets.get(&certificate.from_epoch)
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if previous_entries.len()!=previous_keys.len()
+    || previous_entries.is_empty()
+    || previous_entries.iter().any(|(id,entry)|
+      *id != entry.validator_id
+      || previous_keys.get(id).copied()!=Some(entry.consensus_key)) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
+  let mut previous_bytes=Vec::new();
+  for (id,key) in previous_keys {
+    previous_bytes.extend_from_slice(id);
+    previous_bytes.extend_from_slice(key);
+  }
+  if self.validator_set_history_key_hashes.get(&certificate.from_epoch).copied()
+      != Some(freedom_primitives::hash_bytes(&previous_bytes)) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
+  let mut active_bytes=Vec::new();
+  for (id,entry) in &self.active_validator_set {
+    active_bytes.extend_from_slice(id);
+    active_bytes.extend_from_slice(&entry.owner);
+    active_bytes.extend_from_slice(&entry.consensus_key);
+    active_bytes.extend_from_slice(&entry.stake.to_le_bytes());
+  }
+  if certificate.new_set_hash != freedom_primitives::hash_bytes(&active_bytes) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
+  if certificate.authenticated_vote_count(previous_keys) == 0 {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+  Ok(())
+ }
+
  fn validate_slashed_evidence_integrity(&self)->Result<(),StateError>{
   for (evidence_hash,amount) in &self.slashed_evidence {
     if *evidence_hash == [0;32] || *amount == 0 {
@@ -505,6 +562,7 @@ impl ChainState {
   self.validate_unbonding_integrity()?;
   self.validate_evidence_integrity()?;
   self.validate_slashed_evidence_integrity()?;
+  self.validate_validator_set_certificate_integrity()?;
   self.validate_current_validator_set_history_binding()?;
   for (bridge_id,attestation) in &self.bitcoin_utxo_attestations {
    if *bridge_id==[0;32] || attestation.bridge_id!=*bridge_id || !attestation.validate_structure() { return Err(StateError::InvalidBridgeWithdrawal); }
@@ -4271,6 +4329,60 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m291_validator_set_certificate_integrity_hardening_tests {
+    use super::*;
+
+    #[test]
+    fn certificate_without_staking_activation_is_rejected() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        state.validator_set_certificate = Some(freedom_types::ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: [1; 32],
+            new_set_hash: [2; 32],
+            votes: vec![],
+        });
+
+        assert_eq!(
+            state.validate_validator_set_certificate_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn missing_certificate_is_allowed_before_transition() {
+        let state = ChainState::genesis(&freedom_types::Genesis::default());
+
+        assert_eq!(state.validate_validator_set_certificate_integrity(), Ok(()));
+    }
+
+    #[test]
+    fn certificate_hash_must_match_current_active_set() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        state.staking_activated = true;
+        state.epoch = 1;
+        state.validator_set_history.insert(1, [3; 32]);
+        state.validator_set_history_sets.insert(1, std::collections::BTreeMap::new());
+        state.validator_set_history_entries.insert(1, std::collections::BTreeMap::new());
+        state.validator_set_history_key_hashes.insert(1, freedom_primitives::hash_bytes(&[]));
+
+        let certificate = freedom_types::ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: state.validator_set_history.get(&0).copied().unwrap_or([4; 32]),
+            new_set_hash: [9; 32],
+            votes: vec![],
+        };
+        state.validator_set_certificate = Some(certificate);
+
+        assert_eq!(
+            state.validate_validator_set_certificate_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
     }
 }
 
