@@ -496,7 +496,7 @@ pub fn validate_vote(state: &ChainState, vote: &freedom_types::ValidatorVote, ex
 }
 
 pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, round: u64, votes: &[freedom_types::ValidatorVote]) -> Result<(), String> {
-    let threshold = quorum_threshold(state.validators.len());
+    let threshold = quorum_threshold(state.active_validator_set.len());
     let mut seen = std::collections::BTreeSet::new();
     for vote in votes {
         validate_vote(state, vote, block_hash, height, round)?;
@@ -507,6 +507,65 @@ pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, round:
     Ok(())
 }
 
+
+#[cfg(test)]
+mod m335_active_validator_quorum_tests {
+    use super::*;
+    use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
+    use freedom_types::{Genesis, Validator, ValidatorSetEntry, ValidatorVote};
+
+    fn state_with_divergent_validator_sets() -> ChainState {
+        let keys = [[81u8; 32], [82u8; 32], [83u8; 32]];
+        let validators = keys.into_iter().enumerate().map(|(i, key)| {
+            (hash_bytes(&[b'm', b'3', b'3', b'5', i as u8]), Validator {
+                validator_id: hash_bytes(&[b'm', b'3', b'3', b'5', i as u8]),
+                owner: address_from_public_key(&key),
+                consensus_key: key,
+                stake: 1,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            })
+        }).collect();
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.validators = validators;
+        state.active_validator_set.clear();
+        for i in 0..3 {
+            let key = [81u8 + i as u8; 32];
+            let id = hash_bytes(&[b'm', b'3', b'3', b'5', i as u8]);
+            state.active_validator_set.insert(id, ValidatorSetEntry {
+                validator_id: id,
+                owner: address_from_public_key(&key),
+                consensus_key: key,
+                stake: 1,
+            });
+        }
+        state
+    }
+
+    #[test]
+    fn quorum_uses_active_validator_count() {
+        let state = state_with_divergent_validator_sets();
+        let votes: Vec<ValidatorVote> = state.active_validator_set.iter().map(|(id, entry)| {
+            let mut vote = ValidatorVote {
+                validator_id: *id,
+                block_hash: [9; 32],
+                height: 1,
+                round: 0,
+                signature: vec![],
+            };
+            let key = entry.consensus_key;
+            vote.signature = freedom_crypto::sign(&freedom_crypto::keypair_from_seed(key), &vote.signing_bytes()).to_vec();
+            vote
+        }).collect();
+        assert!(validate_quorum(&state, [9; 32], 1, 0, &votes).is_ok());
+    }
+}
 
 #[cfg(test)]
 mod m328_epoch_overflow_tests {
