@@ -581,9 +581,11 @@ mod m337_certificate_active_quorum_tests {
 
     #[test]
     fn certificate_quorum_uses_active_validator_count() {
-        let (state, keys) = transition_state();
+        let (mut state, keys) = transition_state();
         let previous_set_hash = validator_set_hash(&state.active_validator_set);
-        let pending_set = state.active_validator_set.clone();
+        let mut pending_set = state.active_validator_set.clone();
+        let first_id = *pending_set.keys().next().unwrap();
+        pending_set.get_mut(&first_id).unwrap().stake = 2;
         let new_set_hash = validator_set_hash(&pending_set);
         let mut cert = ValidatorSetCertificate {
             from_epoch: state.epoch, to_epoch: state.epoch + 1,
