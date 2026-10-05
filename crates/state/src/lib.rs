@@ -1681,6 +1681,13 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   if self.epoch_length>0 && self.height>0 && self.height%self.epoch_length==0 {
    let next_epoch=self.height/self.epoch_length;
    if next_epoch<=self.epoch { return; }
+   // Epoch transitions must advance exactly one epoch. Skipping an epoch
+   // would create an unbound historical gap that later finality checks could
+   // otherwise encounter only after state mutation.
+   if next_epoch!=self.epoch.saturating_add(1) { return; }
+   // The current active set must still match its authoritative history before
+   // it is used as the predecessor of the next validator-set transition.
+   if self.validate_current_validator_set_history_binding().is_err() { return; }
 
    let next_active_validator_set=self.pending_validator_set.clone();
    let mut bytes=Vec::new();
@@ -4079,6 +4086,75 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m280_validator_set_transition_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: [1u8; 32],
+                    owner: [2u8; 32],
+                    consensus_key: [3u8; 32],
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn epoch_transition_advances_exactly_one_epoch_and_records_snapshot() {
+        let mut state = genesis();
+        state.height = state.epoch_length;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 1);
+        assert_eq!(
+            state.active_validator_set,
+            *state.validator_set_history_entries.get(&1).unwrap()
+        );
+        assert_eq!(
+            state.validator_set_history_sets.get(&1).unwrap(),
+            &state.active_validator_set.iter()
+                .map(|(id, entry)| (*id, entry.consensus_key))
+                .collect::<BTreeMap<_, _>>()
+        );
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
+    }
+
+    #[test]
+    fn epoch_transition_rejects_skipping_historical_epoch() {
+        let mut state = genesis();
+        state.height = state.epoch_length * 2;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 0);
+        assert!(!state.validator_set_history.contains_key(&1));
+        assert!(!state.validator_set_history_entries.contains_key(&1));
+    }
+
+    #[test]
+    fn epoch_transition_rejects_corrupted_current_active_set() {
+        let mut state = genesis();
+        state.active_validator_set.get_mut(&[1u8; 32]).unwrap().stake += 1;
+        state.height = state.epoch_length;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 0);
+        assert_eq!(
+            state.active_validator_set.get(&[1u8; 32]).unwrap().stake,
+            101
+        );
+        assert!(!state.validator_set_history.contains_key(&1));
     }
 }
 
