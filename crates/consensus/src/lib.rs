@@ -131,7 +131,11 @@ pub fn stake_quorum_reached(state: &ChainState, signers: &std::collections::BTre
         .filter_map(|id| state.active_validator_set.get(id))
         .map(|v| v.stake)
         .sum::<u128>();
-    signed.saturating_mul(3) >= total.saturating_mul(2)
+    // Avoid saturating multiplication: for 0 <= signed <= total,
+    // 3*signed >= 2*total is exactly equivalent to
+    // signed >= total - floor(total/3), with no u128 overflow.
+    let required = total - total / 3;
+    signed >= required
 }
 
 pub fn validate_vote(state: &ChainState, vote: &freedom_types::ValidatorVote, expected_block_hash: Hash, expected_height: u64, expected_round: u64) -> Result<(), String> {
@@ -681,5 +685,60 @@ mod m322_epoch_boundary_replay_tests {
             validate_epoch_transition_certificate(&state, &boundary_block(1)),
             Err("epoch transition block target epoch must be the immediate successor".into())
         );
+    }
+}
+
+
+#[cfg(test)]
+mod m323_stake_quorum_overflow_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Genesis, Validator};
+
+    fn state_with_stakes(stakes: &[u128]) -> ChainState {
+        let validators = stakes.iter().enumerate().map(|(i, stake)| {
+            let key = [i as u8 + 1; 32];
+            let id = hash_bytes(&[b"m323-validator", &[i as u8 + 1]].concat());
+            Validator {
+                validator_id: id,
+                owner: freedom_primitives::address_from_public_key(&key),
+                consensus_key: key,
+                stake: *stake,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect::<Vec<_>>();
+        ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators,
+        })
+    }
+
+    #[test]
+    fn huge_stake_does_not_turn_two_thirds_quorum_into_one_third() {
+        let total = u128::MAX;
+        let state = state_with_stakes(&[total / 3 + 1, total - (total / 3 + 1)]);
+        let first = *state.active_validator_set.keys().next().unwrap();
+
+        let mut signers = std::collections::BTreeSet::new();
+        signers.insert(first);
+
+        assert!(!stake_quorum_reached(&state, &signers));
+    }
+
+    #[test]
+    fn huge_stake_accepts_exact_two_thirds_threshold() {
+        let total = u128::MAX;
+        let required = total - total / 3;
+        let state = state_with_stakes(&[required, total - required]);
+        let first = *state.active_validator_set.keys().next().unwrap();
+
+        let mut signers = std::collections::BTreeSet::new();
+        signers.insert(first);
+
+        assert!(stake_quorum_reached(&state, &signers));
     }
 }
