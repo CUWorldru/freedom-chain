@@ -452,6 +452,9 @@ if let Some(cert) = &block.header.epoch_transition_certificate {
 }
 working.height=block.header.height;
 working.maybe_advance_epoch();
+if working.epoch != expected_epoch {
+    return Err("epoch transition was not committed".into());
+}
 if block.header.state_root!=working.state_root(){return Err("state root mismatch".into())}
 let committed=Block{header:block.header.clone(),transactions:block.transactions.clone(),receipts};
 let bh=block_hash(&committed);
