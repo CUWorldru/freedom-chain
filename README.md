@@ -1718,3 +1718,5 @@ Bitcoin UTXO commitment attestations now cryptographically bind their signatures
 - Cross-chain finality rejects attestations when the current bridge policy differs from the policy snapshot under which the attestation was registered.
 - The policy snapshot is included in the canonical state root and finality-integrity gate.
 - This prevents a previously valid Bitcoin attestation from being reused after a security-policy change without a fresh attestation.
+
+- The same policy snapshot gate is enforced at the Bitcoin bridge-mint boundary, preventing stale attestations from authorizing mint after a policy change.
