@@ -23,7 +23,7 @@ pub fn validate_validator_set_certificate(
     state: &ChainState,
     cert: &ValidatorSetCertificate,
 ) -> Result<(), String> {
-    if cert.from_epoch != state.epoch || cert.to_epoch != state.epoch.saturating_add(1) {
+    if cert.from_epoch != state.epoch || cert.to_epoch != state.epoch.checked_add(1).ok_or_else(|| "epoch transition exceeds u64::MAX".to_string())? {
         return Err("invalid validator set certificate epoch transition".into());
     }
     if cert.previous_set_hash != validator_set_hash(&state.active_validator_set) {
@@ -133,7 +133,7 @@ mod m326_proposer_height_boundary_tests {
 pub fn validate_epoch_transition_certificate(state: &ChainState, block: &Block) -> Result<(), String> {
     let boundary = state.epoch_length > 0 && block.header.height > 0 && block.header.height % state.epoch_length == 0;
     if boundary {
-        let expected_epoch = state.epoch.saturating_add(1);
+        let expected_epoch = state.epoch.checked_add(1).ok_or_else(|| "epoch transition exceeds u64::MAX".to_string())?;
         if block.header.epoch != expected_epoch {
             return Err("epoch transition block target epoch must be the immediate successor".into());
         }
@@ -217,6 +217,52 @@ pub fn validate_quorum(state: &ChainState, block_hash: Hash, height: u64, round:
     Ok(())
 }
 
+
+#[cfg(test)]
+mod m328_epoch_overflow_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Genesis, Validator, Block, BlockHeader};
+
+    fn state_at_max_epoch() -> ChainState {
+        let key = [61u8; 32];
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![Validator {
+                validator_id: hash_bytes(b"m328-validator"),
+                owner: freedom_primitives::address_from_public_key(&key),
+                consensus_key: key,
+                stake: 1,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }],
+        });
+        state.epoch = u64::MAX;
+        state.epoch_length = 10;
+        state
+    }
+
+    #[test]
+    fn epoch_transition_rejects_max_epoch_overflow() {
+        let state = state_at_max_epoch();
+        let block = Block {
+            header: BlockHeader {
+                height: 10, round: 0, previous_hash: [0; 32], state_root: [0; 32],
+                tx_root: [0; 32], receipts_root: [0; 32], timestamp: 0,
+                epoch: u64::MAX, proposer: [0; 32], epoch_transition_certificate: None,
+            },
+            transactions: vec![],
+            receipts: vec![],
+        };
+        assert_eq!(
+            validate_epoch_transition_certificate(&state, &block),
+            Err("epoch transition exceeds u64::MAX".into())
+        );
+    }
+}
 
 #[cfg(test)]
 mod m327_quorum_threshold_overflow_tests {
