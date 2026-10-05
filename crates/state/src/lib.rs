@@ -39,8 +39,32 @@ pub struct LedgerEntry { pub tx_hash:Hash, pub sender:Address, pub kind:u8, pub 
 #[serde(default)] pub validator_set_history_entries:BTreeMap<u64,BTreeMap<Hash,freedom_types::ValidatorSetEntry>>,#[serde(default)] pub validator_set_history_key_hashes:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_certificate:Option<freedom_types::ValidatorSetCertificate>,#[serde(default)] pub staking_activated:bool,pub epoch_issuance:u128,pub epoch_cap:u128,pub evidence:BTreeMap<Hash,freedom_types::EquivocationEvidence>,pub slashed_evidence:BTreeMap<Hash,u128> }
 #[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected }
 impl ChainState {
+ fn validate_evidence_integrity(&self)->Result<(),StateError>{
+  for (id,evidence) in &self.evidence {
+    if *id != evidence.evidence_hash
+      || *id == [0;32]
+      || evidence.validator_id == [0;32]
+      || evidence.first.is_empty()
+      || evidence.second.is_empty()
+      || evidence.first == evidence.second
+      || evidence.height > self.height
+      || freedom_primitives::hash_bytes(&evidence.signing_bytes()) != *id
+      || !self.validators.contains_key(&evidence.validator_id) {
+      return Err(StateError::InvalidEvidence);
+    }
+  }
+  Ok(())
+ }
+
  pub fn record_equivocation(&mut self,evidence:freedom_types::EquivocationEvidence)->Result<bool,StateError>{
-  if evidence.first.is_empty() || evidence.second.is_empty() || evidence.first == evidence.second { return Err(StateError::InvalidEvidence); }
+  if evidence.validator_id == [0;32]
+    || evidence.first.is_empty()
+    || evidence.second.is_empty()
+    || evidence.first == evidence.second
+    || evidence.height > self.height
+    || !self.validators.contains_key(&evidence.validator_id) {
+    return Err(StateError::InvalidEvidence);
+  }
   let expected = freedom_primitives::hash_bytes(&evidence.signing_bytes());
   if expected != evidence.evidence_hash { return Err(StateError::InvalidEvidence); }
   if self.evidence.contains_key(&evidence.evidence_hash){return Ok(false)}
@@ -50,6 +74,7 @@ impl ChainState {
   if self.slashed_evidence.contains_key(&evidence_hash){return Ok(0)}
   self.validate_validator_records_integrity()?;
   self.validate_unbonding_integrity()?;
+  self.validate_evidence_integrity()?;
   let evidence=self.evidence.get(&evidence_hash).ok_or(StateError::InvalidEvidence)?;
   let (owner,total)={let v=self.validators.get(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;(v.owner,v.stake.checked_add(v.unbonding_stake).ok_or(StateError::InvalidEvidence)?)};
   let account=self.accounts.get(&owner).ok_or(StateError::AccountNotFound)?;
@@ -459,6 +484,7 @@ impl ChainState {
   }
   self.validate_validator_records_integrity()?;
   self.validate_unbonding_integrity()?;
+  self.validate_evidence_integrity()?;
   self.validate_current_validator_set_history_binding()?;
   for (bridge_id,attestation) in &self.bitcoin_utxo_attestations {
    if *bridge_id==[0;32] || attestation.bridge_id!=*bridge_id || !attestation.validate_structure() { return Err(StateError::InvalidBridgeWithdrawal); }
@@ -4225,6 +4251,73 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m289_evidence_integrity_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        let key = [3u8; 32];
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: freedom_primitives::hash_bytes(&key),
+                    owner: [2u8; 32],
+                    consensus_key: key,
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    fn evidence(state: &ChainState, height: u64) -> freedom_types::EquivocationEvidence {
+        let validator_id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        let mut e = freedom_types::EquivocationEvidence {
+            kind: freedom_types::EquivocationKind::DoubleProposal,
+            height,
+            round: 1,
+            validator_id,
+            first: vec![1],
+            second: vec![2],
+            evidence_hash: [0; 32],
+        };
+        e.evidence_hash = freedom_primitives::hash_bytes(&e.signing_bytes());
+        let _ = state;
+        e
+    }
+
+    #[test]
+    fn evidence_for_unknown_validator_is_rejected() {
+        let mut state = genesis();
+        let mut e = evidence(&state, 0);
+        e.validator_id = [9u8; 32];
+        e.evidence_hash = freedom_primitives::hash_bytes(&e.signing_bytes());
+
+        assert_eq!(state.record_equivocation(e), Err(StateError::InvalidEvidence));
+    }
+
+    #[test]
+    fn future_evidence_is_rejected() {
+        let mut state = genesis();
+        state.height = 10;
+        let e = evidence(&state, 11);
+
+        assert_eq!(state.record_equivocation(e), Err(StateError::InvalidEvidence));
+    }
+
+    #[test]
+    fn evidence_integrity_passes_for_current_validator_and_height() {
+        let mut state = genesis();
+        state.height = 10;
+        let e = evidence(&state, 10);
+
+        assert_eq!(state.record_equivocation(e.clone()), Ok(true));
+        assert_eq!(state.validate_evidence_integrity(), Ok(()));
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
     }
 }
 
