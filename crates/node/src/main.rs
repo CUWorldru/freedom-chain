@@ -315,16 +315,26 @@ fn send_sync_request(
     peer: libp2p::PeerId,
     validator_id: Hash,
     height: u64,
-) -> (Hash, libp2p::request_response::OutboundRequestId) {
-    let from = height.saturating_add(1);
+) -> Result<(Hash, libp2p::request_response::OutboundRequestId), String> {
+    let from = height
+        .checked_add(1)
+        .ok_or_else(|| "sync start height exceeds u64::MAX".to_string())?;
+    let to = from
+        .checked_add(freedom_network::MAX_SYNC_BLOCKS.saturating_sub(1))
+        .ok_or_else(|| "sync request end height exceeds u64::MAX".to_string())?;
     let id = request_id(validator_id, from);
-    let outbound_id = swarm.behaviour_mut().sync.send_request(&peer, SyncWireRequest::Blocks(freedom_network::SyncRequest {
+    let request = freedom_network::SyncRequest {
         request_id: id,
         from_height: from,
-        to_height: from.saturating_add(freedom_network::MAX_SYNC_BLOCKS.saturating_sub(1)),
-    }));
+        to_height: to,
+    };
+    freedom_network::validate_sync_request(&request)?;
+    let outbound_id = swarm.behaviour_mut().sync.send_request(
+        &peer,
+        SyncWireRequest::Blocks(request),
+    );
     println!("sync_request peer={} from={} request_id={} outbound_id={:?}", peer, from, hex::encode(id), outbound_id);
-    (id, outbound_id)
+    Ok((id, outbound_id))
 }
 
 #[tokio::main]
@@ -1051,7 +1061,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if !peer_is_eligible(&peer_reputations, peer, state.height) {
                             continue;
                         }
-                        let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer, validator_id, state.height);
+                        let (sync_id, sync_outbound_id) = match send_sync_request(&mut swarm, peer, validator_id, state.height) {
+                            Ok(value) => value,
+                            Err(e) => {
+                                eprintln!("sync request rejected: {e}");
+                                continue;
+                            }
+                        };
                         pending_sync.push((peer, sync_outbound_id, sync_id, from_height));
                         sync_round_peers.insert(peer, from_height);
                         selected += 1;
@@ -1072,7 +1088,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         if pending_sync.is_empty() {
                             sync_required = 1;
-                            let (sync_id, sync_outbound_id) = send_sync_request(&mut swarm, peer_id, validator_id, state.height);
+                            let (sync_id, sync_outbound_id) = match send_sync_request(&mut swarm, peer_id, validator_id, state.height) {
+                                Ok(value) => value,
+                                Err(e) => {
+                                    eprintln!("sync request rejected: {e}");
+                                    continue;
+                                }
+                            };
                             pending_sync.push((peer_id, sync_outbound_id, sync_id, next_height));
                             sync_round_peers.insert(peer_id, next_height);
                         }
