@@ -76,6 +76,11 @@ impl ChainState {
   }
   let expected = freedom_primitives::hash_bytes(&evidence.signing_bytes());
   if expected != evidence.evidence_hash { return Err(StateError::InvalidEvidence); }
+  // A slashed evidence hash is already finalized historically. It must never
+  // be reintroduced through the recording API as a fresh evidence insertion.
+  if self.slashed_evidence.contains_key(&evidence.evidence_hash) {
+    return Err(StateError::InvalidEvidence);
+  }
   if let Some(existing)=self.evidence.get(&evidence.evidence_hash) {
     if existing != &evidence {
       return Err(StateError::InvalidEvidence);
@@ -4440,6 +4445,33 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m310_slashed_evidence_registration_tests {
+    use super::*;
+
+    #[test]
+    fn already_slashed_hash_cannot_be_reregistered() {
+        let key=[35u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.slashed_evidence.insert(evidence.evidence_hash,10);
+        assert_eq!(state.record_equivocation(evidence),Err(StateError::InvalidEvidence));
+        assert!(state.evidence.is_empty());
     }
 }
 
