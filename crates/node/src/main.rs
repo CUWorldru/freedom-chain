@@ -1411,6 +1411,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 continue;
                                             }
                                             state = snapshot_state;
+                                            let next_height = state
+                                                .height
+                                                .checked_add(1)
+                                                .ok_or_else(|| "block height exceeds u64::MAX".to_string())?;
                                             pending_sync.clear();
                                             snapshot_candidates.clear();
                                             snapshot_misbehavior.clear();
@@ -1553,7 +1557,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             blocks.clear();
                                             round = 0;
                                             timeout_round_sent = None;
-                                            let next_height = next_height;
+                                            let next_height = state
+                                                .height
+                                                .checked_add(1)
+                                                .ok_or_else(|| "block height exceeds u64::MAX".to_string())?;
                                             if proposer_for_height_round(&state, next_height, round) == Some(owner) {
                                                 let (next_proposal, next_block) = build_local_proposal(&state, owner, &consensus_key, round)?;
                                                 blocks.insert(next_proposal.block_hash, next_block);
