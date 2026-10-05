@@ -6478,34 +6478,28 @@ mod m280_validator_set_transition_hardening_tests {
         state.staking_activated = true;
         state.height = state.epoch_length;
 
-        let key = [3u8; 32];
-        let validator_id = freedom_primitives::hash_bytes(&key);
-        let owner = [2u8; 32];
-        let mut vote = freedom_types::ValidatorSetVote {
-            from_epoch: 0,
-            to_epoch: 1,
-            previous_set_hash: [0; 32],
-            new_set_hash: [9; 32],
-            validator_id,
-            signature: vec![],
-        };
-        vote.signature = freedom_crypto::sign(
-            &ed25519_dalek::SigningKey::from_bytes(&key),
-            &vote.signing_bytes(),
-        ).to_vec();
         state.validator_set_certificate = Some(freedom_types::ValidatorSetCertificate {
             from_epoch: 0,
             to_epoch: 2,
             previous_set_hash: [1; 32],
             new_set_hash: [2; 32],
-            votes: vec![vote],
+            votes: vec![freedom_types::ValidatorSetVote {
+                from_epoch: 0,
+                to_epoch: 2,
+                previous_set_hash: [1; 32],
+                new_set_hash: [2; 32],
+                validator_id: [1; 32],
+                signature: vec![0; 64],
+            }],
         });
-        state.height = state.epoch_length;
 
         state.maybe_advance_epoch();
 
         assert_eq!(state.epoch, 0);
-        assert_eq!(state.active_validator_set.get(&[1u8; 32]).unwrap().owner, owner);
+        assert_eq!(
+            state.active_validator_set.get(&[1u8; 32]).unwrap().owner,
+            [2u8; 32]
+        );
     }
 }
 
