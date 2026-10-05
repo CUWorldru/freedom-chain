@@ -234,9 +234,13 @@ impl ChainState {
   // The map key is the canonical validator identity. A mismatched
   // Validator::validator_id would otherwise be silently normalized by the
   // epoch candidate builder and could create an identity fork.
+  let mut owners=std::collections::BTreeSet::<Address>::new();
   for (id,validator) in &self.validators {
     if *id != validator.validator_id
-      || freedom_primitives::hash_bytes(&validator.consensus_key) != *id {
+      || *id == [0;32]
+      || validator.owner == [0;32]
+      || freedom_primitives::hash_bytes(&validator.consensus_key) != *id
+      || !owners.insert(validator.owner) {
       return Err(StateError::InvalidBridgeWithdrawal);
     }
   }
@@ -4129,6 +4133,72 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m285_validator_owner_uniqueness_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        let key = [3u8; 32];
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: freedom_primitives::hash_bytes(&key),
+                    owner: [2u8; 32],
+                    consensus_key: key,
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn validator_owner_must_be_unique() {
+        let key_a = [3u8; 32];
+        let key_b = [4u8; 32];
+        let mut state = genesis();
+        state.validators.insert(
+            freedom_primitives::hash_bytes(&key_b),
+            freedom_types::Validator {
+                validator_id: freedom_primitives::hash_bytes(&key_b),
+                owner: [2u8; 32],
+                consensus_key: key_b,
+                stake: 100,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            },
+        );
+
+        assert_eq!(
+            state.validate_validator_records_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+        let _ = key_a;
+    }
+
+    #[test]
+    fn validator_owner_must_not_be_zero() {
+        let mut state = genesis();
+        state.validators.get_mut(&freedom_primitives::hash_bytes(&[3u8; 32])).unwrap().owner = [0; 32];
+
+        assert_eq!(
+            state.validate_validator_records_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn unique_nonzero_validator_owner_passes() {
+        let state = genesis();
+
+        assert_eq!(state.validate_validator_records_integrity(), Ok(()));
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
     }
 }
 
