@@ -421,7 +421,7 @@ impl ChainState {
     || !certificate.validate_transition_fields()
     || certificate.hash() == [0;32]
     || certificate.to_epoch != self.epoch
-    || certificate.from_epoch + 1 != self.epoch {
+    || certificate.from_epoch.checked_add(1) != Some(self.epoch) {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
 
@@ -699,7 +699,7 @@ impl ChainState {
       if *previous_set_hash != certificate.previous_set_hash {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
-      if certificate.to_epoch != certificate.from_epoch + 1 {
+      if certificate.from_epoch.checked_add(1) != Some(certificate.to_epoch) {
         return Err(StateError::InvalidBridgeWithdrawal);
       }
       let certificate_entries=self.validator_set_history_entries.get(&certificate.from_epoch)
