@@ -590,6 +590,16 @@ pub fn build_next_block(
     max_transactions: usize,
 ) -> Result<Block, String> {
     if proposer == [0; 32] { return Err("invalid proposer".into()); }
+    let height = state.height.checked_add(1).ok_or_else(|| "block height overflow".to_string())?;
+    let expected_epoch = if state.epoch_length > 0 && height % state.epoch_length == 0 {
+        height / state.epoch_length
+    } else {
+        state.epoch
+    };
+    if epoch != expected_epoch {
+        return Err("invalid block epoch".into());
+    }
+
     let transactions = mempool.ordered(state, max_transactions);
     validate_bridge_mint_block_set(&transactions)?;
     let mut working = state.clone();
@@ -597,14 +607,29 @@ pub fn build_next_block(
     for tx in &transactions {
         receipts.push(execute_transaction(&mut working, tx)?);
     }
-    let height = state.height + 1;
+
+    let epoch_transition_certificate =
+        if epoch != state.epoch { state.validator_set_certificate.clone() } else { None };
+    if let Some(cert) = &epoch_transition_certificate {
+        freedom_consensus::validate_validator_set_certificate(state, cert)?;
+        if let Some(existing) = state.validator_set_certificate.as_ref() {
+            if existing != cert {
+                return Err("validator set certificate is already committed for this transition".into());
+            }
+        }
+        working.validator_set_certificate = Some(cert.clone());
+    } else if epoch != state.epoch {
+        return Err("missing epoch transition certificate".into());
+    }
+
     working.height = height;
+    working.maybe_advance_epoch();
+    if working.epoch != expected_epoch {
+        return Err("epoch transition was not committed".into());
+    }
+
     let tx_root = tx_root(&transactions);
     let receipts_root = receipts_root(&receipts);
-    let epoch_transition_certificate = if epoch != state.epoch { state.validator_set_certificate.clone() } else { None };
-    if let Some(cert) = &epoch_transition_certificate {
-        working.validator_set_certificate = Some(cert.clone());
-    }
     let state_root = working.state_root();
     Ok(Block {
         header: freedom_types::BlockHeader {
@@ -1299,5 +1324,36 @@ mod m163_registry_binding_tests {
     fn registry_binding_requires_exact_representation_identity() {
         // The runtime must never silently substitute another representation.
         assert_ne!([1u8; 32], [2u8; 32]);
+    }
+}
+
+
+#[cfg(test)]
+mod m320_block_builder_epoch_tests {
+    use super::*;
+
+    #[test]
+    fn block_builder_rejects_arbitrary_epoch() {
+        let state = test_state();
+        let mempool = Mempool::new();
+        let proposer = freedom_consensus::proposer_for_height(&state, state.height + 1).unwrap();
+        assert_eq!(
+            build_next_block(&state, &mempool, proposer, 1, state.epoch + 1, 0, 10),
+            Err("invalid block epoch".into())
+        );
+    }
+
+    #[test]
+    fn block_builder_rejects_epoch_transition_without_certificate() {
+        let mut state = test_state();
+        state.epoch_length = 1;
+        state.height = 0;
+        state.staking_activated = true;
+        let mempool = Mempool::new();
+        let proposer = freedom_consensus::proposer_for_height(&state, 1).unwrap();
+        assert_eq!(
+            build_next_block(&state, &mempool, proposer, 1, 1, 0, 10),
+            Err("missing epoch transition certificate".into())
+        );
     }
 }
