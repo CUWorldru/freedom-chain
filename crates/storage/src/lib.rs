@@ -359,7 +359,9 @@ impl ChainStore {
     }
     pub fn range(&self, from: u64, to: u64) -> Result<Vec<Block>, StorageError> {
         if from > to { return Ok(Vec::new()); }
-        let mut out = Vec::with_capacity((to - from + 1) as usize);
+        // Do not derive allocation size from attacker-controlled inclusive range arithmetic:
+        // `to - from + 1` overflows for `(0, u64::MAX)` and can panic before validation.
+        let mut out = Vec::new();
         for height in from..=to {
             match self.get_block(height)? {
                 Some(block) => out.push(block),
@@ -641,6 +643,16 @@ mod tests {
         let err = store.load_snapshot(0).unwrap_err();
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "genesis snapshot hash linkage mismatch"));
     }
+    #[test]
+    fn range_with_maximum_endpoint_does_not_overflow_capacity_arithmetic() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        assert!(matches!(
+            store.range(0, u64::MAX),
+            Err(StorageError::MissingBlock(0))
+        ));
+    }
+
     #[test]
     fn peer_reputation_roundtrip_persists() {
         let dir = tempfile::tempdir().unwrap();
