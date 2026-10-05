@@ -268,9 +268,25 @@ impl ChainState {
       .ok_or(StateError::InvalidBridgeWithdrawal)?;
   }
 
+  let mut owner_totals=std::collections::BTreeMap::<Address,u128>::new();
   for (id,validator) in &self.validators {
     if totals.get(id).copied().unwrap_or(0) != validator.unbonding_stake {
       return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    let total=validator.stake.checked_add(validator.unbonding_stake)
+      .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    let owner_total=owner_totals.entry(validator.owner).or_insert(0);
+    *owner_total=owner_total.checked_add(total)
+      .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  }
+
+  if self.staking_activated {
+    for (owner,total) in &owner_totals {
+      let account=self.accounts.get(owner)
+        .ok_or(StateError::InvalidBridgeWithdrawal)?;
+      if account.staked != *total {
+        return Err(StateError::InvalidBridgeWithdrawal);
+      }
     }
   }
   Ok(())
@@ -1811,11 +1827,25 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   }
  }
  fn release_mature_unbonding(&mut self){
+  // Never partially mutate staking state from a malformed unbonding ledger.
+  // Validate the complete accounting relation before removing any entry.
+  if self.validate_unbonding_integrity().is_err() {
+   return;
+  }
   let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.release_height<=self.height).map(|(id,_)|*id).collect();
   for id in ids {
    if let Some(e)=self.unbonding.remove(&id) {
-    if let Some(v)=self.validators.get_mut(&e.validator_id){v.unbonding_stake=v.unbonding_stake.saturating_sub(e.amount);}
-    if let Some(a)=self.accounts.get_mut(&e.owner){a.staked=a.staked.saturating_sub(e.amount);a.balance=a.balance.checked_add(e.amount).expect("unbonding release overflow");}
+    let v=self.validators.get_mut(&e.validator_id).expect("validated unbonding validator");
+    v.unbonding_stake=v.unbonding_stake.checked_sub(e.amount).expect("validated unbonding stake");
+    let a=self.accounts.get_mut(&e.owner);
+    if self.staking_activated {
+      let a=a.expect("validated staking account");
+      a.staked=a.staked.checked_sub(e.amount).expect("validated account staked");
+      a.balance=a.balance.checked_add(e.amount).expect("unbonding release overflow");
+    } else if let Some(a)=a {
+      a.staked=a.staked.checked_sub(e.amount).expect("validated account staked");
+      a.balance=a.balance.checked_add(e.amount).expect("unbonding release overflow");
+    }
    }
   }
  }
@@ -4164,6 +4194,91 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m287_staking_accounting_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        let key = [3u8; 32];
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: freedom_primitives::hash_bytes(&key),
+                    owner: [2u8; 32],
+                    consensus_key: key,
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn active_and_unbonding_stake_must_match_account_after_staking_activation() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        state.staking_activated = true;
+        state.accounts.insert([2u8; 32], Account {
+            address: [2u8; 32],
+            public_key: [0; 32],
+            nonce: 0,
+            balance: 0,
+            locked: 0,
+            staked: 99,
+        });
+
+        assert_eq!(
+            state.validate_unbonding_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+        let _ = id;
+    }
+
+    #[test]
+    fn mature_unbonding_does_not_partially_mutate_corrupted_state() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        let unbonding_id = [8u8; 32];
+        state.validators.get_mut(&id).unwrap().unbonding_stake = 10;
+        state.unbonding.insert(
+            unbonding_id,
+            freedom_types::UnbondingEntry {
+                unbonding_id,
+                validator_id: id,
+                owner: [9u8; 32],
+                amount: 10,
+                requested_height: 1,
+                release_height: 1,
+            },
+        );
+
+        state.height = 10;
+        state.maybe_advance_epoch();
+
+        assert!(state.unbonding.contains_key(&unbonding_id));
+        assert_eq!(state.validators.get(&id).unwrap().unbonding_stake, 10);
+    }
+
+    #[test]
+    fn consistent_active_and_unbonding_stake_passes_account_binding() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        state.staking_activated = true;
+        state.accounts.insert([2u8; 32], Account {
+            address: [2u8; 32],
+            public_key: [0; 32],
+            nonce: 0,
+            balance: 0,
+            locked: 0,
+            staked: 100,
+        });
+
+        assert_eq!(state.validate_unbonding_integrity(), Ok(()));
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
     }
 }
 
