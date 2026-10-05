@@ -683,10 +683,10 @@ mod m338_block_height_overflow_tests {
             transactions: vec![],
             receipts: vec![],
         };
-        assert_eq!(
+        assert!(matches!(
             execute_block(&mut state, &block),
-            Err("block height exceeds u64::MAX".into())
-        );
+            Err(ref error) if error == "block height exceeds u64::MAX"
+        ));
     }
 }
 
