@@ -328,11 +328,13 @@ mod m332_block_nonce_sequence_tests {
             blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
         };
         let mut state = ChainState::genesis(&Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: vec![validator] });
-        state.accounts.insert(owner, Account::new(public_key, 100));
+        let mut account = Account::new(public_key, 100);
+        account.nonce = u64::MAX;
+        state.accounts.insert(owner, account);
         let mut tx = Transaction { chain_id: CHAIN_ID, sender: owner, nonce: u64::MAX, kind: TxKind::Transfer, payload: vec![1], fee: 0, signature: vec![] };
         tx.signature = sign(&key, &tx.signing_bytes()).to_vec();
         let block = Block { header: BlockHeader { height: 1, round: 0, previous_hash: state.last_block_hash, state_root: state.state_root(), tx_root: tx_root(&[tx.clone()]), receipts_root: receipts_root(&[Receipt{tx_hash:tx.hash(),success:true,gas_used:0,events:vec![]}]), timestamp: 0, epoch: state.epoch, proposer: owner, epoch_transition_certificate: None }, transactions: vec![tx.clone()], receipts: vec![Receipt{tx_hash:tx.hash(),success:true,gas_used:0,events:vec![]}] };
-        assert_eq!(validate_block_commitments(&state, &block), Err("transaction nonce is not the next sender nonce".into()));
+        assert_eq!(validate_block_commitments(&state, &block), Err("transaction nonce exceeds u64::MAX".into()));
     }
 }
 
