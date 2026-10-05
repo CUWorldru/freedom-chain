@@ -5,8 +5,11 @@ use freedom_types::{Block, Event, Receipt, Transaction, ValidatorSetCertificate}
 #[derive(Clone, Debug)] pub struct ConsensusConfig { pub min_validators: usize }
 impl Default for ConsensusConfig { fn default()->Self{Self{min_validators:3}}}
 pub fn validator_set_hash(set: &std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>) -> Hash {
+    // Validator-set history in ChainState is the authoritative snapshot
+    // commitment. Keep certificate hashing byte-for-byte compatible with that
+    // persisted format; changing it here would make existing history and
+    // certificates describe different validator sets.
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"FREEDOM-VALSET-HASH-V1");
     for (id, entry) in set {
         bytes.extend_from_slice(id);
         bytes.extend_from_slice(&entry.owner);
