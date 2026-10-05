@@ -940,7 +940,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if state.last_block_hash != snapshot.block_hash || state.height != snapshot.height {
             return Err(format!("snapshot state linkage mismatch at {}", snapshot.height).into());
         }
-        snapshot.height.saturating_add(1)
+        snapshot.height
+            .checked_add(1)
+            .ok_or_else(|| "snapshot height exceeds u64::MAX".to_string())?
     } else {
         store.save_snapshot(&state, [0;32])?;
         1
