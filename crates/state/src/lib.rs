@@ -2115,6 +2115,12 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
  fn submit_evidence(&mut self,tx:&Transaction)->Result<(),StateError>{
   let p=decode_submit_evidence(&tx.payload).ok_or(StateError::InvalidEvidence)?;
+  // All mutation paths below finish by advancing the sender nonce. Guard the
+  // only fallible nonce operation before evidence/slash state can mutate.
+  let sender=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  if sender.nonce==u64::MAX {
+    return Err(StateError::ArithmeticOverflow);
+  }
   // Preserve the idempotent slash contract: once an evidence hash has been
   // slashed, replay must be checked against its recorded amount before any
   // current-stake recalculation. Historical stake may have changed since the
@@ -4404,6 +4410,47 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m305_evidence_nonce_atomicity_tests {
+    use super::*;
+
+    #[test]
+    fn max_nonce_rejects_before_slash_mutation() {
+        let key=[27u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        state.insert_account(freedom_types::Account::new(key,0));
+        state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.accounts.get_mut(&owner).unwrap().nonce=u64::MAX;
+
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        let payload=freedom_types::SubmitEvidencePayload {
+            evidence:evidence.clone(), slash_amount:10,
+        };
+        let tx=freedom_types::Transaction {
+            sender:owner, nonce:u64::MAX, fee:0,
+            kind:freedom_types::TxKind::SubmitEvidence,
+            payload:payload.encode(),
+        };
+        assert_eq!(state.execute_transaction(tx),Err(StateError::ArithmeticOverflow));
+        assert!(!state.evidence.contains_key(&evidence.evidence_hash));
+        assert!(!state.slashed_evidence.contains_key(&evidence.evidence_hash));
+        assert_eq!(state.validators.get(&id).unwrap().stake,100);
+        assert_eq!(state.accounts.get(&owner).unwrap().staked,100);
     }
 }
 
