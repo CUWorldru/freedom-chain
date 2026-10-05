@@ -1675,7 +1675,22 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn refresh_pending_validator_set(&mut self){
   self.pending_validator_set=self.validators.iter().filter(|(_,v)|!self.staking_activated||v.stake>0).map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect();
  }
- pub fn refresh_validator_set(&mut self){self.refresh_pending_validator_set();self.active_validator_set=self.pending_validator_set.clone();}
+ pub fn refresh_validator_set(&mut self){
+  self.refresh_pending_validator_set();
+  // This legacy/public refresh path must never activate a validator set that
+  // is not the authoritative snapshot for the current epoch. Epoch changes
+  // are exclusively committed by maybe_advance_epoch().
+  if self.validate_current_validator_set_history_binding().is_err() {
+    return;
+  }
+  let Some(expected_entries)=self.validator_set_history_entries.get(&self.epoch) else {
+    return;
+  };
+  if self.pending_validator_set != *expected_entries {
+    return;
+  }
+  self.active_validator_set=self.pending_validator_set.clone();
+ }
  pub fn maybe_advance_epoch(&mut self){
   self.release_mature_unbonding();
   if self.epoch_length>0 && self.height>0 && self.height%self.epoch_length==0 {
@@ -4086,6 +4101,67 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m281_public_validator_refresh_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: [1u8; 32],
+                    owner: [2u8; 32],
+                    consensus_key: [3u8; 32],
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn public_refresh_cannot_activate_a_future_validator_set() {
+        let mut state = genesis();
+
+        state.validators.get_mut(&[1u8; 32]).unwrap().stake = 101;
+        state.refresh_validator_set();
+
+        assert_eq!(
+            state.active_validator_set.get(&[1u8; 32]).unwrap().stake,
+            100
+        );
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
+    }
+
+    #[test]
+    fn public_refresh_preserves_authoritative_current_epoch_set() {
+        let mut state = genesis();
+        let before = state.active_validator_set.clone();
+
+        state.refresh_validator_set();
+
+        assert_eq!(state.active_validator_set, before);
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
+    }
+
+    #[test]
+    fn public_refresh_cannot_repair_a_corrupted_active_set_from_uncommitted_pending_state() {
+        let mut state = genesis();
+        state.active_validator_set.get_mut(&[1u8; 32]).unwrap().stake = 99;
+        state.refresh_validator_set();
+
+        assert_eq!(
+            state.active_validator_set.get(&[1u8; 32]).unwrap().stake,
+            99
+        );
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
     }
 }
 
