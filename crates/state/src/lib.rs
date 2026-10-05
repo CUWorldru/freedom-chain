@@ -247,6 +247,35 @@ impl ChainState {
   Ok(())
  }
 
+ fn validate_unbonding_integrity(&self)->Result<(),StateError>{
+  let mut totals=std::collections::BTreeMap::<Hash,u128>::new();
+  for (id,entry) in &self.unbonding {
+    if *id != entry.unbonding_id
+      || *id == [0;32]
+      || entry.validator_id == [0;32]
+      || entry.owner == [0;32]
+      || entry.amount == 0
+      || entry.release_height < entry.requested_height {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    let validator=self.validators.get(&entry.validator_id)
+      .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    if validator.owner != entry.owner {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    let total=totals.entry(entry.validator_id).or_insert(0);
+    *total=total.checked_add(entry.amount)
+      .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  }
+
+  for (id,validator) in &self.validators {
+    if totals.get(id).copied().unwrap_or(0) != validator.unbonding_stake {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
+  }
+  Ok(())
+ }
+
  fn validate_current_validator_set_history_binding(&self)->Result<(),StateError>{
   let epoch=self.epoch;
   let expected_set_hash=self.validator_set_history.get(&epoch)
@@ -382,6 +411,7 @@ impl ChainState {
    if entries.is_empty() || freedom_primitives::hash_bytes(&bytes) != expected_hash { return Err(StateError::InvalidBridgeWithdrawal); }
   }
   self.validate_validator_records_integrity()?;
+  self.validate_unbonding_integrity()?;
   self.validate_current_validator_set_history_binding()?;
   for (bridge_id,attestation) in &self.bitcoin_utxo_attestations {
    if *bridge_id==[0;32] || attestation.bridge_id!=*bridge_id || !attestation.validate_structure() { return Err(StateError::InvalidBridgeWithdrawal); }
@@ -1722,6 +1752,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    // it is used as the predecessor of the next validator-set transition.
    if self.validate_current_validator_set_history_binding().is_err() { return; }
    if self.validate_validator_records_integrity().is_err() { return; }
+   if self.validate_unbonding_integrity().is_err() { return; }
 
    // The pending set is a cached/public state field. Never trust it as
    // consensus input: rebuild the canonical candidate directly from the
@@ -4133,6 +4164,96 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m286_unbonding_integrity_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        let key = [3u8; 32];
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: freedom_primitives::hash_bytes(&key),
+                    owner: [2u8; 32],
+                    consensus_key: key,
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn unbonding_ledger_must_match_validator_unbonding_stake() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        let unbonding_id = [8u8; 32];
+        state.unbonding.insert(
+            unbonding_id,
+            freedom_types::UnbondingEntry {
+                unbonding_id,
+                validator_id: id,
+                owner: [2u8; 32],
+                amount: 10,
+                requested_height: 1,
+                release_height: 201,
+            },
+        );
+
+        assert_eq!(
+            state.validate_unbonding_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn unbonding_entry_owner_must_match_validator() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        let unbonding_id = [8u8; 32];
+        state.validators.get_mut(&id).unwrap().unbonding_stake = 10;
+        state.unbonding.insert(
+            unbonding_id,
+            freedom_types::UnbondingEntry {
+                unbonding_id,
+                validator_id: id,
+                owner: [9u8; 32],
+                amount: 10,
+                requested_height: 1,
+                release_height: 201,
+            },
+        );
+
+        assert_eq!(
+            state.validate_unbonding_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn consistent_unbonding_ledger_passes() {
+        let mut state = genesis();
+        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
+        let unbonding_id = [8u8; 32];
+        state.validators.get_mut(&id).unwrap().unbonding_stake = 10;
+        state.unbonding.insert(
+            unbonding_id,
+            freedom_types::UnbondingEntry {
+                unbonding_id,
+                validator_id: id,
+                owner: [2u8; 32],
+                amount: 10,
+                requested_height: 1,
+                release_height: 201,
+            },
+        );
+
+        assert_eq!(state.validate_unbonding_integrity(), Ok(()));
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
     }
 }
 
