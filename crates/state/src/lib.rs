@@ -445,20 +445,13 @@ impl ChainState {
     }
     let evidence=self.evidence.get(evidence_hash)
       .ok_or(StateError::InvalidEvidence)?;
-    let validator=self.validators.get(&evidence.validator_id)
-      .ok_or(StateError::InvalidEvidence)?;
-    let post_slash_total=validator.stake.checked_add(validator.unbonding_stake)
-      .ok_or(StateError::InvalidEvidence)?;
-    // The stored slash amount was computed from the validator's pre-slash
-    // stake. Reconstruct that basis from the persisted post-slash total
-    // instead of incorrectly recomputing the percentage from the reduced
-    // balance.
-    let pre_slash_total=post_slash_total.checked_add(*amount)
-      .ok_or(StateError::InvalidEvidence)?;
-    let expected=self.deterministic_slash_amount(&evidence.kind,pre_slash_total);
-    if *amount != expected || *amount > pre_slash_total {
+    if !self.validators.contains_key(&evidence.validator_id) {
       return Err(StateError::InvalidEvidence);
     }
+    // The deterministic slash amount is authenticated at mutation time by
+    // slash_evidence(). The persisted registry intentionally stores only the
+    // resulting amount, so historical validation must not recompute that
+    // amount from a validator balance that may have changed later.
   }
   Ok(())
  }
@@ -4368,6 +4361,53 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m297_slashed_evidence_history_hardening_tests {
+    use super::*;
+
+    #[test]
+    fn historical_slash_record_survives_later_stake_changes() {
+        let key=[10u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        state.insert_account(freedom_types::Account::new(key,100));
+        state.accounts.get_mut(&owner).unwrap().staked=100;
+
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash,evidence.clone());
+
+        assert_eq!(state.slash_evidence(evidence.evidence_hash,10),Ok(10));
+
+        // The validator state may legitimately evolve after the historical
+        // slash; the slash registry remains valid evidence of the past event.
+        state.validators.get_mut(&id).unwrap().stake=50;
+        state.accounts.get_mut(&owner).unwrap().staked=50;
+
+        assert_eq!(state.validate_slashed_evidence_integrity(),Ok(()));
+    }
+
+    #[test]
+    fn orphan_slashed_evidence_still_rejected() {
+        let mut state=ChainState::genesis(&freedom_types::Genesis::default());
+        state.slashed_evidence.insert([1;32],1);
+        assert_eq!(
+            state.validate_slashed_evidence_integrity(),
+            Err(StateError::InvalidEvidence)
+        );
     }
 }
 
