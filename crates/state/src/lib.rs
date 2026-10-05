@@ -155,8 +155,20 @@ impl ChainState {
   self.slashed_evidence.insert(evidence_hash,slash);self.refresh_pending_validator_set();Ok(slash)
  }
  pub fn deterministic_slash_amount(&self,kind:&freedom_types::EquivocationKind,stake:u128)->u128{
-  let bps=match kind { freedom_types::EquivocationKind::DoubleProposal=>500, freedom_types::EquivocationKind::DoublePrevote=>1000, freedom_types::EquivocationKind::DoublePrecommit=>1000 };
-  stake.saturating_mul(bps as u128)/10_000
+  let bps=match kind {
+    freedom_types::EquivocationKind::DoubleProposal=>500,
+    freedom_types::EquivocationKind::DoublePrevote=>1000,
+    freedom_types::EquivocationKind::DoublePrecommit=>1000,
+  };
+  // Compute stake * bps / 10_000 without saturating multiplication. Splitting
+  // before multiplication preserves the exact integer quotient even for the
+  // full u128 range.
+  let divisor=10_000u128;
+  let whole=stake/divisor;
+  let remainder=stake%divisor;
+  whole.checked_mul(bps as u128)
+    .and_then(|base| base.checked_add(remainder*(bps as u128)/divisor))
+    .unwrap_or(u128::MAX)
  }
 
  pub const UNBONDING_COOLDOWN: u64 = 200;
@@ -4422,6 +4434,43 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m307_slash_formula_overflow_tests {
+    use super::*;
+
+    #[test]
+    fn deterministic_slash_amount_is_exact_at_u128_max() {
+        let state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![],
+        });
+        let stake=u128::MAX;
+        let expected=(stake/10_000)*1000 + (stake%10_000)*1000/10_000;
+        assert_eq!(
+            state.deterministic_slash_amount(
+                &freedom_types::EquivocationKind::DoublePrecommit,
+                stake
+            ),
+            expected
+        );
+    }
+
+    #[test]
+    fn deterministic_proposal_slash_remains_exact_for_large_stake() {
+        let state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![],
+        });
+        let stake=u128::MAX;
+        let expected=(stake/10_000)*500 + (stake%10_000)*500/10_000;
+        assert_eq!(
+            state.deterministic_slash_amount(
+                &freedom_types::EquivocationKind::DoubleProposal,
+                stake
+            ),
+            expected
+        );
     }
 }
 
