@@ -40,7 +40,7 @@ pub fn validate_validator_set_certificate(
     if previous_keys.is_empty() {
         return Err("validator set certificate previous validator keys empty".into());
     }
-    let required_quorum = quorum_threshold(previous_keys.len());
+    let required_quorum = quorum_threshold(state.active_validator_set.len());
     let mut ids = std::collections::BTreeSet::new();
     for vote in &cert.votes {
         if vote.from_epoch != cert.from_epoch
@@ -551,6 +551,54 @@ mod m335_active_validator_quorum_tests {
             vote
         }).collect();
         assert!(validate_quorum(&state, [9; 32], 1, 0, &votes).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod m337_certificate_active_quorum_tests {
+    use super::*;
+    use freedom_crypto::{generate_keypair, sign};
+    use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
+    use freedom_types::{Genesis, Validator, ValidatorSetCertificate, ValidatorSetEntry, ValidatorSetVote};
+
+    fn transition_state() -> (ChainState, Vec<freedom_crypto::SigningKey>) {
+        let keys: Vec<_> = (0..5).map(|_| generate_keypair()).collect();
+        let mut state = ChainState::genesis(&Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: vec![] });
+        state.epoch = 4;
+        let mut active = std::collections::BTreeMap::new();
+        for (i, key) in keys.iter().take(3).enumerate() {
+            let public_key = key.verifying_key().to_bytes();
+            let id = hash_bytes(&[b'm', b'3', b'3', b'7', i as u8]);
+            active.insert(id, ValidatorSetEntry {
+                validator_id: id, owner: address_from_public_key(&public_key),
+                consensus_key: public_key, stake: 1,
+            });
+        }
+        state.active_validator_set = active.clone();
+        state.validator_set_history_sets.insert(state.epoch, active.iter().take(2).map(|(id, entry)| (*id, entry.consensus_key)).collect());
+        (state, keys)
+    }
+
+    #[test]
+    fn certificate_quorum_uses_active_validator_count() {
+        let (state, keys) = transition_state();
+        let previous_set_hash = validator_set_hash(&state.active_validator_set);
+        let pending_set = state.active_validator_set.clone();
+        let new_set_hash = validator_set_hash(&pending_set);
+        let mut cert = ValidatorSetCertificate {
+            from_epoch: state.epoch, to_epoch: state.epoch + 1,
+            previous_set_hash, new_set_hash, votes: vec![],
+        };
+        for (i, (id, _)) in state.active_validator_set.iter().enumerate() {
+            let mut vote = ValidatorSetVote {
+                validator_id: *id, from_epoch: state.epoch, to_epoch: state.epoch + 1,
+                previous_set_hash, new_set_hash, signature: vec![],
+            };
+            vote.signature = sign(&keys[i], &vote.signing_bytes()).to_vec();
+            cert.votes.push(vote);
+        }
+        state.pending_validator_set.clone_from(&pending_set);
+        assert!(validate_validator_set_certificate(&state, &cert).is_ok());
     }
 }
 
