@@ -211,7 +211,7 @@ mod m331_transaction_auth_boundary_tests {
     use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
     use freedom_types::{Genesis, Transaction, TxKind, Validator};
 
-    fn state_and_tx() -> (ChainState, Transaction, ed25519_dalek::SigningKey) {
+    fn state_and_tx() -> (ChainState, Transaction) {
         let key = generate_keypair();
         let public_key = key.verifying_key().to_bytes();
         let owner = address_from_public_key(&public_key);
@@ -241,18 +241,18 @@ mod m331_transaction_auth_boundary_tests {
             signature: vec![],
         };
         tx.signature = sign(&key, &tx.signing_bytes()).to_vec();
-        (state, tx, key)
+        (state, tx)
     }
 
     #[test]
     fn valid_external_transaction_signature_is_accepted() {
-        let (state, tx, _) = state_and_tx();
+        let (state, tx) = state_and_tx();
         assert!(validate_transaction_auth(&state, &tx).is_ok());
     }
 
     #[test]
     fn forged_transaction_signature_is_rejected() {
-        let (state, mut tx, _) = state_and_tx();
+        let (state, mut tx) = state_and_tx();
         let other = generate_keypair();
         tx.signature = sign(&other, &tx.signing_bytes()).to_vec();
         assert_eq!(validate_transaction_auth(&state, &tx), Err("invalid transaction signature".into()));
