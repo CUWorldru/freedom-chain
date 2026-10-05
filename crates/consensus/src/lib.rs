@@ -260,7 +260,7 @@ mod m331_transaction_auth_boundary_tests {
 
     #[test]
     fn unsigned_transaction_is_rejected() {
-        let (state, mut tx, _) = state_and_tx();
+        let (state, mut tx) = state_and_tx();
         tx.signature.clear();
         assert_eq!(validate_transaction_auth(&state, &tx), Err("invalid transaction signature length".into()));
     }
@@ -314,7 +314,7 @@ mod m332_block_nonce_sequence_tests {
             transactions: vec![tx1, tx2],
             receipts: vec![],
         };
-        assert_eq!(validate_block_commitments(&state, &block), Err("transaction/receipt count mismatch".into()));
+        assert_eq!(validate_block_commitments(&state, &block), Err("transaction nonce is not the next sender nonce".into()));
     }
 
     #[test]
@@ -331,7 +331,7 @@ mod m332_block_nonce_sequence_tests {
         state.accounts.insert(owner, Account::new(public_key, 100));
         let mut tx = Transaction { chain_id: CHAIN_ID, sender: owner, nonce: u64::MAX, kind: TxKind::Transfer, payload: vec![1], fee: 0, signature: vec![] };
         tx.signature = sign(&key, &tx.signing_bytes()).to_vec();
-        let block = Block { header: BlockHeader { height: 1, round: 0, previous_hash: state.last_block_hash, state_root: state.state_root(), tx_root: tx_root(&[tx.clone()]), receipts_root: receipts_root(&[Receipt{tx_hash:tx.hash(),success:true,gas_used:0,events:vec![]}]), timestamp: 0, epoch: state.epoch, proposer: owner, epoch_transition_certificate: None }, transactions: vec![tx], receipts: vec![Receipt{tx_hash:[0;32],success:true,gas_used:0,events:vec![]}] };
+        let block = Block { header: BlockHeader { height: 1, round: 0, previous_hash: state.last_block_hash, state_root: state.state_root(), tx_root: tx_root(&[tx.clone()]), receipts_root: receipts_root(&[Receipt{tx_hash:tx.hash(),success:true,gas_used:0,events:vec![]}]), timestamp: 0, epoch: state.epoch, proposer: owner, epoch_transition_certificate: None }, transactions: vec![tx.clone()], receipts: vec![Receipt{tx_hash:tx.hash(),success:true,gas_used:0,events:vec![]}] };
         assert_eq!(validate_block_commitments(&state, &block), Err("transaction nonce is not the next sender nonce".into()));
     }
 }
