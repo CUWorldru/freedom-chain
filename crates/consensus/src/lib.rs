@@ -149,7 +149,53 @@ pub fn validate_epoch_transition_certificate(state: &ChainState, block: &Block) 
     Ok(())
 }
 
-pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{if block.header.height!=state.height+1{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
+pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{let expected_height=state.height.checked_add(1).ok_or_else(||"block height exceeds u64::MAX".to_string())?;if block.header.height!=expected_height{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
+#[cfg(test)]
+mod m329_block_height_overflow_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Genesis, Validator, Block, BlockHeader};
+
+    fn state_at_max_height() -> ChainState {
+        let key = [71u8; 32];
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![Validator {
+                validator_id: hash_bytes(b"m329-validator"),
+                owner: freedom_primitives::address_from_public_key(&key),
+                consensus_key: key,
+                stake: 1,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }],
+        });
+        state.height = u64::MAX;
+        state
+    }
+
+    #[test]
+    fn block_commitments_reject_height_overflow() {
+        let state = state_at_max_height();
+        let block = Block {
+            header: BlockHeader {
+                height: u64::MAX, round: 0, previous_hash: state.last_block_hash,
+                state_root: state.state_root(), tx_root: tx_root(&[]),
+                receipts_root: receipts_root(&[]), timestamp: 0, epoch: state.epoch,
+                proposer: [0; 32], epoch_transition_certificate: None,
+            },
+            transactions: vec![],
+            receipts: vec![],
+        };
+        assert_eq!(
+            validate_block_commitments(&state, &block),
+            Err("block height exceeds u64::MAX".into())
+        );
+    }
+}
+
 #[cfg(test)]mod tests{use super::*;use freedom_primitives::{merkle_proof,merkle_root,verify_merkle_proof};use freedom_types::{TxKind,Transaction,Receipt};#[test]fn merkle_proof_verifies(){let leaves=vec![hash_bytes(b"a"),hash_bytes(b"b"),hash_bytes(b"c")];let root=merkle_root(&leaves);let proof=merkle_proof(&leaves,2).unwrap();assert!(verify_merkle_proof(root,leaves[2],&proof));}#[test]fn roots_are_order_sensitive(){let a=Transaction{chain_id:1,sender:[1;32],nonce:0,kind:TxKind::Transfer,payload:vec![1],fee:0,signature:vec![2;64]};let b=Transaction{chain_id:1,sender:[1;32],nonce:1,kind:TxKind::Transfer,payload:vec![2],fee:0,signature:vec![3;64]};assert_ne!(tx_root(&[a.clone(),b.clone()]),tx_root(&[b,a]));let r1=Receipt{tx_hash:a.hash(),success:true,gas_used:1,events:vec![]};let r2=Receipt{tx_hash:b.hash(),success:true,gas_used:1,events:vec![]};assert_ne!(receipts_root(&[r1.clone(),r2.clone()]),receipts_root(&[r2,r1]));}}
 
 
