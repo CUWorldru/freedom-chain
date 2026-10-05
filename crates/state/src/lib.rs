@@ -1352,6 +1352,12 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     }
     let attestation = self.bitcoin_utxo_attestations.get(&message.bridge_id)
       .ok_or(StateError::InvalidBridgeMessage)?;
+    self.validate_bitcoin_attestation_validator_set_binding(attestation)
+      .map_err(|_| StateError::InvalidBridgeMessage)?;
+    if self.bitcoin_utxo_attestation_policy_hashes.get(&message.bridge_id).copied()
+      != Some(policy.commitment_hash()) {
+      return Err(StateError::InvalidBridgeMessage);
+    }
     let validators = self.active_validator_set.iter()
       .map(|(id, v)| (*id, v.consensus_key))
       .collect::<BTreeMap<Hash, [u8; 32]>>();
@@ -4104,3 +4110,4 @@ mod m277_bitcoin_attestation_policy_binding_tests {
         assert_ne!(before,state.state_root());
     }
 }
+
