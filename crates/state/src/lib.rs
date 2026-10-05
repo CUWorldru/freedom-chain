@@ -1704,7 +1704,20 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    // it is used as the predecessor of the next validator-set transition.
    if self.validate_current_validator_set_history_binding().is_err() { return; }
 
-   let next_active_validator_set=self.pending_validator_set.clone();
+   // The pending set is a cached/public state field. Never trust it as
+   // consensus input: rebuild the canonical candidate directly from the
+   // authoritative validator records before committing a new epoch.
+   let canonical_next_validator_set=self.validators.iter()
+     .filter(|(_,v)|!self.staking_activated||v.stake>0)
+     .map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{
+       validator_id:*id,
+       owner:v.owner,
+       consensus_key:v.consensus_key,
+       stake:v.stake,
+     }))
+     .collect::<BTreeMap<Hash,freedom_types::ValidatorSetEntry>>();
+   if self.pending_validator_set!=canonical_next_validator_set { return; }
+   let next_active_validator_set=canonical_next_validator_set;
    let mut bytes=Vec::new();
    for (id,entry) in &next_active_validator_set {
     bytes.extend_from_slice(id);
@@ -4101,6 +4114,66 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m282_pending_validator_set_transition_hardening_tests {
+    use super::*;
+
+    fn genesis() -> ChainState {
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![
+                freedom_types::GenesisValidator {
+                    validator_id: [1u8; 32],
+                    owner: [2u8; 32],
+                    consensus_key: [3u8; 32],
+                    stake: 100,
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn epoch_transition_rejects_tampered_pending_validator_set() {
+        let mut state = genesis();
+        state.height = state.epoch_length;
+        state.pending_validator_set.get_mut(&[1u8; 32]).unwrap().stake = 999;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 0);
+        assert_eq!(state.active_validator_set.get(&[1u8; 32]).unwrap().stake, 100);
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
+    }
+
+    #[test]
+    fn epoch_transition_accepts_pending_set_only_when_it_matches_authoritative_validators() {
+        let mut state = genesis();
+        state.validators.get_mut(&[1u8; 32]).unwrap().stake = 150;
+        state.refresh_pending_validator_set();
+        state.height = state.epoch_length;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 1);
+        assert_eq!(state.active_validator_set.get(&[1u8; 32]).unwrap().stake, 150);
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
+    }
+
+    #[test]
+    fn epoch_transition_rejects_pending_entry_identity_drift() {
+        let mut state = genesis();
+        let entry = state.pending_validator_set.get_mut(&[1u8; 32]).unwrap();
+        entry.validator_id = [9u8; 32];
+        state.height = state.epoch_length;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 0);
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
     }
 }
 
