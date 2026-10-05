@@ -85,7 +85,7 @@ pub fn block_hash(block:&Block)->Hash{domain_hash(b"FREEDOM-BLOCK-HASH-V1",&[&ca
 pub fn proposer_for_height_round(state:&ChainState,height:u64,round:u64)->Option<freedom_primitives::Address>{
  if height == 0 || state.active_validator_set.is_empty(){return None}
  let mut ids:Vec<_>=state.active_validator_set.keys().copied().collect();ids.sort();
- let index=((height-1).saturating_add(round)) as usize % ids.len();
+ let len=ids.len() as u64;let height_offset=(height-1)%len;let round_offset=round%len;let index=((height_offset+round_offset)%len) as usize;
  let id=ids[index];state.active_validator_set.get(&id).map(|v|v.owner)
 }
 pub fn proposer_for_height(state:&ChainState,height:u64)->Option<freedom_primitives::Address>{proposer_for_height_round(state,height,0)}
@@ -158,6 +158,49 @@ pub fn validate_transaction_auth(state:&ChainState, tx:&Transaction)->Result<(),
  Ok(())
 }
 pub fn validate_block_commitments(state:&ChainState,block:&Block)->Result<(),String>{let expected_height=state.height.checked_add(1).ok_or_else(||"block height exceeds u64::MAX".to_string())?;if block.header.height!=expected_height{return Err("invalid block height".into())}if block.header.previous_hash!=state.last_block_hash{return Err("invalid previous block hash".into())}let expected_proposer=proposer_for_height_round(state,block.header.height,block.header.round).ok_or_else(||"no proposer available for block height/round".to_string())?;if block.header.proposer!=expected_proposer{return Err("invalid block proposer".into())}if block.transactions.len()!=block.receipts.len(){return Err("transaction/receipt count mismatch".into())}let mut next_nonces=std::collections::BTreeMap::new();for tx in &block.transactions{validate_transaction_auth(state,tx)?;let expected=*next_nonces.entry(tx.sender).or_insert_with(||state.accounts.get(&tx.sender).map(|a|a.nonce).unwrap_or(0));if tx.nonce!=expected{return Err("transaction nonce is not the next sender nonce".into())}let next=expected.checked_add(1).ok_or_else(||"transaction nonce exceeds u64::MAX".to_string())?;next_nonces.insert(tx.sender,next);}if tx_root(&block.transactions)!=block.header.tx_root{return Err("transaction root mismatch".into())}if receipts_root(&block.receipts)!=block.header.receipts_root{return Err("receipts root mismatch".into())}if state.state_root()!=block.header.state_root{return Err("state root mismatch".into())}Ok(())}
+#[cfg(test)]
+mod m334_proposer_rotation_overflow_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Genesis, Validator};
+
+    fn state_with_three_validators() -> ChainState {
+        ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: (0..3).map(|i| {
+                let key = [70u8 + i as u8; 32];
+                Validator {
+                    validator_id: hash_bytes(&[b'm', b'3', b'3', b'4', i as u8]),
+                    owner: freedom_primitives::address_from_public_key(&key),
+                    consensus_key: key,
+                    stake: 1,
+                    unbonding_stake: 0,
+                    blocks_proposed: 0,
+                    blocks_finalized: 0,
+                    missed_votes: 0,
+                }
+            }).collect(),
+        })
+    }
+
+    #[test]
+    fn proposer_rotation_does_not_saturate_at_u64_max() {
+        let state = state_with_three_validators();
+        let at_max = proposer_for_height_round(&state, u64::MAX, 0).unwrap();
+        let expected = proposer_for_height_round(&state, 1, (u64::MAX - 1) % 3).unwrap();
+        assert_eq!(at_max, expected);
+    }
+
+    #[test]
+    fn round_overflow_cannot_change_rotation_determinism() {
+        let state = state_with_three_validators();
+        let max_round = proposer_for_height_round(&state, 1, u64::MAX).unwrap();
+        let reduced_round = proposer_for_height_round(&state, 1, u64::MAX % 3).unwrap();
+        assert_eq!(max_round, reduced_round);
+    }
+}
+
 #[cfg(test)]
 mod m333_proposer_admission_tests {
     use super::*;
