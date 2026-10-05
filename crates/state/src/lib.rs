@@ -399,6 +399,14 @@ impl ChainState {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
 
+  if certificate.votes.iter().any(|vote| {
+    let Some(entry)=previous_entries.get(&vote.validator_id) else { return true; };
+    previous_keys.get(&vote.validator_id).copied() != Some(entry.consensus_key)
+      || freedom_primitives::hash_bytes(&entry.consensus_key) != vote.validator_id
+  }) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
   if certificate.authenticated_vote_count(previous_keys) == 0 {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
@@ -4329,6 +4337,86 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m292_validator_set_vote_identity_hardening_tests {
+    use super::*;
+
+    #[test]
+    fn certificate_vote_identity_must_bind_to_previous_entries() {
+        let key = [3u8; 32];
+        let id = freedom_primitives::hash_bytes(&key);
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.staking_activated = true;
+        state.epoch = 1;
+
+        let mut entries = std::collections::BTreeMap::new();
+        entries.insert(id, freedom_types::ValidatorSetEntry {
+            validator_id: id,
+            owner: [2u8; 32],
+            consensus_key: key,
+            stake: 100,
+        });
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert(id, key);
+
+        state.validator_set_history.insert(0, [4; 32]);
+        state.validator_set_history_sets.insert(0, keys.clone());
+        state.validator_set_history_entries.insert(0, entries.clone());
+
+        let mut key_bytes=Vec::new();
+        for (validator_id, consensus_key) in &keys {
+            key_bytes.extend_from_slice(validator_id);
+            key_bytes.extend_from_slice(consensus_key);
+        }
+        state.validator_set_history_key_hashes.insert(
+            0,
+            freedom_primitives::hash_bytes(&key_bytes),
+        );
+
+        state.validator_set_history.insert(1, [5; 32]);
+        state.validator_set_history_sets.insert(1, keys.clone());
+        state.validator_set_history_entries.insert(1, entries);
+        state.validator_set_history_key_hashes.insert(1, freedom_primitives::hash_bytes(&key_bytes));
+        state.active_validator_set = state.validator_set_history_entries.get(&1).unwrap().clone();
+
+        let wrong_key = [9u8; 32];
+        let mut certificate = freedom_types::ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash: [4; 32],
+            new_set_hash: [0; 32],
+            votes: vec![freedom_types::ValidatorSetVote {
+                from_epoch: 0,
+                to_epoch: 1,
+                previous_set_hash: [4; 32],
+                new_set_hash: [5; 32],
+                validator_id: freedom_primitives::hash_bytes(&wrong_key),
+                signature: vec![0; 64],
+            }],
+        };
+        certificate.new_set_hash = {
+            let mut bytes=Vec::new();
+            for (validator_id,entry) in &state.active_validator_set {
+                bytes.extend_from_slice(validator_id);
+                bytes.extend_from_slice(&entry.owner);
+                bytes.extend_from_slice(&entry.consensus_key);
+                bytes.extend_from_slice(&entry.stake.to_le_bytes());
+            }
+            freedom_primitives::hash_bytes(&bytes)
+        };
+        state.validator_set_certificate = Some(certificate);
+
+        assert_eq!(
+            state.validate_validator_set_certificate_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
     }
 }
 
