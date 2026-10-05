@@ -1710,3 +1710,11 @@ Bitcoin UTXO commitment attestation validation now requires the bridge policy's 
 ### M276 — Bitcoin attestation epoch binding
 
 Bitcoin UTXO commitment attestations now cryptographically bind their signatures to the exact validator-set epoch and committed validator-set hash. The binding is included in the attestation signing bytes and is enforced during attestation registration, commitment validation, and cross-chain finality validation. An attestation created under a previous epoch can no longer be reused after an epoch transition, even if validator identities happen to remain unchanged. Added regression coverage for epoch/hash mismatch and signed-identity changes.
+
+
+### M277 — Bitcoin attestation security-policy snapshot binding
+- Added a canonical cryptographic commitment hash for the full bridge security policy.
+- Persisted Bitcoin attestation registrations now record the policy commitment that authorized the attestation.
+- Cross-chain finality rejects attestations when the current bridge policy differs from the policy snapshot under which the attestation was registered.
+- The policy snapshot is included in the canonical state root and finality-integrity gate.
+- This prevents a previously valid Bitcoin attestation from being reused after a security-policy change without a fresh attestation.
