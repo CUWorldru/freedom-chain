@@ -75,7 +75,12 @@ impl ChainState {
   }
   let expected = freedom_primitives::hash_bytes(&evidence.signing_bytes());
   if expected != evidence.evidence_hash { return Err(StateError::InvalidEvidence); }
-  if self.evidence.contains_key(&evidence.evidence_hash){return Ok(false)}
+  if let Some(existing)=self.evidence.get(&evidence.evidence_hash) {
+    if existing != &evidence {
+      return Err(StateError::InvalidEvidence);
+    }
+    return Ok(false);
+  }
   self.evidence.insert(evidence.evidence_hash,evidence); Ok(true)
  }
  pub fn slash_evidence(&mut self,evidence_hash:Hash,amount:u128)->Result<u128,StateError>{
@@ -4434,6 +4439,56 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m308_evidence_duplicate_canonicalization_tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_evidence_hash_requires_identical_record() {
+        let key=[31u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        assert_eq!(state.record_equivocation(evidence.clone()),Ok(true));
+
+        let mut forged=evidence.clone();
+        forged.first=vec![9];
+        assert_eq!(state.record_equivocation(forged),Err(StateError::InvalidEvidence));
+    }
+
+    #[test]
+    fn identical_duplicate_evidence_is_idempotent() {
+        let key=[32u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        assert_eq!(state.record_equivocation(evidence.clone()),Ok(true));
+        assert_eq!(state.record_equivocation(evidence),Ok(false));
     }
 }
 
