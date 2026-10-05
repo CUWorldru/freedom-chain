@@ -1360,3 +1360,83 @@ mod m320_block_builder_epoch_tests {
         );
     }
 }
+
+
+#[cfg(test)]
+mod m321_epoch_transition_commitment_tests {
+    use super::*;
+    use freedom_crypto::sign;
+    use freedom_types::{ValidatorSetCertificate, ValidatorSetVote};
+
+    #[test]
+    fn execute_block_rejects_boundary_when_state_transition_did_not_commit() {
+        let mut state = test_state();
+        state.epoch_length = 1;
+
+        let previous_set_hash =
+            freedom_consensus::validator_set_hash(&state.active_validator_set);
+        let new_set_hash =
+            freedom_consensus::validator_set_hash(&state.pending_validator_set);
+
+        let mut votes = Vec::new();
+        for (id, entry) in &state.active_validator_set {
+            let mut vote = ValidatorSetVote {
+                from_epoch: 0,
+                to_epoch: 1,
+                previous_set_hash,
+                new_set_hash,
+                validator_id: *id,
+                signature: Vec::new(),
+            };
+            vote.signature = sign(
+                &ed25519_dalek::SigningKey::from_bytes(&entry.consensus_key),
+                &vote.signing_bytes(),
+            )
+            .to_vec();
+            votes.push(vote);
+        }
+
+        let certificate = ValidatorSetCertificate {
+            from_epoch: 0,
+            to_epoch: 1,
+            previous_set_hash,
+            new_set_hash,
+            votes,
+        };
+        state.validator_set_certificate = Some(certificate.clone());
+
+        // Consensus admission does not depend on the future-epoch history
+        // commitment. Corrupting that commitment makes ChainState refuse the
+        // actual transition after consensus has already accepted the cert.
+        state.validator_set_history.insert(1, [9u8; 32]);
+
+        let proposer =
+            freedom_consensus::proposer_for_height(&state, 1).unwrap();
+        let mut preview = state.clone();
+        preview.height = 1;
+
+        let block = Block {
+            header: freedom_types::BlockHeader {
+                height: 1,
+                round: 0,
+                previous_hash: state.last_block_hash,
+                state_root: preview.state_root(),
+                tx_root: tx_root(&[]),
+                receipts_root: receipts_root(&[]),
+                timestamp: 1,
+                epoch: 1,
+                proposer,
+                epoch_transition_certificate: Some(certificate),
+            },
+            transactions: Vec::new(),
+            receipts: Vec::new(),
+        };
+
+        assert_eq!(
+            execute_block(&mut state, &block),
+            Err("epoch transition was not committed".into())
+        );
+        assert_eq!(state.epoch, 0);
+        assert_eq!(state.height, 0);
+    }
+}
