@@ -473,7 +473,7 @@ impl ChainState {
   }
 
   let authenticated_votes=certificate.authenticated_vote_count(previous_keys) as usize;
-  let required_quorum=(previous_keys.len() * 2) / 3 + 1;
+  let required_quorum=freedom_consensus::quorum_threshold(previous_keys.len());
   if authenticated_votes < required_quorum {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
@@ -763,6 +763,28 @@ impl ChainState {
   }
   Ok(())
  }
+#[cfg(test)]
+mod m339_validator_certificate_quorum_overflow_tests {
+    use super::*;
+    use freedom_primitives::CHAIN_ID;
+    use freedom_types::Genesis;
+
+    #[test]
+    fn persisted_certificate_quorum_is_overflow_safe() {
+        let count = usize::MAX;
+        let expected = count - (count / 3 + usize::from(count % 3 != 0)) + 1;
+        assert_eq!(freedom_consensus::quorum_threshold(count), expected);
+    }
+
+    #[test]
+    fn persisted_certificate_quorum_matches_small_sets() {
+        let expected = [usize::MAX, 1, 2, 3, 3, 4, 5, 5, 6, 7];
+        for (count, threshold) in expected.into_iter().enumerate() {
+            assert_eq!(freedom_consensus::quorum_threshold(count), threshold);
+        }
+    }
+}
+
 #[cfg(test)]
 mod m251_finality_attestation_gate_tests {
     use super::*;
