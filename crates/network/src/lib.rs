@@ -55,11 +55,36 @@ pub enum SyncWireRequest { Blocks(SyncRequest), Snapshot(SnapshotSyncRequest) }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SyncWireResponse { Blocks(SyncResponse), Snapshot(SnapshotSyncResponse) }
 
-pub fn validate_sync_request(req: &SyncRequest) -> Result<(), String> { if req.from_height == 0 { return Err("sync request cannot start at genesis".into()); } if req.to_height < req.from_height { return Err("sync request range is inverted".into()); } if req.to_height.saturating_sub(req.from_height).saturating_add(1) > MAX_SYNC_BLOCKS { return Err("sync request exceeds maximum block range".into()); } Ok(()) }
+pub fn validate_sync_request(req: &SyncRequest) -> Result<(), String> {
+    if req.from_height == 0 { return Err("sync request cannot start at genesis".into()); }
+    if req.to_height < req.from_height { return Err("sync request range is inverted".into()); }
+    let span = req.to_height
+        .checked_sub(req.from_height)
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| "sync request range overflows".to_string())?;
+    if span > MAX_SYNC_BLOCKS { return Err("sync request exceeds maximum block range".into()); }
+    Ok(())
+}
 
 pub fn validate_snapshot_request(req: &SnapshotSyncRequest) -> Result<(), String> { if req.height == 0 { return Err("snapshot request cannot target genesis".into()); } Ok(()) }
 
-pub fn validate_sync_response(response: &SyncResponse) -> Result<(), String> { if response.blocks.is_empty() { return Err("sync response is empty".into()); } if response.blocks.len() > MAX_SYNC_BLOCKS as usize { return Err("sync response exceeds maximum block count".into()); } if response.from_height == 0 { return Err("sync response cannot start at genesis".into()); } for (i,b) in response.blocks.iter().enumerate() { if b.header.height != response.from_height.saturating_add(i as u64) { return Err("sync response contains non-contiguous block heights".into()); } } if response.blocks.first().map(|b| b.header.height) != Some(response.from_height) { return Err("sync response first block does not match from_height".into()); } Ok(()) }
+pub fn validate_sync_response(response: &SyncResponse) -> Result<(), String> {
+    if response.blocks.is_empty() { return Err("sync response is empty".into()); }
+    if response.blocks.len() > MAX_SYNC_BLOCKS as usize { return Err("sync response exceeds maximum block count".into()); }
+    if response.from_height == 0 { return Err("sync response cannot start at genesis".into()); }
+    for (i, b) in response.blocks.iter().enumerate() {
+        let expected_height = response.from_height
+            .checked_add(i as u64)
+            .ok_or_else(|| "sync response height overflows".to_string())?;
+        if b.header.height != expected_height {
+            return Err("sync response contains non-contiguous block heights".into());
+        }
+    }
+    if response.blocks.first().map(|b| b.header.height) != Some(response.from_height) {
+        return Err("sync response first block does not match from_height".into());
+    }
+    Ok(())
+}
 
 pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(), String> { if response.height == 0 { return Err("snapshot response cannot target genesis".into()); } if response.state_json.len() > MAX_SNAPSHOT_STATE_BYTES { return Err("snapshot state exceeds maximum encoded size".into()); } if response.checkpoint.header.height != response.height { return Err("snapshot checkpoint height mismatch".into()); } if freedom_consensus::block_hash(&response.checkpoint) != response.block_hash { return Err("snapshot checkpoint hash mismatch".into()); } if response.checkpoint.header.state_root != response.state_root { return Err("snapshot checkpoint state root mismatch".into()); } if response.certificate.height != response.height || response.certificate.block_hash != response.block_hash { return Err("snapshot certificate identity mismatch".into()); } if response.certificate.round != response.checkpoint.header.round { return Err("snapshot certificate round mismatch".into()); } Ok(()) }
 
@@ -437,6 +462,39 @@ mod tests {
     fn sync_request_bounds_are_enforced() { let id=[1u8;32]; assert!(validate_sync_request(&SyncRequest{request_id:id,from_height:1,to_height:32}).is_ok()); assert!(validate_sync_request(&SyncRequest{request_id:id,from_height:0,to_height:1}).is_err()); assert!(validate_sync_request(&SyncRequest{request_id:id,from_height:1,to_height:33}).is_err()); }
 
     #[test]
+    fn sync_request_rejects_overflowing_range() {
+        let id = [1u8; 32];
+        assert!(validate_sync_request(&SyncRequest {
+            request_id: id,
+            from_height: u64::MAX - 1,
+            to_height: u64::MAX,
+        }).is_ok());
+        assert!(validate_sync_request(&SyncRequest {
+            request_id: id,
+            from_height: u64::MAX,
+            to_height: u64::MAX,
+        }).is_ok());
+    }
+
+    #[test]
+    fn sync_response_rejects_height_overflow() {
+        let block = freedom_types::Block {
+            header: freedom_types::BlockHeader {
+                height: u64::MAX, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32],
+                epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let response = SyncResponse {
+            request_id: [1;32],
+            from_height: u64::MAX,
+            blocks: vec![block],
+        };
+        assert!(validate_sync_response(&response).is_ok());
+    }
+
+    #[test]
     fn network_messages_round_trip() {
         let block = freedom_types::Block {
             header: freedom_types::BlockHeader {
@@ -483,10 +541,13 @@ mod tests {
 }
 
 pub fn make_sync_request(request_id: Hash, from_height: u64) -> NetworkMessage {
+    let to_height = from_height
+        .checked_add(MAX_SYNC_BLOCKS - 1)
+        .unwrap_or(u64::MAX);
     NetworkMessage::SyncRequest(SyncRequest {
         request_id,
         from_height,
-        to_height: from_height.saturating_add(MAX_SYNC_BLOCKS.saturating_sub(1)),
+        to_height,
     })
 }
 
