@@ -2108,8 +2108,17 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  fn submit_evidence(&mut self,tx:&Transaction)->Result<(),StateError>{
   let p=decode_submit_evidence(&tx.payload).ok_or(StateError::InvalidEvidence)?;
   if !self.evidence.contains_key(&p.evidence.evidence_hash){ self.record_equivocation(p.evidence.clone())?; }
-  let expected=self.deterministic_slash_amount(&p.evidence.kind,self.validators.get(&p.evidence.validator_id).ok_or(StateError::InvalidEvidence)?.stake);
-  if p.slash_amount!=expected{return Err(StateError::InvalidEvidence)}
+  let validator=self.validators.get(&p.evidence.validator_id)
+    .ok_or(StateError::InvalidEvidence)?;
+  let total=validator.stake.checked_add(validator.unbonding_stake)
+    .ok_or(StateError::InvalidEvidence)?;
+  if total==0 {
+    return Err(StateError::InvalidEvidence);
+  }
+  let expected=self.deterministic_slash_amount(&p.evidence.kind,total);
+  if expected==0 || p.slash_amount!=expected {
+    return Err(StateError::InvalidEvidence);
+  }
   let amount=self.slash_evidence(p.evidence.evidence_hash,p.slash_amount)?;
   self.events.push(Event::EquivocationSlashed{evidence_hash:p.evidence.evidence_hash,validator_id:p.evidence.validator_id,amount});
   self.advance_nonce(tx.sender)
@@ -4366,6 +4375,52 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m299_evidence_slash_basis_hardening_tests {
+    use super::*;
+
+    #[test]
+    fn submit_evidence_uses_active_plus_unbonding_stake() {
+        let key=[13u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:0,
+            unbonding_stake:100, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        state.staking_activated=true;
+        state.insert_account(freedom_types::Account::new(key,100));
+        state.accounts.get_mut(&owner).unwrap().staked=100;
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash,evidence.clone());
+
+        let unbonding_id=[14u8;32];
+        state.unbonding.insert(unbonding_id,freedom_types::UnbondingEntry {
+            unbonding_id, validator_id:id, owner, amount:100,
+            requested_height:0, release_height:200,
+        });
+
+        let payload=freedom_types::SubmitEvidencePayload {
+            evidence:evidence.clone(),
+            slash_amount:10,
+        };
+        let result=state.submit_evidence(&freedom_types::Transaction {
+            sender:owner, nonce:0, fee:0,
+            kind:freedom_types::TxKind::SubmitEvidence,
+            payload:payload.encode(),
+        });
+        assert!(result.is_ok());
+        assert_eq!(state.slashed_evidence.get(&evidence.evidence_hash),Some(&10));
     }
 }
 
