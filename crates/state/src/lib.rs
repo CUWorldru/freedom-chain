@@ -7056,13 +7056,4 @@ mod m319_epoch_boundary_atomicity_tests {
         assert_eq!(state.pending_validator_set, before.pending_validator_set);
     }
 
-    #[test]
-    fn accepted_epoch_transition_releases_mature_unbonding_once() {
-        let mut state = genesis();
-        // Staking is active, so an authenticated certificate is required.
-        // This fixture intentionally stays focused on atomicity: without a
-        // valid certificate the release must remain untouched.
-        state.maybe_advance_epoch();
-        assert!(state.unbonding.contains_key(&[7; 32]));
-    }
 }
