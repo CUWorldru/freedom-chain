@@ -103,6 +103,7 @@ impl ChainState {
   }
   self.validate_validator_records_integrity()?;
   self.validate_unbonding_integrity()?;
+  self.validate_staking_activation_integrity()?;
   self.validate_evidence_integrity()?;
   let evidence=self.evidence.get(&evidence_hash).ok_or(StateError::InvalidEvidence)?;
   let (owner,total)={let v=self.validators.get(&evidence.validator_id).ok_or(StateError::InvalidEvidence)?;(v.owner,v.stake.checked_add(v.unbonding_stake).ok_or(StateError::InvalidEvidence)?)};
@@ -1965,6 +1966,17 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   }
   self.active_validator_set=self.pending_validator_set.clone();
  }
+ fn validate_staking_activation_integrity(&self)->Result<(),StateError>{
+  if !self.staking_activated {
+    if self.accounts.values().any(|a| a.staked>0)
+      || self.validators.values().any(|v| v.unbonding_stake>0)
+      || !self.unbonding.is_empty() {
+      return Err(StateError::InvalidBridgeWithdrawal);
+    }
+  }
+  Ok(())
+ }
+
  fn validate_epoch_transition_certificate_binding(
   &self,
   next_epoch:u64,
@@ -2031,6 +2043,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    if self.validate_current_validator_set_history_binding().is_err() { return; }
    if self.validate_validator_records_integrity().is_err() { return; }
    if self.validate_unbonding_integrity().is_err() { return; }
+   if self.validate_staking_activation_integrity().is_err() { return; }
 
    // The pending set is a cached/public state field. Never trust it as
    // consensus input: rebuild the canonical candidate directly from the
@@ -6458,6 +6471,23 @@ mod m280_validator_set_transition_hardening_tests {
             101
         );
         assert!(!state.validator_set_history.contains_key(&1));
+    }
+
+    #[test]
+    fn deactivated_staking_flag_cannot_bypass_certificate_guard() {
+        let mut state = genesis();
+        state.staking_activated = true;
+        state.accounts.get_mut(&[2u8; 32]).unwrap().staked = 100;
+        state.staking_activated = false;
+        state.height = state.epoch_length;
+
+        state.maybe_advance_epoch();
+
+        assert_eq!(state.epoch, 0);
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
     }
 
     #[test]
