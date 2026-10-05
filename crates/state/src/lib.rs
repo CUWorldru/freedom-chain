@@ -90,6 +90,11 @@ impl ChainState {
   self.evidence.insert(evidence.evidence_hash,evidence); Ok(true)
  }
  pub fn slash_evidence(&mut self,evidence_hash:Hash,amount:u128)->Result<u128,StateError>{
+  if self.slashed_evidence.contains_key(&evidence_hash) {
+    self.validate_validator_records_integrity()?;
+    self.validate_evidence_integrity()?;
+    self.validate_slashed_evidence_integrity()?;
+  }
   if let Some(recorded)=self.slashed_evidence.get(&evidence_hash) {
     if amount != *recorded {
       return Err(StateError::InvalidEvidence);
@@ -4447,6 +4452,48 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m312_slashed_replay_integrity_tests {
+    use super::*;
+
+    fn fixture() -> (ChainState, freedom_types::EquivocationEvidence) {
+        let key=[39u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let mut evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        evidence.evidence_hash=freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.evidence.insert(evidence.evidence_hash,evidence.clone());
+        state.slashed_evidence.insert(evidence.evidence_hash,10);
+        (state,evidence)
+    }
+
+    #[test]
+    fn slashed_replay_rejects_corrupted_evidence_before_idempotent_return() {
+        let (mut state,evidence)=fixture();
+        state.evidence.get_mut(&evidence.evidence_hash).unwrap().first=vec![9];
+        assert_eq!(
+            state.slash_evidence(evidence.evidence_hash,10),
+            Err(StateError::InvalidEvidence)
+        );
+    }
+
+    #[test]
+    fn valid_slashed_replay_remains_idempotent() {
+        let (mut state,evidence)=fixture();
+        assert_eq!(state.slash_evidence(evidence.evidence_hash,10),Ok(0));
     }
 }
 
