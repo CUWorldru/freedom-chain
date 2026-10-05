@@ -443,6 +443,22 @@ impl ChainState {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
 
+  // The certificate is for the transition out of the currently active set.
+  // Persisted historical state must agree with that active set at the exact
+  // transition boundary; otherwise quorum could be evaluated over one set
+  // while signatures are interpreted against another.
+  if previous_entries.len() != self.active_validator_set.len()
+    || previous_entries.iter().any(|(id,entry)| {
+      self.active_validator_set.get(id).map(|active| {
+        active.validator_id == entry.validator_id
+          && active.owner == entry.owner
+          && active.consensus_key == entry.consensus_key
+          && active.stake == entry.stake
+      }).unwrap_or(false) == false
+    }) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+  }
+
   let mut previous_bytes=Vec::new();
   for (id,key) in previous_keys {
     previous_bytes.extend_from_slice(id);
