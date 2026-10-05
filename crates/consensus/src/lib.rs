@@ -293,15 +293,65 @@ pub fn validate_precommit_quorum_for_set(
             return Err("duplicate validator precommit".into());
         }
     }
-    let total = validator_set.values().map(|v| v.stake).sum::<u128>();
-    let signed = seen.iter().filter_map(|id| validator_set.get(id)).map(|v| v.stake).sum::<u128>();
+    let total = validator_set.values()
+        .map(|v| v.stake)
+        .try_fold(0u128, |acc, stake| acc.checked_add(stake))
+        .ok_or_else(|| "precommit stake total overflow".to_string())?;
+    let signed = seen.iter()
+        .filter_map(|id| validator_set.get(id))
+        .map(|v| v.stake)
+        .try_fold(0u128, |acc, stake| acc.checked_add(stake))
+        .ok_or_else(|| "precommit signed stake overflow".to_string())?;
     if total == 0 {
         if seen.len() < quorum_threshold(validator_set.len()) { return Err("precommit quorum not reached".into()); }
-    } else if signed.saturating_mul(3) < total.saturating_mul(2) {
-        return Err("precommit stake quorum not reached".into());
+    } else {
+        let required = total - total / 3;
+        if signed < required {
+            return Err("precommit stake quorum not reached".into());
+        }
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod m325_precommit_stake_overflow_tests {
+    use super::*;
+    use freedom_primitives::hash_bytes;
+    use freedom_types::{Validator, ValidatorPrecommit};
+
+    fn validator_set(stakes: &[u128]) -> std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry> {
+        stakes.iter().enumerate().map(|(i, stake)| {
+            let key = [i as u8 + 40; 32];
+            let id = hash_bytes(&[b"m325-validator", &[i as u8 + 40]].concat());
+            (id, freedom_types::ValidatorSetEntry {
+                owner: freedom_primitives::address_from_public_key(&key),
+                consensus_key: key,
+                stake: *stake,
+            })
+        }).collect()
+    }
+
+    #[test]
+    fn precommit_quorum_rejects_overflowing_total_stake() {
+        let set = validator_set(&[u128::MAX, 1]);
+        assert!(validate_precommit_quorum_for_set(&set, [1; 32], 1, 0, &[]).is_err());
+    }
+
+    #[test]
+    fn precommit_quorum_does_not_accept_one_third_with_max_stake() {
+        let total = u128::MAX;
+        let set = validator_set(&[total / 3 + 1, total - (total / 3 + 1)]);
+        let ids: Vec<_> = set.keys().copied().collect();
+        let mut precommits = Vec::<ValidatorPrecommit>::new();
+        let p = ValidatorPrecommit {
+            block_hash: [1; 32], height: 1, round: 0,
+            validator_id: ids[0], signature: vec![0; 64],
+        };
+        precommits.push(p);
+        assert!(validate_precommit_quorum_for_set(&set, [1; 32], 1, 0, &precommits).is_err());
+    }
+}
+
 
 pub fn validate_precommit_quorum(
     state: &ChainState,
