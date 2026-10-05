@@ -65,7 +65,8 @@ impl ChainState {
   // Evidence insertion is consensus state mutation. Refuse to append new
   // evidence while the authoritative validator registry is already corrupt.
   self.validate_validator_records_integrity()?;
-  if evidence.validator_id == [0;32]
+  if evidence.evidence_hash == [0;32]
+    || evidence.validator_id == [0;32]
     || evidence.first.is_empty()
     || evidence.second.is_empty()
     || evidence.first == evidence.second
@@ -4439,6 +4440,31 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m309_evidence_hash_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn zero_evidence_hash_is_rejected_before_recording() {
+        let key=[33u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=freedom_types::Validator {
+            validator_id:id, owner, consensus_key:key, stake:100,
+            unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
+        };
+        let mut state=ChainState::genesis(&freedom_types::Genesis {
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
+        });
+        let evidence=freedom_types::EquivocationEvidence {
+            kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
+            validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
+        };
+        assert_eq!(state.record_equivocation(evidence),Err(StateError::InvalidEvidence));
+        assert!(state.evidence.is_empty());
     }
 }
 
