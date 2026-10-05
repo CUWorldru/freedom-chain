@@ -243,7 +243,11 @@ pub fn validate_proposal(state: &ChainState, proposal: &BlockProposal) -> Result
 
 pub fn make_vote(state: &ChainState, validator_id: Hash, proposal: &BlockProposal, consensus_key: &ed25519_dalek::SigningKey) -> Result<ValidatorVote, String> {
     validate_proposal(state, proposal)?;
-    if !state.validators.contains_key(&validator_id) { return Err("unknown voting validator".into()); }
+    let validator = state.active_validator_set.get(&validator_id)
+        .ok_or_else(|| "unknown active voting validator".to_string())?;
+    if validator.consensus_key != consensus_key.verifying_key().to_bytes() {
+        return Err("voting validator key mismatch".into());
+    }
     let mut vote = ValidatorVote {
         block_hash: proposal.block_hash,
         height: proposal.height,
