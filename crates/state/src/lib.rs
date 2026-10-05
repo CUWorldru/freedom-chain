@@ -1,3 +1,5 @@
+const MAX_EVIDENCE_COMPONENT_BYTES: usize = 64 * 1024;
+
 fn decode_submit_evidence(b:&[u8])->Option<freedom_types::SubmitEvidencePayload>{
  let mut i=0usize;
  let kind=match *b.get(i)?{1=>freedom_types::EquivocationKind::DoublePrevote,2=>freedom_types::EquivocationKind::DoublePrecommit,3=>freedom_types::EquivocationKind::DoubleProposal,_=>return None}; i+=1;
@@ -5,11 +7,14 @@ fn decode_submit_evidence(b:&[u8])->Option<freedom_types::SubmitEvidencePayload>
  let round=u64::from_le_bytes(b.get(i..i+8)?.try_into().ok()?); i+=8;
  let mut validator_id=[0u8;32]; validator_id.copy_from_slice(b.get(i..i+32)?); i+=32;
  let n1=u32::from_le_bytes(b.get(i..i+4)?.try_into().ok()?) as usize;i+=4;
+ if n1>MAX_EVIDENCE_COMPONENT_BYTES{return None;}
  let first=b.get(i..i+n1)?.to_vec();i+=n1;
  let n2=u32::from_le_bytes(b.get(i..i+4)?.try_into().ok()?) as usize;i+=4;
+ if n2>MAX_EVIDENCE_COMPONENT_BYTES{return None;}
  let second=b.get(i..i+n2)?.to_vec();i+=n2;
  let mut evidence_hash=[0u8;32];evidence_hash.copy_from_slice(b.get(i..i+32)?);i+=32;
- let mut slash=[0u8;16];slash.copy_from_slice(b.get(i..i+16)?);
+ let mut slash=[0u8;16];slash.copy_from_slice(b.get(i..i+16)?);i+=16;
+ if i!=b.len(){return None;}
  Some(freedom_types::SubmitEvidencePayload{evidence:freedom_types::EquivocationEvidence{kind,height,round,validator_id,first,second,evidence_hash},slash_amount:u128::from_le_bytes(slash)})
 }
 use std::collections::{BTreeMap,BTreeSet};
@@ -4382,6 +4387,46 @@ mod m278_validator_history_continuity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.validator_set_history, original);
+    }
+}
+
+#[cfg(test)]
+mod m302_evidence_decoder_hardening_tests {
+    use super::*;
+
+    #[test]
+    fn evidence_decoder_rejects_oversized_component() {
+        let key=[21u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let evidence=freedom_types::SubmitEvidencePayload {
+            evidence:freedom_types::EquivocationEvidence {
+                kind:freedom_types::EquivocationKind::DoublePrecommit,
+                height:0, round:0, validator_id:id,
+                first:vec![1; MAX_EVIDENCE_COMPONENT_BYTES+1],
+                second:vec![2],
+                evidence_hash:[0;32],
+            },
+            slash_amount:1,
+        };
+        assert!(decode_submit_evidence(&evidence.encode()).is_none());
+    }
+
+    #[test]
+    fn evidence_decoder_rejects_trailing_bytes() {
+        let key=[22u8;32];
+        let id=freedom_primitives::hash_bytes(&key);
+        let evidence=freedom_types::SubmitEvidencePayload {
+            evidence:freedom_types::EquivocationEvidence {
+                kind:freedom_types::EquivocationKind::DoublePrecommit,
+                height:0, round:0, validator_id:id,
+                first:vec![1], second:vec![2],
+                evidence_hash:[0;32],
+            },
+            slash_amount:1,
+        };
+        let mut encoded=evidence.encode();
+        encoded.push(0xff);
+        assert!(decode_submit_evidence(&encoded).is_none());
     }
 }
 
