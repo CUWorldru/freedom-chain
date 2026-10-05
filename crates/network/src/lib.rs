@@ -164,7 +164,10 @@ pub fn sign_proposal(proposal: &mut BlockProposal, consensus_key: &ed25519_dalek
 
 pub fn validate_block_transition(state: &ChainState, block: &freedom_types::Block) -> Result<(), String> {
     freedom_consensus::validate_epoch_transition_certificate(state, block)?;
-    if block.header.height != state.height + 1 { return Err("invalid proposal height".into()); }
+    let expected_height = state.height
+        .checked_add(1)
+        .ok_or_else(|| "proposal height exceeds u64::MAX".to_string())?;
+    if block.header.height != expected_height { return Err("invalid proposal height".into()); }
     if block.header.previous_hash != state.last_block_hash { return Err("invalid proposal previous hash".into()); }
     if freedom_consensus::tx_root(&block.transactions) != block.header.tx_root { return Err("proposal transaction root mismatch".into()); }
 
@@ -282,7 +285,10 @@ pub fn make_validator_set_vote(
     new_set_hash: Hash,
     consensus_key: &ed25519_dalek::SigningKey,
 ) -> Result<freedom_types::ValidatorSetVote, String> {
-    if to_epoch != state.epoch.saturating_add(1) {
+    let expected_to_epoch = state.epoch
+        .checked_add(1)
+        .ok_or_else(|| "validator set vote target epoch exceeds u64::MAX".to_string())?;
+    if to_epoch != expected_to_epoch {
         return Err("invalid validator set vote target epoch".into());
     }
     let previous_set_hash = freedom_consensus::validator_set_hash(&state.active_validator_set);
@@ -311,7 +317,10 @@ pub fn validate_validator_set_vote(
     state: &ChainState,
     vote: &freedom_types::ValidatorSetVote,
 ) -> Result<(), String> {
-    if vote.from_epoch != state.epoch || vote.to_epoch != state.epoch.saturating_add(1) {
+    let expected_to_epoch = state.epoch
+        .checked_add(1)
+        .ok_or_else(|| "validator set vote target epoch exceeds u64::MAX".to_string())?;
+    if vote.from_epoch != state.epoch || vote.to_epoch != expected_to_epoch {
         return Err("invalid validator set vote epoch".into());
     }
     if vote.previous_set_hash != freedom_consensus::validator_set_hash(&state.active_validator_set) {
