@@ -2459,7 +2459,38 @@ mod m330_public_chain_id_boundary_tests {
   Ok(())
  }
  pub(crate) fn verify_contribution(&mut self,id:Hash,verifiers:Vec<Hash>,score:u32)->Result<(),StateError>{if verifiers.is_empty()||score>10000{return Err(StateError::InvalidVerification)}if verifiers.iter().any(|v|!self.validators.contains_key(v)){return Err(StateError::InvalidVerification)}let(node_id,wu)={let c=self.contributions.get(&id).ok_or(StateError::InvalidContribution)?;if c.status!=ContributionStatus::Submitted{return Err(StateError::AlreadyVerified)}(c.node_id,c.work_units)};let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;c.verifier_set=verifiers;c.verification_score=score;c.status=ContributionStatus::Verified;let n=self.nodes.get_mut(&node_id).ok_or(StateError::InvalidNode)?;n.total_wu=n.total_wu.checked_add(wu).ok_or(StateError::ArithmeticOverflow)?;n.successful_tasks=n.successful_tasks.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;Ok(())}
- pub(crate) fn claim_reward(&mut self,id:Hash)->Result<(),StateError>{let c=self.contributions.get(&id).ok_or(StateError::InvalidContribution)?.clone();if c.status!=ContributionStatus::Verified{return Err(StateError::ContributionNotRewardable)}if c.reward_id.is_some(){return Err(StateError::DuplicateReward)}let gross=c.work_units.checked_mul(c.quality_score as u128).ok_or(StateError::ArithmeticOverflow)?.checked_mul(c.verification_score as u128).ok_or(StateError::ArithmeticOverflow)?.checked_div(100_000_000).ok_or(StateError::ArithmeticOverflow)?;let remaining=self.epoch_cap.checked_sub(self.epoch_issuance).ok_or(StateError::IssuanceCapExceeded)?;let reward=gross.min(remaining);if reward==0{return Err(StateError::IssuanceCapExceeded)}let reward_id=freedom_primitives::hash_bytes(&[b"FREEDOM-REWARD-V1".as_slice(),&id,&self.epoch.to_le_bytes()].concat());let owner=self.nodes.get(&c.node_id).ok_or(StateError::InvalidNode)?.owner;if self.rewards.contains_key(&reward_id){return Err(StateError::DuplicateReward)}let a=self.accounts.get_mut(&owner).ok_or(StateError::AccountNotFound)?;a.balance=a.balance.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;self.supply.total=self.supply.total.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;self.supply.circulating=self.supply.circulating.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;self.epoch_issuance=self.epoch_issuance.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;self.rewards.insert(reward_id,Reward{reward_id,owner,contribution_id:id,wu:c.work_units,gross_reward:gross,final_reward:reward,epoch:self.epoch});let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;c.status=ContributionStatus::Rewarded;c.reward_id=Some(reward_id);c.reward_amount=reward;Ok(())}
+ pub(crate) fn claim_reward(&mut self,id:Hash)->Result<(),StateError>{
+  let c=self.contributions.get(&id).ok_or(StateError::InvalidContribution)?.clone();
+  if c.status!=ContributionStatus::Verified{return Err(StateError::ContributionNotRewardable)}
+  if c.reward_id.is_some(){return Err(StateError::DuplicateReward)}
+  let gross=c.work_units.checked_mul(c.quality_score as u128).ok_or(StateError::ArithmeticOverflow)?
+    .checked_mul(c.verification_score as u128).ok_or(StateError::ArithmeticOverflow)?
+    .checked_div(100_000_000).ok_or(StateError::ArithmeticOverflow)?;
+  let remaining=self.epoch_cap.checked_sub(self.epoch_issuance).ok_or(StateError::IssuanceCapExceeded)?;
+  let reward=gross.min(remaining);
+  if reward==0{return Err(StateError::IssuanceCapExceeded)}
+  let reward_id=freedom_primitives::hash_bytes(&[b"FREEDOM-REWARD-V1".as_slice(),&id,&self.epoch.to_le_bytes()].concat());
+  let owner=self.nodes.get(&c.node_id).ok_or(StateError::InvalidNode)?.owner;
+  if self.rewards.contains_key(&reward_id){return Err(StateError::DuplicateReward)}
+  let account=self.accounts.get(&owner).ok_or(StateError::AccountNotFound)?;
+  let next_balance=account.balance.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;
+  let next_total=self.supply.total.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;
+  let next_circulating=self.supply.circulating.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;
+  let next_issuance=self.epoch_issuance.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;
+
+  // Preflight all monetary and contribution mutations before writing any state.
+  let a=self.accounts.get_mut(&owner).ok_or(StateError::AccountNotFound)?;
+  a.balance=next_balance;
+  self.supply.total=next_total;
+  self.supply.circulating=next_circulating;
+  self.epoch_issuance=next_issuance;
+  self.rewards.insert(reward_id,Reward{reward_id,owner,contribution_id:id,wu:c.work_units,gross_reward:gross,final_reward:reward,epoch:self.epoch});
+  let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;
+  c.status=ContributionStatus::Rewarded;
+  c.reward_id=Some(reward_id);
+  c.reward_amount=reward;
+  Ok(())
+ }
  pub(crate) fn create_draw(&mut self,config:DrawConfig)->Result<(),StateError>{
   if config.draw_id==[0;32]||self.draws.contains_key(&config.draw_id)||config.ticket_price_native_units!=10_000||config.winner_count==0||config.starts_at>config.ends_at{return Err(StateError::InvalidDraw)}
   self.draws.insert(config.draw_id,DrawState{config,total_tickets:0,prize_pool_native_units:0,cu_fund_native_units:0,annual_reserve_native_units:0,executed:false}); Ok(())
