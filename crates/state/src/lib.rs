@@ -497,8 +497,7 @@ impl ChainState {
  }
 
  fn validate_slashed_evidence_integrity(&self)->Result<(),StateError>{
-  for (evidence_hash,amount) in &self.slashed_evidence {
-    if *evidence_hash == [0;32] || *amount == 0 {
+  for (evidence_hash,amount) in &self.slashed_evidence {    if *evidence_hash == [0;32] || *amount == 0 {
       return Err(StateError::InvalidEvidence);
     }
     let evidence=self.evidence.get(evidence_hash)
@@ -997,8 +996,7 @@ mod m228_withdrawal_policy_boundary_tests {
     fn withdrawal_approval_rejects_policy_nonce_floor() {
         let mut state=state();
         let id=[3;32]; let request=[4;32];
-        state.bridge_withdrawals.insert(id, freedom_types::BridgeWithdrawal {
-            withdrawal_id:id, bridge_id:[9;32], asset_id:[5;32], destination_chain_id:2,
+        state.bridge_withdrawals.insert(id, freedom_types::BridgeWithdrawal {            withdrawal_id:id, bridge_id:[9;32], asset_id:[5;32], destination_chain_id:2,
             amount:10, sender:[6;32], recipient:vec![7], nonce:4, request_hash:[8;32],
         });
         state.bridge_withdrawal_status.insert(id, freedom_types::BridgeWithdrawalStatus::Validated);
@@ -1497,8 +1495,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     let expected_sequence = old.sequence.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
     if attestation.sequence != expected_sequence { return Err(StateError::InvalidBridgeWithdrawal); }
   }
-  let next=freedom_types::BitcoinChainCheckpoint{height:block.height,block_hash:block.header.block_hash(),chainwork:attestation.bitcoin_tip_chainwork};
-  self.bitcoin_canonical_tips.insert(bridge_id,next);
+  let next=freedom_types::BitcoinChainCheckpoint{height:block.height,block_hash:block.header.block_hash(),chainwork:attestation.bitcoin_tip_chainwork};  self.bitcoin_canonical_tips.insert(bridge_id,next);
   self.bitcoin_utxo_attestations.insert(bridge_id,attestation.clone());
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   self.bitcoin_utxo_attestation_policy_hashes.insert(bridge_id,policy.commitment_hash());
@@ -1997,8 +1994,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
  pub(crate) fn refresh_validator_set(&mut self){
   self.refresh_pending_validator_set();
-  // This legacy/public refresh path must never activate a validator set that
-  // is not the authoritative snapshot for the current epoch. Epoch changes
+  // This legacy/public refresh path must never activate a validator set that  // is not the authoritative snapshot for the current epoch. Epoch changes
   // are exclusively committed by maybe_advance_epoch().
   if self.validate_current_validator_set_history_binding().is_err() {
     return;
@@ -2244,9 +2240,16 @@ mod m330_public_chain_id_boundary_tests {
 
  fn execute_bridge_mint(&mut self,tx:&Transaction)->Result<(),StateError>{
   let payload=BridgeMintTransactionPayload::decode(&tx.payload).map_err(|_|StateError::InvalidBridgeMintTransaction)?;
-  if tx.fee>self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance {
+  let sender=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  if tx.fee>sender.balance {
    return Err(StateError::InsufficientBalance);
   }
+  // Preflight every fallible transaction-level mutation before bridge minting.
+  // mint_bridge_authorized() mutates bridge/accounting state, so fee supply
+  // arithmetic and the sender nonce must be known to succeed first.
+  let next_nonce=sender.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let next_circulating=self.supply.circulating.checked_sub(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+  let next_treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
   let policy=self.bridge_security_policies.get(&payload.message.bridge_id).ok_or(StateError::InvalidBridgeMintTransaction)?;
   if payload.message.source_chain_id == freedom_types::BITCOIN_MAINNET_CHAIN_ID {
     self.validate_bitcoin_bridge_safety(payload.message.bridge_id)?;
@@ -2281,8 +2284,10 @@ mod m330_public_chain_id_boundary_tests {
   let amount=self.mint_bridge_authorized(
    &payload.message,&payload.deposit,&payload.authorization,&payload.approvals
   )?;
-  self.supply.circulating=self.supply.circulating.checked_sub(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
-  self.supply.treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+  self.supply.circulating=next_circulating;
+  self.supply.treasury=next_treasury;
+  let sender=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  sender.nonce=next_nonce;
   self.events.push(Event::BridgeMinted{
    replay_key:payload.authorization.replay_key,
    asset_id:payload.authorization.canonical_asset_id,
@@ -2497,8 +2502,7 @@ mod m330_public_chain_id_boundary_tests {
   self.supply.circulating=next_circulating;
   self.epoch_issuance=next_issuance;
   self.rewards.insert(reward_id,Reward{reward_id,owner,contribution_id:id,wu:c.work_units,gross_reward:gross,final_reward:reward,epoch:self.epoch});
-  let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;
-  c.status=ContributionStatus::Rewarded;
+  let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;  c.status=ContributionStatus::Rewarded;
   c.reward_id=Some(reward_id);
   c.reward_amount=reward;
   Ok(())
@@ -2999,7 +3003,6 @@ mod m77_asset_registry_tests {
  }
 }
 
-
 #[cfg(test)]
 mod m81_bidirectional_bridge_tests {
  use super::*;
@@ -3498,7 +3501,6 @@ mod m211_bitcoin_merkle_proof_chain_id_tests {
             },
         }
     }
-
     #[test]
     fn canonical_merkle_deposit_rejects_non_bitcoin_chain_id_before_header_verification() {
         let state = state_with_tip();
@@ -3998,7 +4000,6 @@ mod m243_direct_bridge_mint_bitcoin_gate_tests {
     }
 }
 
-
 #[cfg(test)]
 mod m244_bridge_acceptance_boundary_tests {
     use super::*;
@@ -4497,8 +4498,7 @@ mod m269_epoch_snapshot_atomicity_tests {
         assert_eq!(state.validator_set_history.get(&1).copied(),Some({ let mut b=Vec::new(); for (id,e) in &state.active_validator_set {b.extend_from_slice(id);b.extend_from_slice(&e.owner);b.extend_from_slice(&e.consensus_key);b.extend_from_slice(&e.stake.to_le_bytes());} freedom_primitives::hash_bytes(&b)}));
         assert_eq!(state.validator_set_history_entries.get(&1),Some(&state.active_validator_set));
         assert_eq!(state.validator_set_history_sets.get(&1).unwrap().len(),state.validator_set_history_entries.get(&1).unwrap().len());
-    }
-}
+    }}
 
 
 #[cfg(test)]
@@ -4997,8 +4997,7 @@ mod m308_evidence_duplicate_canonicalization_tests {
     fn duplicate_evidence_hash_requires_identical_record() {
         let key=[31u8;32];
         let id=freedom_primitives::hash_bytes(&key);
-        let owner=freedom_primitives::address_from_public_key(&key);
-        let validator=freedom_types::Validator {
+        let owner=freedom_primitives::address_from_public_key(&key);        let validator=freedom_types::Validator {
             validator_id:id, owner, consensus_key:key, stake:100,
             unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
         };
@@ -5497,8 +5496,7 @@ mod m298_exited_validator_slash_hardening_tests {
         let validator=freedom_types::Validator {
             validator_id:id, owner, consensus_key:key, stake:0,
             unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
-        };
-        let mut state=ChainState::genesis(&freedom_types::Genesis {
+        };        let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
         state.insert_account(freedom_types::Account::new(key,0));
@@ -5997,8 +5995,7 @@ mod m290_slashed_evidence_integrity_hardening_tests {
         let mut state = state;
         state.slashed_evidence.insert([7u8; 32], 1);
 
-        assert_eq!(
-            state.validate_slashed_evidence_integrity(),
+        assert_eq!(            state.validate_slashed_evidence_integrity(),
             Err(StateError::InvalidEvidence)
         );
     }
@@ -6498,894 +6495,3 @@ mod m284_validator_consensus_identity_hardening_tests {
     }
 
     #[test]
-    fn epoch_transition_rejects_consensus_key_identity_drift() {
-        let mut state = genesis();
-        let id = freedom_primitives::hash_bytes(&[3u8; 32]);
-        state.validators.get_mut(&id).unwrap().consensus_key = [4u8; 32];
-        state.refresh_pending_validator_set();
-        state.height = state.epoch_length;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert_eq!(
-            state.validate_finality_state_integrity(),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-
-    #[test]
-    fn canonical_validator_consensus_identity_passes() {
-        let state = genesis();
-
-        assert_eq!(state.validate_validator_records_integrity(), Ok(()));
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-}
-
-#[cfg(test)]
-mod m283_validator_record_identity_hardening_tests {
-    use super::*;
-
-    fn genesis() -> ChainState {
-        ChainState::genesis(&freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 0,
-            validators: vec![
-                freedom_types::GenesisValidator {
-                    validator_id: [1u8; 32],
-                    owner: [2u8; 32],
-                    consensus_key: [3u8; 32],
-                    stake: 100,
-                },
-            ],
-        })
-    }
-
-    #[test]
-    fn epoch_transition_rejects_validator_map_key_identity_drift() {
-        let mut state = genesis();
-        state.validators.get_mut(&[1u8; 32]).unwrap().validator_id = [9u8; 32];
-        state.height = state.epoch_length;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert_eq!(state.validate_finality_state_integrity(), Err(StateError::InvalidBridgeWithdrawal));
-    }
-
-    #[test]
-    fn finality_integrity_rejects_validator_map_key_identity_drift() {
-        let mut state = genesis();
-        state.validators.get_mut(&[1u8; 32]).unwrap().validator_id = [9u8; 32];
-
-        assert_eq!(
-            state.validate_finality_state_integrity(),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-
-    #[test]
-    fn canonical_validator_records_pass_identity_binding() {
-        let state = genesis();
-
-        assert_eq!(state.validate_validator_records_integrity(), Ok(()));
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-}
-
-#[cfg(test)]
-mod m282_pending_validator_set_transition_hardening_tests {
-    use super::*;
-
-    fn genesis() -> ChainState {
-        ChainState::genesis(&freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 0,
-            validators: vec![
-                freedom_types::GenesisValidator {
-                    validator_id: [1u8; 32],
-                    owner: [2u8; 32],
-                    consensus_key: [3u8; 32],
-                    stake: 100,
-                },
-            ],
-        })
-    }
-
-    #[test]
-    fn epoch_transition_rejects_tampered_pending_validator_set() {
-        let mut state = genesis();
-        state.height = state.epoch_length;
-        state.pending_validator_set.get_mut(&[1u8; 32]).unwrap().stake = 999;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert_eq!(state.active_validator_set.get(&[1u8; 32]).unwrap().stake, 100);
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-
-    #[test]
-    fn epoch_transition_accepts_pending_set_only_when_it_matches_authoritative_validators() {
-        let mut state = genesis();
-        state.validators.get_mut(&[1u8; 32]).unwrap().stake = 150;
-        state.refresh_pending_validator_set();
-        state.height = state.epoch_length;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 1);
-        assert_eq!(state.active_validator_set.get(&[1u8; 32]).unwrap().stake, 150);
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-
-    #[test]
-    fn epoch_transition_rejects_pending_entry_identity_drift() {
-        let mut state = genesis();
-        let entry = state.pending_validator_set.get_mut(&[1u8; 32]).unwrap();
-        entry.validator_id = [9u8; 32];
-        state.height = state.epoch_length;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-}
-
-#[cfg(test)]
-mod m281_public_validator_refresh_hardening_tests {
-    use super::*;
-
-    fn genesis() -> ChainState {
-        ChainState::genesis(&freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 0,
-            validators: vec![
-                freedom_types::GenesisValidator {
-                    validator_id: [1u8; 32],
-                    owner: [2u8; 32],
-                    consensus_key: [3u8; 32],
-                    stake: 100,
-                },
-            ],
-        })
-    }
-
-    #[test]
-    fn public_refresh_cannot_activate_a_future_validator_set() {
-        let mut state = genesis();
-
-        state.validators.get_mut(&[1u8; 32]).unwrap().stake = 101;
-        state.refresh_validator_set();
-
-        assert_eq!(
-            state.active_validator_set.get(&[1u8; 32]).unwrap().stake,
-            100
-        );
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-
-    #[test]
-    fn public_refresh_preserves_authoritative_current_epoch_set() {
-        let mut state = genesis();
-        let before = state.active_validator_set.clone();
-
-        state.refresh_validator_set();
-
-        assert_eq!(state.active_validator_set, before);
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-
-    #[test]
-    fn public_refresh_cannot_repair_a_corrupted_active_set_from_uncommitted_pending_state() {
-        let mut state = genesis();
-        state.active_validator_set.get_mut(&[1u8; 32]).unwrap().stake = 99;
-        state.refresh_validator_set();
-
-        assert_eq!(
-            state.active_validator_set.get(&[1u8; 32]).unwrap().stake,
-            99
-        );
-        assert_eq!(
-            state.validate_finality_state_integrity(),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-}
-
-#[cfg(test)]
-mod m280_validator_set_transition_hardening_tests {
-    use super::*;
-
-    fn genesis() -> ChainState {
-        ChainState::genesis(&freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 0,
-            validators: vec![
-                freedom_types::GenesisValidator {
-                    validator_id: [1u8; 32],
-                    owner: [2u8; 32],
-                    consensus_key: [3u8; 32],
-                    stake: 100,
-                },
-            ],
-        })
-    }
-
-    #[test]
-    fn epoch_transition_advances_exactly_one_epoch_and_records_snapshot() {
-        let mut state = genesis();
-        state.height = state.epoch_length;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 1);
-        assert_eq!(
-            state.active_validator_set,
-            *state.validator_set_history_entries.get(&1).unwrap()
-        );
-        assert_eq!(
-            state.validator_set_history_sets.get(&1).unwrap(),
-            &state.active_validator_set.iter()
-                .map(|(id, entry)| (*id, entry.consensus_key))
-                .collect::<BTreeMap<_, _>>()
-        );
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-
-    #[test]
-    fn epoch_transition_rejects_skipping_historical_epoch() {
-        let mut state = genesis();
-        state.height = state.epoch_length * 2;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert!(!state.validator_set_history.contains_key(&1));
-        assert!(!state.validator_set_history_entries.contains_key(&1));
-    }
-
-    #[test]
-    fn epoch_transition_rejects_corrupted_current_active_set() {
-        let mut state = genesis();
-        state.active_validator_set.get_mut(&[1u8; 32]).unwrap().stake += 1;
-        state.height = state.epoch_length;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert_eq!(
-            state.active_validator_set.get(&[1u8; 32]).unwrap().stake,
-            101
-        );
-        assert!(!state.validator_set_history.contains_key(&1));
-    }
-
-    #[test]
-    fn deactivated_staking_flag_cannot_bypass_certificate_guard() {
-        let mut state = genesis();
-        state.staking_activated = true;
-        state.accounts.get_mut(&[2u8; 32]).unwrap().staked = 100;
-        state.staking_activated = false;
-        state.height = state.epoch_length;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert_eq!(
-            state.validate_finality_state_integrity(),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-
-    #[test]
-    fn staking_epoch_transition_requires_authenticated_certificate() {
-        let mut state = genesis();
-        state.staking_activated = true;
-        state.height = state.epoch_length;
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert!(!state.validator_set_history.contains_key(&1));
-    }
-
-    #[test]
-    fn staking_epoch_certificate_hash_matches_authoritative_history_encoding() {
-        let state = genesis();
-        let expected = *state.validator_set_history.get(&0).unwrap();
-        let actual = {
-            let mut bytes = Vec::new();
-            for (id, entry) in &state.active_validator_set {
-                bytes.extend_from_slice(id);
-                bytes.extend_from_slice(&entry.owner);
-                bytes.extend_from_slice(&entry.consensus_key);
-                bytes.extend_from_slice(&entry.stake.to_le_bytes());
-            }
-            freedom_primitives::hash_bytes(&bytes)
-        };
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn staking_epoch_transition_rejects_certificate_for_wrong_transition() {
-        let mut state = genesis();
-        state.staking_activated = true;
-        state.height = state.epoch_length;
-
-        state.validator_set_certificate = Some(freedom_types::ValidatorSetCertificate {
-            from_epoch: 0,
-            to_epoch: 2,
-            previous_set_hash: [1; 32],
-            new_set_hash: [2; 32],
-            votes: vec![freedom_types::ValidatorSetVote {
-                from_epoch: 0,
-                to_epoch: 2,
-                previous_set_hash: [1; 32],
-                new_set_hash: [2; 32],
-                validator_id: [1; 32],
-                signature: vec![0; 64],
-            }],
-        });
-
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, 0);
-        assert_eq!(
-            state.active_validator_set.get(&[1u8; 32]).unwrap().owner,
-            [2u8; 32]
-        );
-    }
-}
-
-#[cfg(test)]
-mod m279_current_validator_set_history_binding_tests {
-    use super::*;
-
-    fn genesis() -> ChainState {
-        ChainState::genesis(&freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 0,
-            validators: vec![
-                freedom_types::GenesisValidator {
-                    validator_id: [1u8; 32],
-                    owner: [2u8; 32],
-                    consensus_key: [3u8; 32],
-                    stake: 100,
-                },
-            ],
-        })
-    }
-
-    #[test]
-    fn finality_integrity_accepts_current_active_set_matching_history() {
-        let state = genesis();
-        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
-    }
-
-    #[test]
-    fn finality_integrity_rejects_active_set_owner_drift() {
-        let mut state = genesis();
-        state.active_validator_set.get_mut(&[1u8; 32]).unwrap().owner = [9u8; 32];
-
-        assert_eq!(
-            state.validate_finality_state_integrity(),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-
-    #[test]
-    fn finality_integrity_rejects_active_set_consensus_key_drift() {
-        let mut state = genesis();
-        state.active_validator_set.get_mut(&[1u8; 32]).unwrap().consensus_key = [9u8; 32];
-
-        assert_eq!(
-            state.validate_finality_state_integrity(),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-
-    #[test]
-    fn finality_integrity_rejects_active_set_stake_drift() {
-        let mut state = genesis();
-        state.active_validator_set.get_mut(&[1u8; 32]).unwrap().stake += 1;
-
-        assert_eq!(
-            state.validate_finality_state_integrity(),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-
-    #[test]
-    fn attestation_binding_rejects_current_active_set_drift() {
-        let mut state = genesis();
-        let expected_hash = *state.validator_set_history.get(&state.epoch).unwrap();
-
-        let attestation = freedom_types::BitcoinUtxoCommitmentAttestation {
-            bridge_id: [7;32],
-            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
-            policy_id: [6;32],
-            validator_set_epoch: state.epoch,
-            validator_set_hash: expected_hash,
-            sequence: 1,
-            bitcoin_tip_height: 1,
-            bitcoin_tip_hash: [8;32],
-            bitcoin_tip_chainwork: [9;32],
-            previous_utxo_root: [10;32],
-            accumulator_root: [11;32],
-            validator_ids: vec![[1;32]],
-            signatures: vec![],
-            attestation_hash: [0;32],
-        };
-
-        state.active_validator_set.get_mut(&[1u8;32]).unwrap().stake += 1;
-
-        assert_eq!(
-            state.validate_bitcoin_attestation_validator_set_binding(&attestation),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-}
-
-#[cfg(test)]
-mod m277_bitcoin_attestation_epoch_apply_path_tests {
-    use super::*;
-
-    fn setup() -> (
-        ChainState,
-        freedom_types::BitcoinSpendScanBlock,
-        freedom_types::BitcoinUtxoBlockCommitment,
-        freedom_types::BitcoinUtxoCommitmentAttestation,
-    ) {
-        let genesis = freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 0,
-            validators: vec![],
-        };
-        let mut state = ChainState::genesis(&genesis);
-        let bridge = [7; 32];
-
-        state.bitcoin_canonical_tips.insert(
-            bridge,
-            freedom_types::BitcoinChainCheckpoint {
-                height: 100,
-                block_hash: [8; 32],
-                chainwork: [9; 32],
-            },
-        );
-        state.bridge_security_policies.insert(
-            bridge,
-            freedom_types::BridgeSecurityPolicy {
-                bridge_id: bridge,
-                approval_mode: freedom_types::BridgeApprovalMode::Quorum,
-                validator_quorum: 1,
-                validator_total: 1,
-                threshold_signers: 1,
-                threshold_total: 1,
-                min_external_confirmations: 1,
-                max_deposit_amount: 1_000_000,
-                max_withdrawal_amount: 1_000_000,
-                daily_limit: 1_000_000,
-                emergency_paused: false,
-                nonce_floor: 0,
-            },
-        );
-
-        let block = freedom_types::BitcoinSpendScanBlock {
-            height: 101,
-            header: freedom_types::BitcoinBlockHeader {
-                version: 1,
-                previous_block_hash: [8; 32],
-                merkle_root: [0; 32],
-                timestamp: 1,
-                bits: 0,
-                nonce: 0,
-            },
-            raw_transactions: vec![],
-        };
-
-        let commitment = freedom_types::BitcoinUtxoBlockCommitment {
-            block_height: 101,
-            block_hash: block.header.block_hash(),
-            previous_root: [10; 32],
-            next_root: [11; 32],
-            update_proof: freedom_types::BitcoinUtxoSmtUpdateProof {
-                previous_root: [10; 32],
-                next_root: [11; 32],
-                steps: vec![],
-            },
-        };
-
-        let expected_hash = *state.validator_set_history.get(&state.epoch).unwrap();
-        let attestation = freedom_types::BitcoinUtxoCommitmentAttestation {
-            bridge_id: bridge,
-            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
-            policy_id: bridge,
-            validator_set_epoch: state.epoch,
-            validator_set_hash: expected_hash,
-            sequence: 1,
-            bitcoin_tip_height: 101,
-            bitcoin_tip_hash: commitment.block_hash,
-            bitcoin_tip_chainwork: {
-                let work = freedom_types::bitcoin_header_work(&block.header).unwrap();
-                let mut out = [9; 32];
-                let mut carry = 0u16;
-                for i in (0..32).rev() {
-                    let sum = u16::from(out[i]) + u16::from(work[i]) + carry;
-                    out[i] = (sum & 0xff) as u8;
-                    carry = sum >> 8;
-                }
-                out
-            },
-            previous_utxo_root: commitment.previous_root,
-            accumulator_root: commitment.next_root,
-            validator_ids: vec![],
-            signatures: vec![],
-            attestation_hash: [0; 32],
-        };
-
-        (state, block, commitment, attestation)
-    }
-
-    #[test]
-    fn apply_rejects_attestation_from_old_epoch() {
-        let (mut state, block, commitment, mut attestation) = setup();
-        attestation.validator_set_epoch = state.epoch.saturating_sub(1);
-        assert_eq!(
-            state.apply_bitcoin_utxo_attested_commitment(
-                [7; 32], &block, &commitment, &attestation
-            ),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-        assert!(state.bitcoin_utxo_attestations.get(&[7; 32]).is_none());
-    }
-
-    #[test]
-    fn apply_rejects_attestation_with_wrong_validator_set_hash() {
-        let (mut state, block, commitment, mut attestation) = setup();
-        attestation.validator_set_hash = [99; 32];
-        assert_eq!(
-            state.apply_bitcoin_utxo_attested_commitment(
-                [7; 32], &block, &commitment, &attestation
-            ),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-        assert!(state.bitcoin_utxo_attestations.get(&[7; 32]).is_none());
-    }
-
-    #[test]
-    fn finality_integrity_rejects_directly_injected_stale_epoch_attestation() {
-        let (mut state, _block, _commitment, mut attestation) = setup();
-        attestation.validator_set_epoch = state.epoch.saturating_sub(1);
-        state.bitcoin_utxo_attestations.insert([7; 32], attestation);
-        assert_eq!(
-            state.validate_finality_state_integrity(),
-            Err(StateError::InvalidBridgeWithdrawal)
-        );
-    }
-}
-
-#[cfg(test)]
-mod m275_bitcoin_attestation_quorum_binding_tests {
-    use super::*;
-
-    fn policy(total:u16, quorum:u16)->freedom_types::BridgeSecurityPolicy {
-        freedom_types::BridgeSecurityPolicy {
-            bridge_id:[7;32],
-            approval_mode:freedom_types::BridgeApprovalMode::Quorum,
-            validator_quorum:quorum,
-            validator_total:total,
-            threshold_signers:1,
-            threshold_total:1,
-            min_external_confirmations:1,
-            max_deposit_amount:1000,
-            max_withdrawal_amount:1000,
-            daily_limit:1000,
-            emergency_paused:false,
-            nonce_floor:0,
-        }
-    }
-
-    #[test]
-    fn bitcoin_attestation_quorum_requires_exact_active_validator_set_size() {
-        assert!(policy(3,2).quorum_matches_validator_count(3));
-        assert!(!policy(3,2).quorum_matches_validator_count(2));
-        assert!(!policy(3,2).quorum_matches_validator_count(4));
-    }
-
-    #[test]
-    fn bitcoin_attestation_quorum_requires_strict_two_thirds() {
-        assert!(policy(3,3).quorum_matches_validator_count(3));
-        assert!(!policy(3,2).quorum_matches_validator_count(3));
-    }
-}
-
-#[cfg(test)]
-mod m273_bitcoin_chainwork_binding_tests {
-    use super::*;
-
-    #[test]
-    fn finality_path_requires_attestation_chainwork_to_match_canonical_tip() {
-        let mut state=ChainState::genesis(&freedom_types::Genesis {
-            chain_id:freedom_primitives::CHAIN_ID,
-            initial_supply:0,
-            validators:vec![],
-        });
-        let bridge=[91u8;32];
-        let canonical=freedom_types::BitcoinChainCheckpoint {
-            height:100,
-            block_hash:[92u8;32],
-            chainwork:[93u8;32],
-        };
-        state.bitcoin_canonical_tips.insert(bridge,canonical.clone());
-        let mut attestation=freedom_types::BitcoinUtxoCommitmentAttestation {
-            bridge_id:bridge,
-            chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID,
-            policy_id:bridge,
-            validator_set_epoch:0,
-            validator_set_hash:[1;32],
-            sequence:1,
-            bitcoin_tip_height:100,
-            bitcoin_tip_hash:canonical.block_hash,
-            bitcoin_tip_chainwork:[94u8;32],
-            previous_utxo_root:[95u8;32],
-            accumulator_root:[96u8;32],
-            validator_ids:vec![[1u8;32]],
-            signatures:vec![],
-            attestation_hash:[0u8;32],
-        };
-        attestation.attestation_hash=attestation.compute_hash();
-        assert_ne!(attestation.bitcoin_tip_chainwork,canonical.chainwork);
-        assert!(attestation.validate_structure());
-    }
-}
-
-
-#[cfg(test)]
-mod m277_bitcoin_attestation_policy_binding_tests {
-    use super::*;
-
-    fn policy() -> freedom_types::BridgeSecurityPolicy {
-        freedom_types::BridgeSecurityPolicy {
-            bridge_id:[7;32], approval_mode:freedom_types::BridgeApprovalMode::Quorum,
-            validator_quorum:3, validator_total:4, threshold_signers:1, threshold_total:1,
-            min_external_confirmations:6, max_deposit_amount:1000, max_withdrawal_amount:900,
-            daily_limit:900, emergency_paused:false, nonce_floor:0,
-        }
-    }
-
-    #[test]
-    fn policy_commitment_hash_binds_all_security_fields() {
-        let p=policy();
-        let original=p.commitment_hash();
-        let mut changed=p.clone();
-        changed.validator_quorum=4;
-        assert_ne!(original,changed.commitment_hash());
-        changed=p.clone();
-        changed.min_external_confirmations+=1;
-        assert_ne!(original,changed.commitment_hash());
-        changed=p.clone();
-        changed.emergency_paused=true;
-        assert_ne!(original,changed.commitment_hash());
-    }
-
-    #[test]
-    fn persisted_attestation_requires_authoritative_policy_snapshot() {
-        let bridge=[7;32];
-        let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] });
-        state.bridge_security_policies.insert(bridge,policy());
-        let mut attestation=freedom_types::BitcoinUtxoCommitmentAttestation {
-            bridge_id:bridge, chain_id:freedom_types::BITCOIN_MAINNET_CHAIN_ID, policy_id:bridge,
-            validator_set_epoch:state.epoch, validator_set_hash:*state.validator_set_history.get(&state.epoch).unwrap(),
-            sequence:1, bitcoin_tip_height:1, bitcoin_tip_hash:[8;32], bitcoin_tip_chainwork:[9;32],
-            previous_utxo_root:[10;32], accumulator_root:[11;32], validator_ids:vec![[12;32]],
-            signatures:vec![freedom_types::BitcoinReorgRecoverySignature{validator_id:[12;32],signature:vec![0;64]}],
-            attestation_hash:[0;32],
-        };
-        attestation.attestation_hash=attestation.compute_hash();
-        state.bitcoin_utxo_attestations.insert(bridge,attestation);
-        assert_eq!(state.validate_finality_state_integrity(),Err(StateError::InvalidBridgeWithdrawal));
-        state.bitcoin_utxo_attestation_policy_hashes.insert(bridge,policy().commitment_hash());
-        assert!(state.validate_finality_state_integrity().is_ok());
-        state.bridge_security_policies.get_mut(&bridge).unwrap().validator_quorum=4;
-        assert_eq!(state.validate_finality_state_integrity(),Err(StateError::InvalidBridgeWithdrawal));
-    }
-
-    #[test]
-    fn policy_snapshot_mutation_changes_state_root() {
-        let bridge=[7;32];
-        let mut state=ChainState::genesis(&freedom_types::Genesis::default());
-        state.bridge_security_policies.insert(bridge,policy());
-        state.bitcoin_utxo_attestation_policy_hashes.insert(bridge,policy().commitment_hash());
-        let before=state.state_root();
-        state.bitcoin_utxo_attestation_policy_hashes.get_mut(&bridge).unwrap()[0]^=1;
-        assert_ne!(before,state.state_root());
-    }
-}
-
-
-#[cfg(test)]
-mod m318_staking_mutation_boundary_tests {
-    use super::*;
-
-    fn tx(sender: Address, kind: TxKind, amount: u128) -> Transaction {
-        Transaction {
-            chain_id: freedom_primitives::CHAIN_ID,
-            sender,
-            nonce: 0,
-            kind,
-            payload: amount.to_le_bytes().to_vec(),
-            fee: 0,
-            signature: vec![],
-        }
-    }
-
-    #[test]
-    fn stake_rejects_duplicate_owner_before_mutation() {
-        let key = [7u8; 32];
-        let owner = address_from_public_key(&key);
-        let key_a = [8u8; 32];
-        let key_b = [9u8; 32];
-        let id_a = freedom_primitives::hash_bytes(&key_a);
-        let id_b = freedom_primitives::hash_bytes(&key_b);
-        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
-        state.accounts.insert(owner, Account { address: owner, public_key: key, nonce: 0, balance: 1_000, locked: 0, staked: 0 });
-        state.validators.insert(id_a, Validator { validator_id: id_a, owner, consensus_key: key_a, stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0 });
-        state.validators.insert(id_b, Validator { validator_id: id_b, owner, consensus_key: key_b, stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0 });
-        let before = state.accounts.get(&owner).cloned().unwrap();
-        assert_eq!(state.stake(&tx(owner, TxKind::Stake, 100)), Err(StateError::InvalidBridgeWithdrawal));
-        assert_eq!(state.accounts.get(&owner).unwrap(), &before);
-        assert_eq!(state.validators.get(&id_a).unwrap().stake, 0);
-        assert_eq!(state.validators.get(&id_b).unwrap().stake, 0);
-        assert!(!state.staking_activated);
-    }
-
-    #[test]
-    fn unstake_rejects_duplicate_owner_before_mutation() {
-        let key = [17u8; 32];
-        let owner = address_from_public_key(&key);
-        let key_a = [18u8; 32];
-        let key_b = [19u8; 32];
-        let id_a = freedom_primitives::hash_bytes(&key_a);
-        let id_b = freedom_primitives::hash_bytes(&key_b);
-        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
-        state.accounts.insert(owner, Account { address: owner, public_key: key, nonce: 0, balance: 0, locked: 0, staked: 200 });
-        state.validators.insert(id_a, Validator { validator_id: id_a, owner, consensus_key: key_a, stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0 });
-        state.validators.insert(id_b, Validator { validator_id: id_b, owner, consensus_key: key_b, stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0 });
-        state.staking_activated = true;
-        let before = state.accounts.get(&owner).cloned().unwrap();
-        assert_eq!(state.unstake(&tx(owner, TxKind::Unstake, 50)), Err(StateError::InvalidBridgeWithdrawal));
-        assert_eq!(state.accounts.get(&owner).unwrap(), &before);
-        assert!(state.unbonding.is_empty());
-        assert_eq!(state.validators.get(&id_a).unwrap().stake, 100);
-        assert_eq!(state.validators.get(&id_b).unwrap().stake, 100);
-    }
-}
-
-#[cfg(test)]
-mod m319_epoch_boundary_atomicity_tests {
-    use super::*;
-
-    fn genesis() -> ChainState {
-        let key = [3u8; 32];
-        let id = freedom_primitives::hash_bytes(&key);
-        let owner = [2u8; 32];
-        let validator = freedom_types::Validator {
-            validator_id: id,
-            owner,
-            consensus_key: key,
-            stake: 90,
-            unbonding_stake: 10,
-            blocks_proposed: 0,
-            blocks_finalized: 0,
-            missed_votes: 0,
-        };
-        let mut state = ChainState::genesis(&freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 0,
-            validators: vec![validator],
-        });
-        state.staking_activated = true;
-        state.accounts.insert(owner, Account {
-            address: owner,
-            public_key: [0; 32],
-            nonce: 0,
-            balance: 0,
-            locked: 0,
-            staked: 100,
-        });
-        state.height = 200;
-        state.unbonding.insert([7; 32], UnbondingEntry {
-            unbonding_id: [7; 32],
-            validator_id: id,
-            owner,
-            amount: 10,
-            requested_height: 0,
-            release_height: 200,
-        });
-        state.refresh_pending_validator_set();
-        state
-    }
-
-    #[test]
-    fn rejected_epoch_transition_does_not_release_mature_unbonding() {
-        let mut state = genesis();
-        let before = state.clone();
-
-        // No transition certificate: M316 must reject the epoch transition.
-        state.maybe_advance_epoch();
-
-        assert_eq!(state.epoch, before.epoch);
-        assert_eq!(state.unbonding, before.unbonding);
-        assert_eq!(state.validators, before.validators);
-        assert_eq!(state.accounts, before.accounts);
-        assert_eq!(state.pending_validator_set, before.pending_validator_set);
-    }
-
-}
-
-#[cfg(test)]
-mod m383_purchase_atomicity_tests {
-    use super::*;
-
-    fn purchase_tx(sender: Address, merchant: Address, price: u128, nonce: u64, reference: Hash) -> Transaction {
-        let payload = PurchasePayload {
-            product_id: 1,
-            merchant,
-            price,
-            reference,
-        };
-        Transaction {
-            chain_id: freedom_primitives::CHAIN_ID,
-            sender,
-            nonce,
-            kind: TxKind::Purchase,
-            payload: payload.encode(),
-            fee: 0,
-            signature: vec![],
-        }
-    }
-
-    #[test]
-    fn purchase_rejects_max_nonce_before_mutation() {
-        let buyer_key = [11u8; 32];
-        let buyer = address_from_public_key(&buyer_key);
-        let merchant = [22u8; 32];
-        let mut state = ChainState::genesis(&Genesis::default());
-        state.accounts.insert(buyer, Account::new(buyer_key, 20_000));
-        state.accounts.get_mut(&buyer).unwrap().nonce = u64::MAX;
-
-        let tx = purchase_tx(buyer, merchant, 10_000, u64::MAX, [7u8; 32]);
-        assert_eq!(state.purchase(&tx), Err(StateError::ArithmeticOverflow));
-        assert_eq!(state.accounts.get(&buyer).unwrap().balance, 20_000);
-        assert_eq!(state.accounts.get(&buyer).unwrap().nonce, u64::MAX);
-        assert!(state.accounts.get(&merchant).is_none());
-        assert!(state.purchases.is_empty());
-    }
-
-    #[test]
-    fn purchase_rejects_merchant_balance_overflow_before_buyer_debit() {
-        let buyer_key = [12u8; 32];
-        let buyer = address_from_public_key(&buyer_key);
-        let merchant = [23u8; 32];
-        let mut state = ChainState::genesis(&Genesis::default());
-        state.accounts.insert(buyer, Account::new(buyer_key, 20_000));
-        state.accounts.insert(merchant, Account {
-            address: merchant,
-            public_key: [0; 32],
-            nonce: 0,
-            balance: u128::MAX,
-            locked: 0,
-            staked: 0,
-        });
-
-        let tx = purchase_tx(buyer, merchant, 10_000, 0, [8u8; 32]);
-        assert_eq!(state.purchase(&tx), Err(StateError::ArithmeticOverflow));
-        assert_eq!(state.accounts.get(&buyer).unwrap().balance, 20_000);
-        assert_eq!(state.accounts.get(&buyer).unwrap().nonce, 0);
-        assert_eq!(state.accounts.get(&merchant).unwrap().balance, u128::MAX);
-        assert!(state.purchases.is_empty());
-    }
-}
