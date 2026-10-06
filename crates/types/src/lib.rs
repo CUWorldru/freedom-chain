@@ -2678,7 +2678,9 @@ impl BitcoinChainContext {
             self.headers[deposit_index - 1].block_hash()
         };
         let mut previous_bits = if deposit_index == 0 {
-            self.headers[0].bits
+            self.base_headers.last()
+                .ok_or(BridgeAdapterError::InvalidProof)?
+                .bits
         } else {
             self.headers[deposit_index - 1].bits
         };
