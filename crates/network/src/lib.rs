@@ -134,14 +134,21 @@ impl From<libp2p::kad::Event> for FreedomEvent {
 }
 
 pub fn make_proposal(
+    state: &ChainState,
     block: freedom_types::Block,
     round: u64,
     consensus_key: &ed25519_dalek::SigningKey,
     valid_round: Option<u64>,
     valid_precommits: Vec<freedom_types::ValidatorPrecommit>,
     timeout_certificate: Option<freedom_types::TimeoutCertificate>,
-) -> BlockProposal {
+) -> Result<BlockProposal, String> {
     let proposer = block.header.proposer;
+    let validator = state.active_validator_set.values()
+        .find(|entry| entry.owner == proposer)
+        .ok_or_else(|| "proposal proposer is not an active validator".to_string())?;
+    if validator.consensus_key != consensus_key.verifying_key().to_bytes() {
+        return Err("proposal proposer key mismatch".into());
+    }
     let block_hash = block_hash(&block);
     let mut proposal = BlockProposal {
         block_hash,
@@ -155,7 +162,7 @@ pub fn make_proposal(
         signature: Vec::new(),
     };
     sign_proposal(&mut proposal, consensus_key);
-    proposal
+    Ok(proposal)
 }
 
 pub fn sign_proposal(proposal: &mut BlockProposal, consensus_key: &ed25519_dalek::SigningKey) {
