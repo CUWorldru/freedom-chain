@@ -5339,3 +5339,65 @@ mod m414_bitcoin_checkpoint_index_conversion_tests {
         assert_eq!(index, Some(31));
     }
 }
+
+#[cfg(test)]
+mod m415_bitcoin_reorg_threshold_arithmetic_tests {
+    use super::*;
+
+    #[test]
+    fn elevated_threshold_overflow_does_not_classify_as_elevated() {
+        let checkpoint = BitcoinChainCheckpoint {
+            height: u64::MAX - 1,
+            block_hash: [1; 32],
+            chainwork: [2; 32],
+        };
+        let evidence = BitcoinReorgEvidence {
+            checkpoint_height: checkpoint.height,
+            checkpoint_hash: checkpoint.block_hash,
+            candidate_tip_height: u64::MAX,
+            candidate_tip_hash: [3; 32],
+            candidate_chainwork: [4; 32],
+            fingerprint: [0; 32],
+        };
+        let policy = BitcoinReorgPolicy {
+            elevated_confirmations: 2,
+            critical_chainwork_margin: [0xff; 32],
+        };
+
+        let mut evidence = evidence;
+        evidence.fingerprint = evidence.compute_fingerprint();
+
+        assert_eq!(
+            policy.classify(&checkpoint, &evidence),
+            BitcoinReorgSeverity::Normal
+        );
+    }
+
+    #[test]
+    fn elevated_threshold_uses_checked_boundary_when_representable() {
+        let checkpoint = BitcoinChainCheckpoint {
+            height: 100,
+            block_hash: [1; 32],
+            chainwork: [2; 32],
+        };
+        let mut evidence = BitcoinReorgEvidence {
+            checkpoint_height: 100,
+            checkpoint_hash: [1; 32],
+            candidate_tip_height: 110,
+            candidate_tip_hash: [3; 32],
+            candidate_chainwork: [4; 32],
+            fingerprint: [0; 32],
+        };
+        evidence.fingerprint = evidence.compute_fingerprint();
+
+        let policy = BitcoinReorgPolicy {
+            elevated_confirmations: 10,
+            critical_chainwork_margin: [0xff; 32],
+        };
+
+        assert_eq!(
+            policy.classify(&checkpoint, &evidence),
+            BitcoinReorgSeverity::Elevated
+        );
+    }
+}
