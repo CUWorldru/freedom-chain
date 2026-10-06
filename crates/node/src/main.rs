@@ -338,10 +338,24 @@ fn send_sync_request(
 }
 
 #[tokio::main]
-async fn make_evidence_message(evidence: freedom_types::EquivocationEvidence, sender: Hash, key: &ed25519_dalek::SigningKey) -> freedom_types::EvidenceMessage {
-    let mut msg=freedom_types::EvidenceMessage{evidence,sender,signature:Vec::new()};
-    msg.signature=freedom_crypto::sign(key,&msg.signing_bytes()).to_vec();
-    msg
+fn make_evidence_message(
+    state: &freedom_state::ChainState,
+    evidence: freedom_types::EquivocationEvidence,
+    sender: Hash,
+    key: &ed25519_dalek::SigningKey,
+) -> Result<freedom_types::EvidenceMessage, String> {
+    let validator = state.active_validator_set.get(&sender)
+        .ok_or_else(|| "evidence sender is not active validator".to_string())?;
+    if validator.consensus_key != key.verifying_key().to_bytes() {
+        return Err("evidence sender key mismatch".into());
+    }
+    let mut msg = freedom_types::EvidenceMessage {
+        evidence,
+        sender,
+        signature: Vec::new(),
+    };
+    msg.signature = freedom_crypto::sign(key, &msg.signing_bytes()).to_vec();
+    Ok(msg)
 }
 
 #[cfg(test)]
@@ -369,7 +383,7 @@ mod m31_tests {
         let evidence=freedom_consensus::make_evidence(
             freedom_types::EquivocationKind::DoublePrevote,
             10,2,hash_bytes(b"bad-validator"),vec![1,2],vec![3,4]);
-        let msg=make_evidence_message(evidence,hash_bytes(b"sender"),&key);
+        let msg=make_evidence_message(&ChainState::default(),evidence,hash_bytes(b"sender"),&key);
         assert_eq!(msg.signature.len(),64);
         assert_ne!(msg.message_id(),[0u8;32]);
     }
@@ -1512,7 +1526,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     proposal.height,proposal.round,proposal.proposer,
                                                     existing.signing_bytes(),proposal.signing_bytes());
                                                 state.record_equivocation(evidence.clone())?;
-                                                let msg=make_evidence_message(evidence,validator_id,&consensus_key);
+                                                let msg=make_evidence_message(&state,evidence,validator_id,&consensus_key)?;
                                                 publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
                                             }
                                             continue;
