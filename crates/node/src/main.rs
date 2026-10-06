@@ -1179,6 +1179,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             chain_id: freedom_primitives::CHAIN_ID,
                                                             state_json,
                                                         });
+                                                        if let SyncWireResponse::Snapshot(ref snapshot_response) = response {
+                                                            if freedom_network::validate_snapshot_response(snapshot_response).is_err() {
+                                                                eprintln!("SNAPSHOT_RESPONSE_REJECTED height={}", snapshot_response.height);
+                                                                continue;
+                                                            }
+                                                        }
                                                         let _ = swarm.behaviour_mut().sync.send_response(channel, response);
                                                     }
                                                 }
