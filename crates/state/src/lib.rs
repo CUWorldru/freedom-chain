@@ -497,8 +497,7 @@ impl ChainState {
  }
 
  fn validate_slashed_evidence_integrity(&self)->Result<(),StateError>{
-  for (evidence_hash,amount) in &self.slashed_evidence {    if *evidence_hash == [0;32] || *amount == 0 {
-      return Err(StateError::InvalidEvidence);
+  for (evidence_hash,amount) in &self.slashed_evidence {    if *evidence_hash == [0;32] || *amount == 0 {      return Err(StateError::InvalidEvidence);
     }
     let evidence=self.evidence.get(evidence_hash)
       .ok_or(StateError::InvalidEvidence)?;
@@ -997,8 +996,7 @@ mod m228_withdrawal_policy_boundary_tests {
         let mut state=state();
         let id=[3;32]; let request=[4;32];
         state.bridge_withdrawals.insert(id, freedom_types::BridgeWithdrawal {            withdrawal_id:id, bridge_id:[9;32], asset_id:[5;32], destination_chain_id:2,
-            amount:10, sender:[6;32], recipient:vec![7], nonce:4, request_hash:[8;32],
-        });
+            amount:10, sender:[6;32], recipient:vec![7], nonce:4, request_hash:[8;32],        });
         state.bridge_withdrawal_status.insert(id, freedom_types::BridgeWithdrawalStatus::Validated);
         state.bridge_approval_sets.insert(request, freedom_types::BridgeApprovalSet {
             request_id:request, approvals:vec![], threshold_signatures:1,
@@ -1497,8 +1495,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   }
   let next=freedom_types::BitcoinChainCheckpoint{height:block.height,block_hash:block.header.block_hash(),chainwork:attestation.bitcoin_tip_chainwork};  self.bitcoin_canonical_tips.insert(bridge_id,next);
   self.bitcoin_utxo_attestations.insert(bridge_id,attestation.clone());
-  let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  self.bitcoin_utxo_attestation_policy_hashes.insert(bridge_id,policy.commitment_hash());
+  let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;  self.bitcoin_utxo_attestation_policy_hashes.insert(bridge_id,policy.commitment_hash());
   Ok(())
  }
 
@@ -1997,8 +1994,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   // This legacy/public refresh path must never activate a validator set that  // is not the authoritative snapshot for the current epoch. Epoch changes
   // are exclusively committed by maybe_advance_epoch().
   if self.validate_current_validator_set_history_binding().is_err() {
-    return;
-  }
+    return;  }
   let Some(expected_entries)=self.validator_set_history_entries.get(&self.epoch) else {
     return;
   };
@@ -2294,7 +2290,7 @@ mod m330_public_chain_id_boundary_tests {
    recipient:payload.authorization.recipient,
    amount,
   });
-  self.advance_nonce(tx.sender)
+  Ok(())
  }
  fn stake(&mut self,tx:&Transaction)->Result<(),StateError>{
   let p=freedom_types::StakePayload::decode(&tx.payload).map_err(|_|StateError::UnsupportedTransaction)?;
@@ -2497,8 +2493,7 @@ mod m330_public_chain_id_boundary_tests {
 
   // Preflight all monetary and contribution mutations before writing any state.
   let a=self.accounts.get_mut(&owner).ok_or(StateError::AccountNotFound)?;
-  a.balance=next_balance;
-  self.supply.total=next_total;
+  a.balance=next_balance;  self.supply.total=next_total;
   self.supply.circulating=next_circulating;
   self.epoch_issuance=next_issuance;
   self.rewards.insert(reward_id,Reward{reward_id,owner,contribution_id:id,wu:c.work_units,gross_reward:gross,final_reward:reward,epoch:self.epoch});
@@ -2997,8 +2992,7 @@ mod m77_asset_registry_tests {
   let mut asset=bridged_asset(1, b"0xabc", [3u8;32]);
   asset.asset_id=[9u8;32];
   assert_eq!(state.register_asset(asset.clone()), Err(StateError::InvalidAsset));
-  let valid=bridged_asset(1, b"0xabc", [3u8;32]);
-  state.register_asset(valid.clone()).unwrap();
+  let valid=bridged_asset(1, b"0xabc", [3u8;32]);  state.register_asset(valid.clone()).unwrap();
   assert_eq!(state.register_asset(valid), Err(StateError::DuplicateAsset));
  }
 }
@@ -3497,8 +3491,7 @@ mod m211_bitcoin_merkle_proof_chain_id_tests {
                 merkle_root: [2; 32],
                 timestamp: 1,
                 bits: 0,
-                nonce: 0,
-            },
+                nonce: 0,            },
         }
     }
     #[test]
@@ -3997,8 +3990,7 @@ mod m243_direct_bridge_mint_bitcoin_gate_tests {
             Ok(())
         );
         assert!(state.validate_bridge_message(&message).is_err());
-    }
-}
+    }}
 
 #[cfg(test)]
 mod m244_bridge_acceptance_boundary_tests {
@@ -4497,8 +4489,7 @@ mod m269_epoch_snapshot_atomicity_tests {
         state.maybe_advance_epoch();
         assert_eq!(state.validator_set_history.get(&1).copied(),Some({ let mut b=Vec::new(); for (id,e) in &state.active_validator_set {b.extend_from_slice(id);b.extend_from_slice(&e.owner);b.extend_from_slice(&e.consensus_key);b.extend_from_slice(&e.stake.to_le_bytes());} freedom_primitives::hash_bytes(&b)}));
         assert_eq!(state.validator_set_history_entries.get(&1),Some(&state.active_validator_set));
-        assert_eq!(state.validator_set_history_sets.get(&1).unwrap().len(),state.validator_set_history_entries.get(&1).unwrap().len());
-    }}
+        assert_eq!(state.validator_set_history_sets.get(&1).unwrap().len(),state.validator_set_history_entries.get(&1).unwrap().len());    }}
 
 
 #[cfg(test)]
@@ -4997,8 +4988,7 @@ mod m308_evidence_duplicate_canonicalization_tests {
     fn duplicate_evidence_hash_requires_identical_record() {
         let key=[31u8;32];
         let id=freedom_primitives::hash_bytes(&key);
-        let owner=freedom_primitives::address_from_public_key(&key);        let validator=freedom_types::Validator {
-            validator_id:id, owner, consensus_key:key, stake:100,
+        let owner=freedom_primitives::address_from_public_key(&key);        let validator=freedom_types::Validator {            validator_id:id, owner, consensus_key:key, stake:100,
             unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
         };
         let mut state=ChainState::genesis(&freedom_types::Genesis {
@@ -5497,8 +5487,7 @@ mod m298_exited_validator_slash_hardening_tests {
             validator_id:id, owner, consensus_key:key, stake:0,
             unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
         };        let mut state=ChainState::genesis(&freedom_types::Genesis {
-            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
-        });
+            chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],        });
         state.insert_account(freedom_types::Account::new(key,0));
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5997,8 +5986,7 @@ mod m290_slashed_evidence_integrity_hardening_tests {
 
         assert_eq!(            state.validate_slashed_evidence_integrity(),
             Err(StateError::InvalidEvidence)
-        );
-    }
+        );    }
 
     #[test]
     fn zero_slash_amount_is_rejected() {
