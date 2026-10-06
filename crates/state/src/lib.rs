@@ -89,7 +89,7 @@ impl ChainState {
   }
   self.evidence.insert(evidence.evidence_hash,evidence); Ok(true)
  }
- pub fn slash_evidence(&mut self,evidence_hash:Hash,amount:u128)->Result<u128,StateError>{
+ pub(crate) fn slash_evidence(&mut self,evidence_hash:Hash,amount:u128)->Result<u128,StateError>{
   if self.slashed_evidence.contains_key(&evidence_hash) {
     self.validate_validator_records_integrity()?;
     self.validate_evidence_integrity()?;
@@ -1533,7 +1533,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   self.bitcoin_utxo_commitments.insert(bridge_id,commitment);
   Ok(())
  }
- pub fn record_validator_set_epoch_hash(&mut self, epoch:u64, set_hash:Hash)->Result<(),StateError>{
+ pub(crate) fn record_validator_set_epoch_hash(&mut self, epoch:u64, set_hash:Hash)->Result<(),StateError>{
   if set_hash==[0;32] || epoch>self.epoch {
    return Err(StateError::InvalidBridgeWithdrawal);
   }
@@ -1989,10 +1989,10 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
 
  pub fn validator_lifecycle(&self, validator_id:Hash)->Result<freedom_types::ValidatorLifecycle,StateError>{let v=self.validators.get(&validator_id).ok_or(StateError::InvalidEvidence)?;Ok(if !self.staking_activated || v.stake>0{freedom_types::ValidatorLifecycle::Active}else if v.unbonding_stake>0{freedom_types::ValidatorLifecycle::Unbonding}else{freedom_types::ValidatorLifecycle::Exited})}
  pub fn active_validator_entries(&self)->Vec<freedom_types::ValidatorSetEntry>{self.active_validator_set.values().cloned().collect()}
- pub fn refresh_pending_validator_set(&mut self){
+ pub(crate) fn refresh_pending_validator_set(&mut self){
   self.pending_validator_set=self.validators.iter().filter(|(_,v)|!self.staking_activated||v.stake>0).map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect();
  }
- pub fn refresh_validator_set(&mut self){
+ pub(crate) fn refresh_validator_set(&mut self){
   self.refresh_pending_validator_set();
   // This legacy/public refresh path must never activate a validator set that
   // is not the authoritative snapshot for the current epoch. Epoch changes
