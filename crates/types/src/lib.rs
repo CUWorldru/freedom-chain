@@ -7839,3 +7839,51 @@ mod m393_bitcoin_utxo_merkle_index_boundary_tests {
         assert!(!bitcoin_merkle_index_is_valid(&vec![[2;32];33],0));
     }
 }
+
+
+#[cfg(test)]
+mod m400_bitcoin_canonical_confirmation_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn canonical_confirmation_helper_rejects_missing_next_height_at_u64_max() {
+        assert_eq!(
+            bitcoin_canonical_confirmations(u64::MAX, u64::MAX),
+            None
+        );
+    }
+
+    #[test]
+    fn canonical_confirmation_helper_preserves_normal_depth() {
+        assert_eq!(bitcoin_canonical_confirmations(100, 105), Some(6));
+    }
+
+    #[test]
+    fn canonical_tip_verifier_rejects_overflowing_confirmation_boundary() {
+        let proof = BitcoinMerkleProof {
+            bridge_id: [1; 32],
+            chain_id: BITCOIN_MAINNET_CHAIN_ID,
+            tx_hash: [2; 32],
+            block_height: u64::MAX,
+            confirmations: 1,
+            merkle_root: [3; 32],
+            merkle_branch: vec![[4; 32]],
+            merkle_index: 0,
+            block_header: BitcoinBlockHeader {
+                version: 1,
+                previous_block_hash: [5; 32],
+                merkle_root: [3; 32],
+                timestamp: 1,
+                bits: 0x207f_ffff,
+                nonce: 0,
+            },
+        };
+        let tip = BitcoinChainCheckpoint {
+            height: u64::MAX,
+            block_hash: [6; 32],
+            chainwork: [7; 32],
+        };
+
+        assert!(!proof.verify_against_canonical_tip(1, &tip, &[proof.block_header]));
+    }
+}
