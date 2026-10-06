@@ -2428,8 +2428,56 @@ impl BitcoinChainContext {
             && !self.base_headers.is_empty()
             && !self.headers.is_empty()
             && self.difficulty_windows.iter().all(BitcoinDifficultyWindow::validate)
+            && self.validate_difficulty_window_bindings()
             && self.validate_timestamp_rules()
             && self.verify_checkpoint_anchor()
+    }
+
+    fn validate_difficulty_window_bindings(&self) -> bool {
+        let context_start = self.base_start_height;
+        let context_end = self.tip_height;
+
+        for window in &self.difficulty_windows {
+            let Some(window_end) = window.start_height.checked_add(
+                BitcoinDifficultyWindow::INTERVAL - 1
+            ) else {
+                return false;
+            };
+
+            let overlap_start = window.start_height.max(context_start);
+            let overlap_end = window_end.min(context_end);
+            if overlap_start > overlap_end {
+                continue;
+            }
+
+            for height in overlap_start..=overlap_end {
+                let window_index = match height.checked_sub(window.start_height) {
+                    Some(value) => value as usize,
+                    None => return false,
+                };
+                let expected_header = if height < self.start_height {
+                    let index = match height.checked_sub(self.base_start_height) {
+                        Some(value) => value as usize,
+                        None => return false,
+                    };
+                    self.base_headers.get(index)
+                } else {
+                    let index = match height.checked_sub(self.start_height) {
+                        Some(value) => value as usize,
+                        None => return false,
+                    };
+                    self.headers.get(index)
+                };
+
+                let Some(expected_header) = expected_header else {
+                    return false;
+                };
+                if window.headers.get(window_index) != Some(expected_header) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     fn median_time_past(headers: &[BitcoinBlockHeader], index: usize) -> Option<u32> {
