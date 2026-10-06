@@ -2226,6 +2226,17 @@ pub struct BitcoinDifficultyWindow {
     pub headers: Vec<BitcoinBlockHeader>,
 }
 
+fn bitcoin_first_retarget_height(context_start: u64) -> Option<u64> {
+    if context_start % BitcoinDifficultyWindow::INTERVAL == 0 {
+        Some(context_start)
+    } else {
+        context_start.checked_add(
+            BitcoinDifficultyWindow::INTERVAL
+                - (context_start % BitcoinDifficultyWindow::INTERVAL),
+        )
+    }
+}
+
 fn bitcoin_previous_bits_for_segment(
     base_headers: &[BitcoinBlockHeader],
     headers: &[BitcoinBlockHeader],
@@ -2454,16 +2465,8 @@ impl BitcoinChainContext {
         let context_start = self.base_start_height;
         let context_end = self.tip_height;
 
-        let first_retarget = if context_start % BitcoinDifficultyWindow::INTERVAL == 0 {
-            context_start
-        } else {
-            context_start
-                .checked_add(
-                    BitcoinDifficultyWindow::INTERVAL
-                        - (context_start % BitcoinDifficultyWindow::INTERVAL),
-                )
-                .unwrap_or(u64::MAX)
-        };
+        let first_retarget = bitcoin_first_retarget_height(context_start)
+            .unwrap_or(u64::MAX);
         let last_retarget = context_end - (context_end % BitcoinDifficultyWindow::INTERVAL);
 
         let mut expected_windows = 0usize;
@@ -5002,34 +5005,33 @@ mod m409_bitcoin_difficulty_window_boundary_tests {
     use super::*;
 
     #[test]
-    fn retarget_aligned_context_requires_preceding_window() {
-        let context_start = 2016u64;
-        let first_retarget = if context_start % BitcoinDifficultyWindow::INTERVAL == 0 {
-            context_start
-        } else {
-            context_start + BitcoinDifficultyWindow::INTERVAL
-                - (context_start % BitcoinDifficultyWindow::INTERVAL)
-        };
-        assert_eq!(first_retarget, 2016);
+    fn retarget_aligned_context_includes_height_itself() {
+        assert_eq!(bitcoin_first_retarget_height(2016), Some(2016));
         assert_eq!(
-            first_retarget - BitcoinDifficultyWindow::INTERVAL,
-            0
+            bitcoin_first_retarget_height(2016)
+                .and_then(|height| height.checked_sub(BitcoinDifficultyWindow::INTERVAL)),
+            Some(0)
         );
     }
 
     #[test]
     fn non_retarget_aligned_context_still_rounds_up() {
-        let context_start = 2017u64;
-        let first_retarget = if context_start % BitcoinDifficultyWindow::INTERVAL == 0 {
-            context_start
-        } else {
-            context_start + BitcoinDifficultyWindow::INTERVAL
-                - (context_start % BitcoinDifficultyWindow::INTERVAL)
-        };
-        assert_eq!(first_retarget, 4032);
+        assert_eq!(bitcoin_first_retarget_height(2017), Some(4032));
         assert_eq!(
-            first_retarget - BitcoinDifficultyWindow::INTERVAL,
-            2016
+            bitcoin_first_retarget_height(2017)
+                .and_then(|height| height.checked_sub(BitcoinDifficultyWindow::INTERVAL)),
+            Some(2016)
         );
+    }
+
+    #[test]
+    fn max_aligned_context_does_not_overflow() {
+        assert_eq!(bitcoin_first_retarget_height(u64::MAX), Some(u64::MAX));
+    }
+
+    #[test]
+    fn max_non_aligned_context_returns_none_on_overflow() {
+        let start = u64::MAX - 100;
+        assert_eq!(bitcoin_first_retarget_height(start), None);
     }
 }
