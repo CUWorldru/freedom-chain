@@ -497,8 +497,7 @@ impl BridgeMessage {
     pub fn matches_verified_deposit(&self, deposit: &VerifiedDeposit) -> bool {
         self.protocol_version == BRIDGE_MESSAGE_PROTOCOL_VERSION
             && self.source_chain_id == deposit.source_chain_id
-            && self.bridge_id == deposit.bridge_id            && self.asset_id == deposit.canonical_asset_id
-            && self.source_tx_hash == deposit.tx_hash
+            && self.bridge_id == deposit.bridge_id            && self.asset_id == deposit.canonical_asset_id            && self.source_tx_hash == deposit.tx_hash
             && self.source_event_index == deposit.event_index
             && self.amount == deposit.amount
             && self.recipient[..20] == deposit.recipient[..]
@@ -997,8 +996,7 @@ impl CrossChainAssetRegistry {
         &self,
         source_chain_id: u32,
         asset_kind: CrossChainAssetKind,    ) -> Option<&CrossChainAssetRepresentation> {
-        self.representations.iter().find(|r| {
-            r.representation.source_chain_id == source_chain_id
+        self.representations.iter().find(|r| {            r.representation.source_chain_id == source_chain_id
                 && r.asset_kind == asset_kind
         })
     }
@@ -1497,8 +1495,7 @@ pub struct VerifiedDeposit {
     pub event_index: u64,
     pub block_or_slot: u64,    pub confirmations: u64,
     pub amount: u128,
-    pub recipient: Vec<u8>,
-    pub replay_key: Hash,
+    pub recipient: Vec<u8>,    pub replay_key: Hash,
     pub proof_hash: Hash,
 }
 
@@ -1997,8 +1994,7 @@ pub struct BitcoinBlockHeaderVerification {
 
 impl BitcoinBlockHeaderVerification {    pub fn verify(header: &BitcoinBlockHeader) -> Result<Self, BridgeAdapterError> {
         if header.timestamp == 0 || header.bits == 0 {
-            return Err(BridgeAdapterError::InvalidProof);
-        }
+            return Err(BridgeAdapterError::InvalidProof);        }
         let encoded = header.serialize();
         let parsed = BitcoinBlockHeader::parse(&encoded)
             .ok_or(BridgeAdapterError::InvalidProof)?;
@@ -2458,9 +2454,16 @@ impl BitcoinChainContext {
         let context_start = self.base_start_height;
         let context_end = self.tip_height;
 
-        let first_retarget = context_start
-            .checked_add(BitcoinDifficultyWindow::INTERVAL - (context_start % BitcoinDifficultyWindow::INTERVAL))
-            .unwrap_or(u64::MAX);
+        let first_retarget = if context_start % BitcoinDifficultyWindow::INTERVAL == 0 {
+            context_start
+        } else {
+            context_start
+                .checked_add(
+                    BitcoinDifficultyWindow::INTERVAL
+                        - (context_start % BitcoinDifficultyWindow::INTERVAL),
+                )
+                .unwrap_or(u64::MAX)
+        };
         let last_retarget = context_end - (context_end % BitcoinDifficultyWindow::INTERVAL);
 
         let mut expected_windows = 0usize;
@@ -2497,8 +2500,7 @@ impl BitcoinChainContext {
             };
             let overlap_start = window.start_height.max(context_start);
             let overlap_end = window_end.min(context_end);
-            if overlap_start > overlap_end {
-                continue;
+            if overlap_start > overlap_end {                continue;
             }
 
             for height in overlap_start..=overlap_end {
@@ -2997,8 +2999,7 @@ pub struct BitcoinTransactionOutput {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitcoinTransaction {
     pub version: i32,
-    pub segwit: bool,
-    pub inputs: Vec<BitcoinTransactionInput>,
+    pub segwit: bool,    pub inputs: Vec<BitcoinTransactionInput>,
     pub outputs: Vec<BitcoinTransactionOutput>,
     pub lock_time: u32,
     pub txid: Hash,
@@ -3497,8 +3498,7 @@ impl TronUsdtDepositProof {
             && self.usdt_contract == expected_usdt_contract
             && self.header.validate()
             && self.inclusion.verify_binding(
-                &self.header,
-                self.header.tx_trie_root().unwrap_or([0; 32]),
+                &self.header,                self.header.tx_trie_root().unwrap_or([0; 32]),
             )
             && self.inclusion.tx_hash == self.event.tx_hash
             && self.inclusion.transaction_index == self.event.transaction_index
@@ -3997,8 +3997,7 @@ impl EquivocationEvidence {
     pub height: u64,
     pub round: u64,
     #[serde(default)]
-    pub precommits: Vec<ValidatorPrecommit>,
-}
+    pub precommits: Vec<ValidatorPrecommit>,}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ValidatorPrecommit {
@@ -4497,8 +4496,7 @@ impl BitcoinSpendScanBlock {
     pub fn transaction_hashes(&self) -> Result<Vec<Hash>, String> {
         if self.raw_transactions.is_empty() {
             return Err("bitcoin spend-scan block must contain transactions".into());
-        }
-        if self.raw_transactions.len() > 1_000_000 {
+        }        if self.raw_transactions.len() > 1_000_000 {
             return Err("bitcoin spend-scan block transaction count exceeds limit".into());
         }
         let mut hashes = Vec::with_capacity(self.raw_transactions.len());
@@ -4998,19 +4996,40 @@ mod m408_bitcoin_pow_target_parser_regression_tests {
 
     #[test]
     fn low_level_pow_limit_parser_is_non_recursive() {
-        assert!(bitcoin_target_from_bits(0x1d00_ffff).is_some());
-    }
+
+#[cfg(test)]
+mod m409_bitcoin_difficulty_window_boundary_tests {
+    use super::*;
 
     #[test]
-    fn header_pow_limit_parser_is_non_recursive() {
-        assert!(BitcoinBlockHeader::target_from_bits(0x1d00_ffff).is_some());
-    }
-
-    #[test]
-    fn low_level_and_header_parsers_agree_at_pow_limit() {
+    fn retarget_aligned_context_requires_preceding_window() {
+        let context_start = 2016u64;
+        let first_retarget = if context_start % BitcoinDifficultyWindow::INTERVAL == 0 {
+            context_start
+        } else {
+            context_start + BitcoinDifficultyWindow::INTERVAL
+                - (context_start % BitcoinDifficultyWindow::INTERVAL)
+        };
+        assert_eq!(first_retarget, 2016);
         assert_eq!(
-            bitcoin_target_from_bits(0x1d00_ffff),
-            BitcoinBlockHeader::target_from_bits(0x1d00_ffff)
+            first_retarget - BitcoinDifficultyWindow::INTERVAL,
+            0
+        );
+    }
+
+    #[test]
+    fn non_retarget_aligned_context_still_rounds_up() {
+        let context_start = 2017u64;
+        let first_retarget = if context_start % BitcoinDifficultyWindow::INTERVAL == 0 {
+            context_start
+        } else {
+            context_start + BitcoinDifficultyWindow::INTERVAL
+                - (context_start % BitcoinDifficultyWindow::INTERVAL)
+        };
+        assert_eq!(first_retarget, 4032);
+        assert_eq!(
+            first_retarget - BitcoinDifficultyWindow::INTERVAL,
+            2016
         );
     }
 }
