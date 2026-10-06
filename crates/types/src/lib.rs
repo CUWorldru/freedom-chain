@@ -2437,7 +2437,31 @@ impl BitcoinChainContext {
         let context_start = self.base_start_height;
         let context_end = self.tip_height;
 
-        for window in &self.difficulty_windows {
+        let first_retarget = context_start
+            .checked_add(BitcoinDifficultyWindow::INTERVAL - (context_start % BitcoinDifficultyWindow::INTERVAL))
+            .unwrap_or(u64::MAX);
+        let last_retarget = context_end - (context_end % BitcoinDifficultyWindow::INTERVAL);
+
+        let mut expected_windows = 0usize;
+        if first_retarget <= last_retarget {
+            expected_windows = ((last_retarget - first_retarget)
+                / BitcoinDifficultyWindow::INTERVAL) as usize + 1;
+        }
+        if self.difficulty_windows.len() != expected_windows {
+            return false;
+        }
+
+        for (index, window) in self.difficulty_windows.iter().enumerate() {
+            let expected_start = match first_retarget
+                .checked_add((index as u64) * BitcoinDifficultyWindow::INTERVAL)
+                .and_then(|height| height.checked_sub(BitcoinDifficultyWindow::INTERVAL))
+            {
+                Some(height) => height,
+                None => return false,
+            };
+            if window.start_height != expected_start {
+                return false;
+            }
             let Some(window_end) = window.start_height.checked_add(
                 BitcoinDifficultyWindow::INTERVAL - 1
             ) else {
