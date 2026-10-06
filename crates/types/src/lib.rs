@@ -2968,6 +2968,12 @@ impl BitcoinTransaction {
 pub fn bitcoin_parse_transaction(raw:&[u8])->Result<BitcoinTransaction,BitcoinTransactionParseError>{BitcoinTransaction::parse(raw)}
 
 pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
+    // A u32 transaction index has at most 32 meaningful Merkle levels.
+    // Reject oversized attacker-controlled branches instead of shifting a
+    // u32 by a depth >= 32 and risking a runtime panic.
+    if branch.len() > 32 {
+        return [0;32];
+    }
     let mut current=tx_hash;
     for (depth,sibling) in branch.iter().enumerate(){
         let bit=(index>>depth)&1;
@@ -7377,5 +7383,22 @@ mod m388_bitcoin_context_height_boundary_tests {
             timestamp: 1, bits: 0x207fffff, nonce: 0,
         };
         assert_eq!(context.verify_header_chain(u64::MAX, &header), Err(BridgeAdapterError::InvalidProof));
+    }
+}
+
+#[cfg(test)]
+mod m389_bitcoin_merkle_depth_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn merkle_root_rejects_branch_deeper_than_u32_index() {
+        let root = bitcoin_merkle_root([1; 32], &vec![[2; 32]; 33], 0);
+        assert_eq!(root, [0; 32]);
+    }
+
+    #[test]
+    fn merkle_root_accepts_maximum_u32_index_depth() {
+        let root = bitcoin_merkle_root([1; 32], &vec![[2; 32]; 32], u32::MAX);
+        assert_ne!(root, [0; 32]);
     }
 }
