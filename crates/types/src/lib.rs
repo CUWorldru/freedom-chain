@@ -3230,7 +3230,10 @@ impl BitcoinReorgPolicy {
   }
   let critical_threshold=bitcoin_add_chainwork(checkpoint.chainwork,self.critical_chainwork_margin);
   if critical_threshold.map(|threshold|e.candidate_chainwork>threshold).unwrap_or(false) { BitcoinReorgSeverity::Critical }
-  else if e.candidate_tip_height>=checkpoint.height.saturating_add(self.elevated_confirmations) { BitcoinReorgSeverity::Elevated }
+  else if checkpoint.height
+      .checked_add(self.elevated_confirmations)
+      .map(|threshold| e.candidate_tip_height >= threshold)
+      .unwrap_or(false) { BitcoinReorgSeverity::Elevated }
   else { BitcoinReorgSeverity::Normal }
  }
 }
