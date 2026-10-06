@@ -2627,14 +2627,25 @@ mod m330_public_chain_id_boundary_tests {
   if p.product_id!=1||p.merchant==[0;32]||p.reference==[0;32]||p.price==0{return Err(StateError::InvalidPurchase)}
   let id=freedom_primitives::hash_bytes(&[b"FREEDOM-PURCHASE-V1".as_slice(),&tx.sender,&p.reference].concat());
   if self.purchases.contains_key(&id){return Err(StateError::DuplicatePurchase)}
-  let buyer_balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance;
-  if buyer_balance<p.price{return Err(StateError::InsufficientBalanceForPurchase)}
   if p.merchant==tx.sender{return Err(StateError::InvalidPurchase)}
-  {let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;a.balance-=p.price;}
+  let buyer=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  if buyer.balance<p.price{return Err(StateError::InsufficientBalanceForPurchase)}
+  let next_nonce=buyer.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let next_buyer_balance=buyer.balance.checked_sub(p.price).ok_or(StateError::ArithmeticOverflow)?;
+  let merchant_balance=self.accounts.get(&p.merchant).map(|a|a.balance).unwrap_or(0);
+  let next_merchant_balance=merchant_balance.checked_add(p.price).ok_or(StateError::ArithmeticOverflow)?;
+
+  // Preflight every fallible arithmetic operation before mutating buyer, merchant, or purchase state.
+  let purchase=Purchase{purchase_id:id,buyer:tx.sender,merchant:p.merchant,product_id:p.product_id,price:p.price,reference:p.reference,block_height:self.height};
+  {
+    let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+    a.balance=next_buyer_balance;
+    a.nonce=next_nonce;
+  }
   let merchant=self.accounts.entry(p.merchant).or_insert(Account{address:p.merchant,public_key:[0;32],nonce:0,balance:0,locked:0,staked:0});
-  merchant.balance=merchant.balance.checked_add(p.price).ok_or(StateError::ArithmeticOverflow)?;
-  self.purchases.insert(id,Purchase{purchase_id:id,buyer:tx.sender,merchant:p.merchant,product_id:p.product_id,price:p.price,reference:p.reference,block_height:self.height});
-  self.advance_nonce(tx.sender)
+  merchant.balance=next_merchant_balance;
+  self.purchases.insert(id,purchase);
+  Ok(())
  }
 
  fn state_leaf(domain: &[u8], key: &[u8], value: &[u8]) -> Hash {
@@ -7313,4 +7324,68 @@ mod m319_epoch_boundary_atomicity_tests {
         assert_eq!(state.pending_validator_set, before.pending_validator_set);
     }
 
+}
+
+#[cfg(test)]
+mod m383_purchase_atomicity_tests {
+    use super::*;
+
+    fn purchase_tx(sender: Address, merchant: Address, price: u128, nonce: u64, reference: Hash) -> Transaction {
+        let payload = PurchasePayload {
+            product_id: 1,
+            merchant,
+            price,
+            reference,
+        };
+        Transaction {
+            chain_id: freedom_primitives::CHAIN_ID,
+            sender,
+            nonce,
+            kind: TxKind::Purchase,
+            payload: payload.encode(),
+            fee: 0,
+            signature: vec![],
+        }
+    }
+
+    #[test]
+    fn purchase_rejects_max_nonce_before_mutation() {
+        let buyer_key = [11u8; 32];
+        let buyer = address_from_public_key(&buyer_key);
+        let merchant = [22u8; 32];
+        let mut state = ChainState::genesis(&Genesis::default());
+        state.accounts.insert(buyer, Account::new(buyer_key, 20_000));
+        state.accounts.get_mut(&buyer).unwrap().nonce = u64::MAX;
+
+        let tx = purchase_tx(buyer, merchant, 10_000, u64::MAX, [7u8; 32]);
+        assert_eq!(state.purchase(&tx), Err(StateError::ArithmeticOverflow));
+        assert_eq!(state.accounts.get(&buyer).unwrap().balance, 20_000);
+        assert_eq!(state.accounts.get(&buyer).unwrap().nonce, u64::MAX);
+        assert!(state.accounts.get(&merchant).is_none());
+        assert!(state.purchases.is_empty());
+    }
+
+    #[test]
+    fn purchase_rejects_merchant_balance_overflow_before_buyer_debit() {
+        let buyer_key = [12u8; 32];
+        let buyer = address_from_public_key(&buyer_key);
+        let merchant = [23u8; 32];
+        let mut state = ChainState::genesis(&Genesis::default());
+        state.accounts.insert(buyer, Account::new(buyer_key, 20_000));
+        state.accounts.insert(merchant, Account {
+            address: merchant,
+            public_key: [0; 32],
+            nonce: 0,
+            balance: u128::MAX,
+            locked: 0,
+            staked: 0,
+        });
+
+        let tx = purchase_tx(buyer, merchant, 10_000, 0, [8u8; 32]);
+        assert_eq!(state.purchase(&tx), Err(StateError::ArithmeticOverflow));
+        assert_eq!(state.accounts.get(&buyer).unwrap().balance, 20_000);
+        assert_eq!(state.accounts.get(&buyer).unwrap().nonce, 0);
+        assert_eq!(state.accounts.get(&merchant).unwrap().balance, u128::MAX);
+        assert!(state.purchases.is_empty());
+    }
 }
