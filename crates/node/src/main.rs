@@ -278,14 +278,16 @@ fn send_snapshot_request(
     peer: libp2p::PeerId,
     validator_id: Hash,
     height: u64,
-) -> (Hash, libp2p::request_response::OutboundRequestId) {
+) -> Result<(Hash, libp2p::request_response::OutboundRequestId), String> {
     let request_id = hash_bytes(&[b"FREEDOM-SNAPSHOT-V1", &validator_id, &height.to_le_bytes()].concat());
+    let request = freedom_network::SnapshotSyncRequest { request_id, height };
+    freedom_network::validate_snapshot_request(&request)?;
     let outbound_id = swarm.behaviour_mut().sync.send_request(
         &peer,
-        SyncWireRequest::Snapshot(freedom_network::SnapshotSyncRequest { request_id, height }),
+        SyncWireRequest::Snapshot(request),
     );
     println!("snapshot_request peer={} height={} request_id={} outbound_id={:?}", peer, height, hex::encode(request_id), outbound_id);
-    (request_id, outbound_id)
+    Ok((request_id, outbound_id))
 }
 
 fn build_local_proposal(
@@ -1109,7 +1111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if pending_snapshot.is_empty() {
                                 snapshot_candidates.clear();
                             }
-                            let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX);
+                            let (snapshot_request_id, snapshot_outbound_id) = send_snapshot_request(&mut swarm, peer_id, validator_id, u64::MAX)?;
                             pending_snapshot.push((peer_id, snapshot_outbound_id, snapshot_request_id, u64::MAX));
                             snapshot_required = pending_snapshot.len().max(1);
                         }
