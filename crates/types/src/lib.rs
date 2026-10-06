@@ -3111,8 +3111,13 @@ pub struct BitcoinMerkleProof {
     pub block_header: BitcoinBlockHeader,
 }
 impl BitcoinMerkleProof {
+    fn merkle_index_is_within_branch_depth(&self)->bool{
+        let depth=self.merkle_branch.len();
+        if depth>=32 { return true; }
+        self.merkle_index < (1u32 << depth)
+    }
     pub fn verify(&self,required_confirmations:u64)->bool{
-        self.bridge_id!=[0;32]&&self.chain_id!=0&&self.tx_hash!=[0;32]&&self.merkle_root!=[0;32]&&!self.merkle_branch.is_empty()&&self.confirmations>=required_confirmations&&self.block_header.merkle_root==self.merkle_root&&self.block_header.block_hash()!=[0;32]&&bitcoin_merkle_root(self.tx_hash,&self.merkle_branch,self.merkle_index)==self.merkle_root
+        self.bridge_id!=[0;32]&&self.chain_id!=0&&self.tx_hash!=[0;32]&&self.merkle_root!=[0;32]&&!self.merkle_branch.is_empty()&&self.merkle_index_is_within_branch_depth()&&self.confirmations>=required_confirmations&&self.block_header.merkle_root==self.merkle_root&&self.block_header.block_hash()!=[0;32]&&bitcoin_merkle_root(self.tx_hash,&self.merkle_branch,self.merkle_index)==self.merkle_root
     }
     pub fn verify_against_canonical_tip(&self,required_confirmations:u64,tip:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->bool{
         if headers.is_empty()||self.block_height>tip.height{return false;} let computed_confirmations=tip.height.saturating_sub(self.block_height).saturating_add(1); if computed_confirmations<required_confirmations||self.confirmations!=computed_confirmations{return false;} if !self.verify(required_confirmations){return false;}
@@ -7400,5 +7405,44 @@ mod m389_bitcoin_merkle_depth_boundary_tests {
     fn merkle_root_accepts_maximum_u32_index_depth() {
         let root = bitcoin_merkle_root([1; 32], &vec![[2; 32]; 32], u32::MAX);
         assert_ne!(root, [0; 32]);
+    }
+}
+
+#[cfg(test)]
+mod m390_bitcoin_merkle_index_boundary_tests {
+    use super::*;
+
+    fn proof(index:u32)->BitcoinMerkleProof{
+        let tx_hash=[1;32];
+        let sibling=[2;32];
+        let root=bitcoin_merkle_root(tx_hash,&vec![sibling],index);
+        BitcoinMerkleProof{
+            bridge_id:[3;32], chain_id:8332, tx_hash, block_height:1, confirmations:1,
+            merkle_root:root, merkle_branch:vec![sibling], merkle_index:index,
+            block_header:BitcoinBlockHeader{version:1,prev_block_hash:[4;32],merkle_root:root,time:1,bits:1,nonce:1},
+        }
+    }
+
+    #[test]
+    fn merkle_proof_rejects_index_bits_above_branch_depth(){
+        assert!(!proof(2).verify(1));
+    }
+
+    #[test]
+    fn merkle_proof_accepts_index_representable_by_branch_depth(){
+        assert!(proof(1).verify(1));
+    }
+
+    #[test]
+    fn merkle_proof_accepts_full_u32_index_at_32_levels(){
+        let branch=vec![[2;32];32];
+        let tx_hash=[1;32];
+        let root=bitcoin_merkle_root(tx_hash,&branch,u32::MAX);
+        let p=BitcoinMerkleProof{
+            bridge_id:[3;32], chain_id:8332, tx_hash, block_height:1, confirmations:1,
+            merkle_root:root, merkle_branch:branch, merkle_index:u32::MAX,
+            block_header:BitcoinBlockHeader{version:1,prev_block_hash:[4;32],merkle_root:root,time:1,bits:1,nonce:1},
+        };
+        assert!(p.verify(1));
     }
 }
