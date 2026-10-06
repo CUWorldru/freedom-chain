@@ -1034,7 +1034,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 if timeout_round_sent != Some(round) {
-                    let timeout = make_timeout(next_height, round, validator_id, &consensus_key);
+                    let timeout = make_timeout(&state, next_height, round, validator_id, &consensus_key)?;
                     publish(&mut swarm, &NetworkMessage::Timeout(timeout))?;
                     timeout_round_sent = Some(round);
                     println!("timeout height={} round={}", next_height, round);
