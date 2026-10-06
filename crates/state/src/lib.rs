@@ -236,7 +236,7 @@ impl ChainState {
   }
   registry
  }
- pub fn register_cross_chain_registry(
+ pub(crate) fn register_cross_chain_registry(
   &mut self,
   registry: freedom_types::CrossChainAssetRegistry,
 ) -> Result<(), StateError> {
@@ -260,7 +260,7 @@ impl ChainState {
   self.cross_chain_asset_registries.insert(registry.canonical_asset_id, registry);
   Ok(())
  }
- pub fn register_asset(&mut self, asset: AssetDefinition) -> Result<(), StateError> {
+ pub(crate) fn register_asset(&mut self, asset: AssetDefinition) -> Result<(), StateError> {
   if !asset.validate_identity() || asset.status == AssetStatus::Deprecated {
    return Err(StateError::InvalidAsset);
   }
