@@ -2222,6 +2222,11 @@ pub struct BitcoinDifficultyWindow {
     pub headers: Vec<BitcoinBlockHeader>,
 }
 
+fn bitcoin_difficulty_actual_timespan(first_timestamp:u32,last_timestamp:u32)->u64{
+    u64::from(last_timestamp.checked_sub(first_timestamp).unwrap_or(0))
+        .clamp(BitcoinDifficultyWindow::MIN_TIMESPAN,BitcoinDifficultyWindow::MAX_TIMESPAN)
+}
+
 impl BitcoinDifficultyWindow {
     pub const INTERVAL: u64 = 2016;
     pub const TARGET_TIMESPAN: u64 = 1_209_600;
@@ -2246,8 +2251,7 @@ impl BitcoinDifficultyWindow {
         }
         let first = self.headers.first()?;
         let last = self.headers.last()?;
-        let actual_timespan = last.timestamp.checked_sub(first.timestamp).unwrap_or(0);
-        let actual = u64::from(actual_timespan).clamp(Self::MIN_TIMESPAN, Self::MAX_TIMESPAN);
+        let actual=bitcoin_difficulty_actual_timespan(first.timestamp,last.timestamp);
         let old_target = BitcoinBlockHeader::target_from_bits(last.bits)?;
         let new_target = bitcoin_target_mul_div(old_target, actual, Self::TARGET_TIMESPAN);
         let pow_limit = BitcoinBlockHeader::target_from_bits(0x1d00_ffff)?;
@@ -7885,5 +7889,35 @@ mod m400_bitcoin_canonical_confirmation_boundary_tests {
         };
 
         assert!(!proof.verify_against_canonical_tip(1, &tip, &[proof.block_header]));
+    }
+}
+
+
+#[cfg(test)]
+mod m401_bitcoin_difficulty_timestamp_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn reversed_retarget_timestamps_use_minimum_timespan() {
+        assert_eq!(
+            bitcoin_difficulty_actual_timespan(2_000_000, 1_000_000),
+            BitcoinDifficultyWindow::MIN_TIMESPAN
+        );
+    }
+
+    #[test]
+    fn normal_retarget_timespan_is_preserved() {
+        assert_eq!(
+            bitcoin_difficulty_actual_timespan(1_000_000, 2_000_000),
+            1_000_000
+        );
+    }
+
+    #[test]
+    fn retarget_timespan_is_capped_at_maximum() {
+        assert_eq!(
+            bitcoin_difficulty_actual_timespan(1, u32::MAX),
+            BitcoinDifficultyWindow::MAX_TIMESPAN
+        );
     }
 }
