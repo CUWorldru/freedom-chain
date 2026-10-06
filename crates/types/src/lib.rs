@@ -2587,7 +2587,15 @@ impl BitcoinChainContext {
             return false;
         }
 
-        let checkpoint_index = (self.checkpoint.height - self.base_start_height) as usize;
+        let checkpoint_index = match self
+            .checkpoint
+            .height
+            .checked_sub(self.base_start_height)
+            .and_then(|value| usize::try_from(value).ok())
+        {
+            Some(value) => value,
+            None => return false,
+        };
         if checkpoint_index >= self.base_headers.len() {
             return false;
         }
