@@ -3117,7 +3117,7 @@ impl BitcoinReorgRecovery {
  pub fn signing_bytes(&self)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BITCOIN-REORG-RECOVERY-V1");o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.evidence_fingerprint);o.extend_from_slice(&self.nonce.to_le_bytes());o.extend_from_slice(&self.canonical_height.to_le_bytes());o.extend_from_slice(&self.canonical_block_hash);o.extend_from_slice(&self.canonical_chainwork);for v in &self.validator_ids{o.extend_from_slice(v);}o}
  pub fn compute_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
  pub fn validate(&self)->bool{self.bridge_id!=[0;32]&&self.evidence_fingerprint!=[0;32]&&self.nonce>0&&self.canonical_height>0&&self.canonical_block_hash!=[0;32]&&self.canonical_chainwork!=[0;32]&&!self.validator_ids.is_empty()&&self.validator_ids.len()==self.signatures.len()&&self.recovery_hash==self.compute_hash()}
- pub fn authenticated_count(&self,validators:&std::collections::BTreeMap<Hash,[u8;32]>)->u16{let mut seen=std::collections::BTreeSet::new();for s in &self.signatures{if s.signature.len()!=64||seen.contains(&s.validator_id){continue;}if let Some(key)=validators.get(&s.validator_id){if freedom_crypto::verify(key,&self.signing_bytes(),s.signature.as_slice().try_into().unwrap()){seen.insert(s.validator_id);}}}seen.len() as u16}
+ pub fn authenticated_count(&self,validators:&std::collections::BTreeMap<Hash,[u8;32]>)->u16{let mut seen=std::collections::BTreeSet::new();for s in &self.signatures{if s.signature.len()!=64||!self.validator_ids.contains(&s.validator_id)||seen.contains(&s.validator_id){continue;}if let Some(key)=validators.get(&s.validator_id){if freedom_crypto::verify(key,&self.signing_bytes(),s.signature.as_slice().try_into().unwrap()){seen.insert(s.validator_id);}}}seen.len() as u16}
 }
 pub struct BitcoinReorgReport { pub checkpoint_height:u64, pub checkpoint_hash:Hash, pub candidate_tip_height:u64, pub candidate_tip_hash:Hash, pub candidate_chainwork:[u8;32] }
 pub fn bitcoin_evaluate_reorg(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinReorgReport,BitcoinCheckpointError>{
@@ -7526,6 +7526,47 @@ mod m392_bitcoin_reorg_evidence_binding_tests {
         let e=evidence(11,[9;32]);
         let policy=BitcoinReorgPolicy{elevated_confirmations:2,critical_chainwork_margin:[1;32]};
         assert_eq!(policy.classify(&checkpoint,&e),BitcoinReorgSeverity::Normal);
+    }
+}
+
+#[cfg(test)]
+mod m398_bitcoin_reorg_recovery_signer_binding_tests {
+    use super::*;
+
+    fn recovery(validator_ids: Vec<Hash>) -> BitcoinReorgRecovery {
+        let mut r = BitcoinReorgRecovery {
+            bridge_id: [1; 32],
+            evidence_fingerprint: [2; 32],
+            nonce: 1,
+            canonical_height: 10,
+            canonical_block_hash: [3; 32],
+            canonical_chainwork: [4; 32],
+            validator_ids,
+            signatures: Vec::new(),
+            recovery_hash: [0; 32],
+        };
+        r.recovery_hash = r.compute_hash();
+        r
+    }
+
+    #[test]
+    fn authenticated_count_ignores_signature_from_unlisted_validator() {
+        let listed = [7; 32];
+        let unlisted = [8; 32];
+        let mut r = recovery(vec![listed]);
+
+        let key = [9; 32];
+        let signature = freedom_crypto::sign(&key, &r.signing_bytes());
+
+        r.signatures = vec![BitcoinReorgRecoverySignature {
+            validator_id: unlisted,
+            signature: signature.to_vec(),
+        }];
+
+        let mut validators = std::collections::BTreeMap::new();
+        validators.insert(unlisted, key);
+
+        assert_eq!(r.authenticated_count(&validators), 0);
     }
 }
 
