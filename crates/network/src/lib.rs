@@ -165,7 +165,7 @@ pub fn make_proposal(
     Ok(proposal)
 }
 
-pub fn sign_proposal(proposal: &mut BlockProposal, consensus_key: &ed25519_dalek::SigningKey) {
+fn sign_proposal(proposal: &mut BlockProposal, consensus_key: &ed25519_dalek::SigningKey) {
     proposal.signature = sign(consensus_key, &proposal.signing_bytes()).to_vec();
 }
 
