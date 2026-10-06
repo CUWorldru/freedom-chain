@@ -8267,3 +8267,66 @@ mod m405_bitcoin_segment_difficulty_boundary_tests {
         );
     }
 }
+
+
+#[cfg(test)]
+mod m406_bitcoin_difficulty_schedule_tests {
+    use super::*;
+
+    fn header(previous_block_hash: Hash, bits: u32, timestamp: u32, nonce: u32) -> BitcoinBlockHeader {
+        BitcoinBlockHeader {
+            version: 1,
+            previous_block_hash,
+            merkle_root: [nonce as u8; 32],
+            timestamp,
+            bits,
+            nonce,
+        }
+    }
+
+    #[test]
+    fn context_rejects_non_retarget_difficulty_change() {
+        let first = header([1; 32], 0x1d00_ffff, 1, 1);
+        let second = header(first.block_hash(), 0x1c00_ffff, 2, 2);
+        let context = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinChainCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 1,
+                block_hash: first.block_hash(),
+            },
+            start_height: 3,
+            base_start_height: 1,
+            base_headers: vec![first, second.clone()],
+            tip_height: 3,
+            tip_hash: [9; 32],
+            max_future_timestamp: u32::MAX,
+            headers: vec![header(second.block_hash(), 0x1c00_ffff, 3, 3)],
+            difficulty_windows: Vec::new(),
+        };
+        assert!(!context.validate_header_difficulty_rules());
+    }
+
+    #[test]
+    fn context_accepts_constant_non_retarget_difficulty() {
+        let first = header([1; 32], 0x1d00_ffff, 1, 1);
+        let second = header(first.block_hash(), 0x1d00_ffff, 2, 2);
+        let context = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinChainCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 1,
+                block_hash: first.block_hash(),
+            },
+            start_height: 3,
+            base_start_height: 1,
+            base_headers: vec![first, second.clone()],
+            tip_height: 3,
+            tip_hash: [9; 32],
+            max_future_timestamp: u32::MAX,
+            headers: vec![header(second.block_hash(), 0x1d00_ffff, 3, 3)],
+            difficulty_windows: Vec::new(),
+        };
+        assert!(context.validate_header_difficulty_rules());
+    }
+}
