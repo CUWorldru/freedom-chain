@@ -2222,6 +2222,18 @@ pub struct BitcoinDifficultyWindow {
     pub headers: Vec<BitcoinBlockHeader>,
 }
 
+fn bitcoin_previous_bits_for_segment(
+    base_headers: &[BitcoinBlockHeader],
+    headers: &[BitcoinBlockHeader],
+    deposit_index: usize,
+) -> Option<u32> {
+    if deposit_index == 0 {
+        base_headers.last().map(|header| header.bits)
+    } else {
+        headers.get(deposit_index - 1).map(|header| header.bits)
+    }
+}
+
 fn bitcoin_difficulty_actual_timespan(first_timestamp:u32,last_timestamp:u32)->u64{
     u64::from(last_timestamp.checked_sub(first_timestamp).unwrap_or(0))
         .clamp(BitcoinDifficultyWindow::MIN_TIMESPAN,BitcoinDifficultyWindow::MAX_TIMESPAN)
@@ -2677,13 +2689,12 @@ impl BitcoinChainContext {
         } else {
             self.headers[deposit_index - 1].block_hash()
         };
-        let mut previous_bits = if deposit_index == 0 {
-            self.base_headers.last()
-                .ok_or(BridgeAdapterError::InvalidProof)?
-                .bits
-        } else {
-            self.headers[deposit_index - 1].bits
-        };
+        let mut previous_bits = bitcoin_previous_bits_for_segment(
+            &self.base_headers,
+            &self.headers,
+            deposit_index,
+        )
+        .ok_or(BridgeAdapterError::InvalidProof)?;
         for (index, header) in self.headers.iter().enumerate() {
             let Some(height) = self.start_height.checked_add(index as u64) else {
                 return Err(BridgeAdapterError::InvalidProof);
@@ -8159,5 +8170,69 @@ mod m404_bitcoin_difficulty_window_set_tests {
             }; BitcoinDifficultyWindow::INTERVAL as usize],
         });
         assert!(!context.validate_difficulty_window_bindings());
+    }
+}
+
+
+#[cfg(test)]
+mod m405_bitcoin_segment_difficulty_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn first_segment_header_inherits_bits_from_canonical_base_predecessor() {
+        let base = vec![BitcoinBlockHeader {
+            version: 1,
+            previous_block_hash: [1; 32],
+            merkle_root: [2; 32],
+            timestamp: 1,
+            bits: 0x1d00_ffff,
+            nonce: 1,
+        }];
+        let headers = vec![BitcoinBlockHeader {
+            version: 1,
+            previous_block_hash: [3; 32],
+            merkle_root: [4; 32],
+            timestamp: 2,
+            bits: 0x1c00_ffff,
+            nonce: 2,
+        }];
+        assert_eq!(
+            bitcoin_previous_bits_for_segment(&base, &headers, 0),
+            Some(0x1d00_ffff)
+        );
+    }
+
+    #[test]
+    fn later_segment_header_inherits_previous_segment_bits() {
+        let base = vec![BitcoinBlockHeader {
+            version: 1,
+            previous_block_hash: [1; 32],
+            merkle_root: [2; 32],
+            timestamp: 1,
+            bits: 0x1d00_ffff,
+            nonce: 1,
+        }];
+        let headers = vec![
+            BitcoinBlockHeader {
+                version: 1,
+                previous_block_hash: [3; 32],
+                merkle_root: [4; 32],
+                timestamp: 2,
+                bits: 0x1c00_ffff,
+                nonce: 2,
+            },
+            BitcoinBlockHeader {
+                version: 1,
+                previous_block_hash: [5; 32],
+                merkle_root: [6; 32],
+                timestamp: 3,
+                bits: 0x1c00_ffff,
+                nonce: 3,
+            },
+        ];
+        assert_eq!(
+            bitcoin_previous_bits_for_segment(&base, &headers, 1),
+            Some(0x1c00_ffff)
+        );
     }
 }
