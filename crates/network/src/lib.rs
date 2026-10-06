@@ -143,12 +143,27 @@ pub fn make_proposal(
     timeout_certificate: Option<freedom_types::TimeoutCertificate>,
 ) -> Result<BlockProposal, String> {
     let proposer = block.header.proposer;
+    if block.header.round != round {
+        return Err("proposal round does not match block round".into());
+    }
+    let expected_height = state.height
+        .checked_add(1)
+        .ok_or_else(|| "proposal height exceeds u64::MAX".to_string())?;
+    if block.header.height != expected_height {
+        return Err("proposal height is not the next block height".into());
+    }
+    let expected_proposer = freedom_consensus::proposer_for_height_round(state, block.header.height, round)
+        .ok_or_else(|| "no proposer available for proposal height/round".to_string())?;
+    if proposer != expected_proposer {
+        return Err("proposal proposer is not deterministic for height/round".into());
+    }
     let validator = state.active_validator_set.values()
         .find(|entry| entry.owner == proposer)
         .ok_or_else(|| "proposal proposer is not an active validator".to_string())?;
     if validator.consensus_key != consensus_key.verifying_key().to_bytes() {
         return Err("proposal proposer key mismatch".into());
     }
+    freedom_consensus::validate_block_transition(state, &block)?;
     let block_hash = block_hash(&block);
     let mut proposal = BlockProposal {
         block_hash,
