@@ -8097,3 +8097,65 @@ mod m403_bitcoin_difficulty_window_binding_tests {
         assert!(!context_with_window(Some(10)).validate_difficulty_window_bindings());
     }
 }
+
+
+#[cfg(test)]
+mod m404_bitcoin_difficulty_window_set_tests {
+    use super::*;
+
+    fn short_context() -> BitcoinChainContext {
+        BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinNetworkCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 1,
+                block_hash: [5; 32],
+            },
+            start_height: 2,
+            base_start_height: 1,
+            base_headers: vec![BitcoinBlockHeader {
+                version: 1,
+                previous_block_hash: [1; 32],
+                merkle_root: [2; 32],
+                timestamp: 1,
+                bits: 0x1d00_ffff,
+                nonce: 1,
+            }],
+            tip_height: 20,
+            tip_hash: [6; 32],
+            max_future_timestamp: u32::MAX,
+            headers: vec![BitcoinBlockHeader {
+                version: 1,
+                previous_block_hash: [3; 32],
+                merkle_root: [4; 32],
+                timestamp: 2,
+                bits: 0x1d00_ffff,
+                nonce: 2,
+            }; 19],
+            difficulty_windows: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn short_context_requires_no_difficulty_windows() {
+        let context = short_context();
+        assert!(context.validate_difficulty_window_bindings());
+    }
+
+    #[test]
+    fn difficulty_window_outside_context_is_rejected() {
+        let mut context = short_context();
+        context.difficulty_windows.push(BitcoinDifficultyWindow {
+            start_height: 0,
+            headers: vec![BitcoinBlockHeader {
+                version: 1,
+                previous_block_hash: [9; 32],
+                merkle_root: [8; 32],
+                timestamp: 1,
+                bits: 0x1d00_ffff,
+                nonce: 9,
+            }; BitcoinDifficultyWindow::INTERVAL as usize],
+        });
+        assert!(!context.validate_difficulty_window_bindings());
+    }
+}
