@@ -3254,7 +3254,7 @@ impl BitcoinReorgRecovery {
  pub fn signing_bytes(&self)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-BITCOIN-REORG-RECOVERY-V1");o.extend_from_slice(&self.bridge_id);o.extend_from_slice(&self.evidence_fingerprint);o.extend_from_slice(&self.nonce.to_le_bytes());o.extend_from_slice(&self.canonical_height.to_le_bytes());o.extend_from_slice(&self.canonical_block_hash);o.extend_from_slice(&self.canonical_chainwork);for v in &self.validator_ids{o.extend_from_slice(v);}o}
  pub fn compute_hash(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())}
  pub fn validate(&self)->bool{let unique_validator_ids=self.validator_ids.iter().collect::<std::collections::BTreeSet<_>>().len()==self.validator_ids.len();let unique_signature_ids=self.signatures.iter().map(|s|&s.validator_id).collect::<std::collections::BTreeSet<_>>().len()==self.signatures.len();self.bridge_id!=[0;32]&&self.evidence_fingerprint!=[0;32]&&self.nonce>0&&self.canonical_height>0&&self.canonical_block_hash!=[0;32]&&self.canonical_chainwork!=[0;32]&&!self.validator_ids.is_empty()&&self.validator_ids.len()==self.signatures.len()&&unique_validator_ids&&unique_signature_ids&&self.recovery_hash==self.compute_hash()}
- pub fn authenticated_count(&self,validators:&std::collections::BTreeMap<Hash,[u8;32]>)->u16{let mut seen=std::collections::BTreeSet::new();for s in &self.signatures{if s.signature.len()!=64||!self.validator_ids.contains(&s.validator_id)||seen.contains(&s.validator_id){continue;}if let Some(key)=validators.get(&s.validator_id){if freedom_crypto::verify(key,&self.signing_bytes(),s.signature.as_slice().try_into().unwrap()){seen.insert(s.validator_id);}}}seen.len() as u16}
+ pub fn authenticated_count(&self,validators:&std::collections::BTreeMap<Hash,[u8;32]>)->u16{let mut seen=std::collections::BTreeSet::new();for s in &self.signatures{if s.signature.len()!=64||!self.validator_ids.contains(&s.validator_id)||seen.contains(&s.validator_id){continue;}if let Some(key)=validators.get(&s.validator_id){if freedom_primitives::hash_bytes(key)!=s.validator_id{continue;}if freedom_crypto::verify(key,&self.signing_bytes(),s.signature.as_slice().try_into().unwrap()){seen.insert(s.validator_id);}}}seen.len() as u16}
 }
 pub struct BitcoinReorgReport { pub checkpoint_height:u64, pub checkpoint_hash:Hash, pub candidate_tip_height:u64, pub candidate_tip_hash:Hash, pub candidate_chainwork:[u8;32] }
 pub fn bitcoin_evaluate_reorg(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinReorgReport,BitcoinCheckpointError>{
@@ -5399,5 +5399,60 @@ mod m415_bitcoin_reorg_threshold_arithmetic_tests {
             policy.classify(&checkpoint, &evidence),
             BitcoinReorgSeverity::Elevated
         );
+    }
+}
+
+
+#[cfg(test)]
+mod m416_bitcoin_reorg_recovery_validator_identity_tests {
+    use super::*;
+
+    fn recovery(validator_id: Hash, signature: Vec<u8>) -> BitcoinReorgRecovery {
+        let mut recovery = BitcoinReorgRecovery {
+            bridge_id: [1; 32],
+            evidence_fingerprint: [2; 32],
+            nonce: 1,
+            canonical_height: 100,
+            canonical_block_hash: [3; 32],
+            canonical_chainwork: [4; 32],
+            validator_ids: vec![validator_id],
+            signatures: vec![BitcoinReorgRecoverySignature {
+                validator_id,
+                signature,
+            }],
+            recovery_hash: [0; 32],
+        };
+        recovery.recovery_hash = recovery.compute_hash();
+        recovery
+    }
+
+    #[test]
+    fn recovery_signature_requires_validator_id_to_match_key_identity() {
+        let signing_key = freedom_crypto::generate_keypair();
+        let public_key = signing_key.verifying_key().to_bytes();
+        let mismatched_id = [9; 32];
+        let mut recovery = recovery(mismatched_id, vec![0; 64]);
+        recovery.signatures[0].signature =
+            freedom_crypto::sign(&signing_key, &recovery.signing_bytes()).to_vec();
+        recovery.recovery_hash = recovery.compute_hash();
+
+        let validators = std::collections::BTreeMap::from([(mismatched_id, public_key)]);
+
+        assert_eq!(recovery.authenticated_count(&validators), 0);
+    }
+
+    #[test]
+    fn recovery_signature_accepts_matching_validator_id() {
+        let signing_key = freedom_crypto::generate_keypair();
+        let public_key = signing_key.verifying_key().to_bytes();
+        let validator_id = freedom_primitives::hash_bytes(&public_key);
+        let mut recovery = recovery(validator_id, vec![0; 64]);
+        recovery.signatures[0].signature =
+            freedom_crypto::sign(&signing_key, &recovery.signing_bytes()).to_vec();
+        recovery.recovery_hash = recovery.compute_hash();
+
+        let validators = std::collections::BTreeMap::from([(validator_id, public_key)]);
+
+        assert_eq!(recovery.authenticated_count(&validators), 1);
     }
 }
