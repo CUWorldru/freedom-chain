@@ -273,7 +273,7 @@ impl ChainState {
   self.asset_registry.insert(asset.asset_id, asset);
   Ok(())
  }
- pub fn reserve_bridge_withdrawal_limit(&mut self,bridge_id:Hash,period:u64,amount:u128)->Result<(),StateError>{
+ pub(crate) fn reserve_bridge_withdrawal_limit(&mut self,bridge_id:Hash,period:u64,amount:u128)->Result<(),StateError>{
   if amount==0{return Err(StateError::BridgeRateLimitExceeded);}
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if policy.emergency_paused||amount>policy.max_withdrawal_amount{return Err(StateError::BridgeRateLimitExceeded);}
@@ -283,12 +283,12 @@ impl ChainState {
   if next>policy.daily_limit{return Err(StateError::BridgeRateLimitExceeded);}
   usage.used=next; Ok(())
  }
- pub fn release_bridge_withdrawal_limit(&mut self,bridge_id:Hash,period:u64,amount:u128)->Result<(),StateError>{
+ pub(crate) fn release_bridge_withdrawal_limit(&mut self,bridge_id:Hash,period:u64,amount:u128)->Result<(),StateError>{
   let usage=self.bridge_rate_limits.get_mut(&bridge_id).ok_or(StateError::BridgeRateLimitExceeded)?;
   if usage.period!=period||amount>usage.used{return Err(StateError::BridgeRateLimitExceeded);}
   usage.used-=amount; Ok(())
  }
- pub fn apply_bridge_emergency_pause(&mut self,bridge_id:Hash,auth_set:BridgePauseAuthorizationSet)->Result<(),StateError>{
+ pub(crate) fn apply_bridge_emergency_pause(&mut self,bridge_id:Hash,auth_set:BridgePauseAuthorizationSet)->Result<(),StateError>{
   let policy=self.bridge_security_policies.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgePauseAuthorization)?;
   if auth_set.bridge_id!=bridge_id||auth_set.nonce==0||auth_set.authorizations.is_empty(){return Err(StateError::InvalidBridgePauseAuthorization);}
   if let Some(previous)=self.bridge_pause_authorizations.get(&bridge_id){if auth_set.nonce<=previous.nonce{return Err(StateError::InvalidBridgePauseAuthorization);}}
@@ -304,7 +304,7 @@ impl ChainState {
   self.bridge_pause_authorizations.insert(bridge_id,auth_set);
   Ok(())
  }
- pub fn register_bitcoin_checkpoint(&mut self,bridge_id:Hash,checkpoint:BitcoinChainCheckpoint)->Result<(),StateError>{
+ pub(crate) fn register_bitcoin_checkpoint(&mut self,bridge_id:Hash,checkpoint:BitcoinChainCheckpoint)->Result<(),StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
   if bridge_id==[0;32]||!checkpoint.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -318,9 +318,9 @@ impl ChainState {
   if descriptor.bridge_id!=bridge_id||descriptor.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID||descriptor.kind!=freedom_types::BridgeAdapterKind::Bitcoin||descriptor.finality_model!=freedom_types::BridgeFinalityModel::Confirmations||descriptor.required_confirmations!=policy.min_external_confirmations||!checkpoint.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
   Ok(())
  }
- pub fn register_bitcoin_reorg_policy(&mut self,bridge_id:Hash,policy:freedom_types::BitcoinReorgPolicy)->Result<(),StateError>{if bridge_id==[0;32]||!policy.validate(){return Err(StateError::BitcoinReorgDetected);} self.bitcoin_reorg_policy.insert(bridge_id,policy);Ok(())}
+ pub(crate) fn register_bitcoin_reorg_policy(&mut self,bridge_id:Hash,policy:freedom_types::BitcoinReorgPolicy)->Result<(),StateError>{if bridge_id==[0;32]||!policy.validate(){return Err(StateError::BitcoinReorgDetected);} self.bitcoin_reorg_policy.insert(bridge_id,policy);Ok(())}
  pub fn bitcoin_reorg_severity(&self,bridge_id:Hash,e:&BitcoinReorgEvidence)->Result<freedom_types::BitcoinReorgSeverity,StateError>{let cp=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;let p=self.bitcoin_reorg_policy.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if !e.validate()||!p.validate(){return Err(StateError::BitcoinReorgDetected)}Ok(p.classify(cp,e))}
- pub fn record_bitcoin_reorg_evidence(&mut self,bridge_id:Hash,e:BitcoinReorgEvidence)->Result<(),StateError>{
+ pub(crate) fn record_bitcoin_reorg_evidence(&mut self,bridge_id:Hash,e:BitcoinReorgEvidence)->Result<(),StateError>{
   if bridge_id==[0;32]||!e.validate(){return Err(StateError::BitcoinReorgDetected);}
   let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
   if e.checkpoint_height!=checkpoint.height
@@ -337,9 +337,9 @@ impl ChainState {
   if journal.len()>freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT{let excess=journal.len()-freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT;journal.drain(0..excess);}
   Ok(())
  }
- pub fn persist_bitcoin_canonical_tip(&mut self,bridge_id:Hash,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;if !proof.verify(checkpoint){return Err(StateError::BitcoinReorgDetected);}let next=BitcoinChainCheckpoint{height:proof.tip_height,block_hash:proof.tip_hash,chainwork:proof.chainwork};if let Some(prev)=self.bitcoin_canonical_tips.get(&bridge_id){if next.height<prev.height||next.chainwork<prev.chainwork{return Err(StateError::BitcoinReorgDetected);}}self.bitcoin_canonical_tips.insert(bridge_id,next);Ok(())}
+ pub(crate) fn persist_bitcoin_canonical_tip(&mut self,bridge_id:Hash,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let checkpoint=self.bitcoin_checkpoints.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;if !proof.verify(checkpoint){return Err(StateError::BitcoinReorgDetected);}let next=BitcoinChainCheckpoint{height:proof.tip_height,block_hash:proof.tip_hash,chainwork:proof.chainwork};if let Some(prev)=self.bitcoin_canonical_tips.get(&bridge_id){if next.height<prev.height||next.chainwork<prev.chainwork{return Err(StateError::BitcoinReorgDetected);}}self.bitcoin_canonical_tips.insert(bridge_id,next);Ok(())}
  fn bitcoin_recovery_validator_keys(&self)->std::collections::BTreeMap<Hash,[u8;32]>{self.active_validator_set.iter().map(|(id,v)|(*id,v.consensus_key)).collect()}
- pub fn recover_bitcoin_reorg_with_tip(&mut self,recovery:freedom_types::BitcoinReorgRecovery,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{
+ pub(crate) fn recover_bitcoin_reorg_with_tip(&mut self,recovery:freedom_types::BitcoinReorgRecovery,proof:&freedom_types::BitcoinCanonicalTipProof)->Result<(),StateError>{
   if !recovery.validate(){return Err(StateError::BitcoinReorgDetected);} if proof.tip_height!=recovery.canonical_height||proof.tip_hash!=recovery.canonical_block_hash||proof.chainwork!=recovery.canonical_chainwork{return Err(StateError::BitcoinReorgDetected);}
   let journal=self.bitcoin_reorg_evidence.get(&recovery.bridge_id).ok_or(StateError::BitcoinReorgDetected)?;
   if !journal.iter().any(|e|e.fingerprint==recovery.evidence_fingerprint){return Err(StateError::BitcoinReorgDetected);} let checkpoint=self.bitcoin_checkpoints.get(&recovery.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?; if recovery.canonical_height<checkpoint.height||recovery.canonical_chainwork<checkpoint.chainwork{return Err(StateError::BitcoinReorgDetected);} if !proof.verify(checkpoint){return Err(StateError::BitcoinReorgDetected);}
@@ -1503,7 +1503,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   Ok(())
  }
 
- pub fn register_bitcoin_utxo_commitment_attestation(&mut self,attestation:freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
+ pub(crate) fn register_bitcoin_utxo_commitment_attestation(&mut self,attestation:freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   self.validate_bitcoin_attestation_validator_set_binding(&attestation)?;
   let policy=self.bridge_security_policies.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let canonical=self.bitcoin_canonical_tips.get(&attestation.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -1522,7 +1522,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   self.bitcoin_utxo_attestation_policy_hashes.insert(attestation.bridge_id,policy.commitment_hash());
   Ok(())
  }
- pub fn bitcoin_utxo_commitment_attestation(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoCommitmentAttestation>{self.bitcoin_utxo_attestations.get(&bridge_id)} pub fn register_bitcoin_block_utxo_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:freedom_types::BitcoinUtxoBlockCommitment)->Result<(),StateError>{
+ pub fn bitcoin_utxo_commitment_attestation(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoCommitmentAttestation>{self.bitcoin_utxo_attestations.get(&bridge_id)} pub(crate) fn register_bitcoin_block_utxo_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:freedom_types::BitcoinUtxoBlockCommitment)->Result<(),StateError>{
   self.validate_bitcoin_block_utxo_commitment(bridge_id,block,&commitment)?;
   if let Some(previous)=self.bitcoin_utxo_commitments.get(&bridge_id) {
     if commitment.block_height <= previous.block_height
@@ -1639,7 +1639,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn bitcoin_canonical_tip(&self,bridge_id:Hash)->Option<&BitcoinChainCheckpoint>{self.bitcoin_canonical_tips.get(&bridge_id)}
  pub pub fn validate_bitcoin_bridge_safety(&self,bridge_id:Hash)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)}
  fn bitcoin_bridge_gate(&self,bridge_id:Hash)->Result<(),StateError>{if let Some(journal)=self.bitcoin_reorg_evidence.get(&bridge_id){if let Some(last)=journal.last(){let severity=self.bitcoin_reorg_severity(bridge_id,last)?;if severity!=freedom_types::BitcoinReorgSeverity::Normal{if self.bitcoin_reorg_recovery.get(&bridge_id).map(|r|r.evidence_fingerprint!=last.fingerprint).unwrap_or(true){return Err(StateError::BitcoinReorgDetected);}}}}Ok(())}
- pub fn advance_bitcoin_checkpoint(&mut self,bridge_id:Hash,headers:&[freedom_types::BitcoinBlockHeader])->Result<BitcoinChainCheckpoint,StateError>{
+ pub(crate) fn advance_bitcoin_checkpoint(&mut self,bridge_id:Hash,headers:&[freedom_types::BitcoinBlockHeader])->Result<BitcoinChainCheckpoint,StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
   let current=self.bitcoin_checkpoints.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
   match freedom_types::bitcoin_validate_from_checkpoint(&current,headers){
