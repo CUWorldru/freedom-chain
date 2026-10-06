@@ -2089,7 +2089,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    // Epoch transitions must advance exactly one epoch. Skipping an epoch
    // would create an unbound historical gap that later finality checks could
    // otherwise encounter only after state mutation.
-   if next_epoch!=self.epoch.saturating_add(1) { return; }
+   let expected_next_epoch=match self.epoch.checked_add(1){Some(v)=>v,None=>return};
+   if next_epoch!=expected_next_epoch { return; }
    // The current active set must still match its authoritative history before
    // it is used as the predecessor of the next validator-set transition.
    if self.validate_current_validator_set_history_binding().is_err() { return; }
