@@ -2302,11 +2302,20 @@ mod m330_public_chain_id_boundary_tests {
   self.validate_staking_activation_integrity()?;
   let id=self.validators.values().find(|v|v.owner==tx.sender).map(|v|v.validator_id).ok_or(StateError::InvalidEvidence)?;
   if self.staking_activated && (self.validator_lifecycle(id)?!=freedom_types::ValidatorLifecycle::Active || self.validators.get(&id).ok_or(StateError::InvalidEvidence)?.unbonding_stake>0){return Err(StateError::InvalidValidatorLifecycle)}
-  let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  let a=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
   if a.balance<p.amount{return Err(StateError::InsufficientBalance)}
-  a.balance-=p.amount;a.staked=a.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;self.staking_activated=true;
+  let next_balance=a.balance.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_staked=a.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let v=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?;
+  let next_validator_stake=v.stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+
+  // Preflight every fallible arithmetic operation before the first mutation.
+  let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  a.balance=next_balance;
+  a.staked=next_staked;
+  self.staking_activated=true;
   let v=self.validators.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
-  v.stake=v.stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  v.stake=next_validator_stake;
   self.refresh_pending_validator_set();
   self.advance_nonce(tx.sender)
  }
@@ -2329,8 +2338,14 @@ mod m330_public_chain_id_boundary_tests {
   let release_height=self.height.checked_add(UNBONDING_COOLDOWN).ok_or(StateError::ArithmeticOverflow)?;
   let unbonding_id=freedom_primitives::hash_bytes(&[b"FREEDOM-UNBONDING-V1".as_slice(),&id,&tx.sender,&tx.nonce.to_le_bytes(),&p.amount.to_le_bytes(),&release_height.to_le_bytes()].concat());
   if self.unbonding.contains_key(&unbonding_id){return Err(StateError::InvalidUnbonding)}
+  let v=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?;
+  let next_stake=v.stake.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_unbonding=v.unbonding_stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+
+  // Preflight validator arithmetic before mutating stake/unbonding state.
   let v=self.validators.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
-  v.stake-=p.amount;v.unbonding_stake=v.unbonding_stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  v.stake=next_stake;
+  v.unbonding_stake=next_unbonding;
   self.unbonding.insert(unbonding_id,UnbondingEntry{unbonding_id,validator_id:id,owner,amount:p.amount,requested_height:self.height,release_height});
   self.refresh_pending_validator_set();
   self.advance_nonce(tx.sender)
