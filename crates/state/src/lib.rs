@@ -1600,7 +1600,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn validate_bitcoin_compact_utxo_transition(&self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,proof:&freedom_types::BitcoinUtxoSmtUpdateProof)->Result<(),StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  let expected_height=canonical.height.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  block.verify_against_parent(canonical.block_hash,expected_height).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if proof.previous_root==[0;32]||proof.next_root==[0;32]||!proof.verify(){return Err(StateError::InvalidBridgeWithdrawal);} if let Some(attestation)=self.bitcoin_utxo_attestations.get(&bridge_id){if proof.previous_root!=attestation.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}}
   Ok(())
  }
