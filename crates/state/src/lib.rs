@@ -1691,7 +1691,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   }
   Ok(replay_key)
  }
- pub fn mint_bridge_authorized(
+ pub(crate) fn mint_bridge_authorized(
   &mut self,
   message: &BridgeMessage,
   deposit: &VerifiedDeposit,
@@ -1880,7 +1880,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   Ok(())
  }
 
- pub fn request_bridge_withdrawal(&mut self, withdrawal:BridgeWithdrawal)->Result<Hash,StateError>{
+ pub(crate) fn request_bridge_withdrawal(&mut self, withdrawal:BridgeWithdrawal)->Result<Hash,StateError>{
   if withdrawal.destination_chain_id==freedom_primitives::CHAIN_ID || withdrawal.amount==0 || withdrawal.sender==[0;32] || withdrawal.recipient.is_empty() || !withdrawal.validate_hash() || withdrawal.compute_id()!=withdrawal.withdrawal_id { return Err(StateError::InvalidBridgeWithdrawal); }
   let asset=self.asset_registry.get(&withdrawal.asset_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if asset.asset_type!=AssetType::Bridged || asset.status!=AssetStatus::Active || asset.source_chain_id!=withdrawal.destination_chain_id || asset.bridge_id!=withdrawal.bridge_id { return Err(StateError::InvalidBridgeWithdrawal); }
@@ -1897,7 +1897,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   self.bridge_nonce_registry.entry(nonce_key).or_default().insert(withdrawal.nonce);
   Ok(id)
  }
- pub fn approve_bridge_with_authenticated_set(&mut self,id:Hash,request_id:Hash)->Result<(),StateError>{
+ pub(crate) fn approve_bridge_with_authenticated_set(&mut self,id:Hash,request_id:Hash)->Result<(),StateError>{
   let current=*self.bridge_withdrawal_status.get(&id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if current!=BridgeWithdrawalStatus::Validated { return Err(StateError::InvalidBridgeWithdrawalTransition); }
   let w=self.bridge_withdrawals.get(&id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -1922,7 +1922,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   self.bridge_withdrawal_status.insert(id,BridgeWithdrawalStatus::Approved);
   Ok(())
  }
- pub fn advance_bridge_withdrawal(&mut self,id:Hash,next:BridgeWithdrawalStatus)->Result<(),StateError>{
+ pub(crate) fn advance_bridge_withdrawal(&mut self,id:Hash,next:BridgeWithdrawalStatus)->Result<(),StateError>{
   let current=*self.bridge_withdrawal_status.get(&id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if !self.bridge_withdrawals.contains_key(&id) { return Err(StateError::InvalidBridgeWithdrawal); }
   let allowed=match (current,next){
