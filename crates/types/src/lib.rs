@@ -7991,3 +7991,78 @@ mod m402_bitcoin_compact_target_canonical_tests {
         assert!(BitcoinBlockHeader::target_from_bits(0x03_00_0001).is_some());
     }
 }
+
+
+#[cfg(test)]
+mod m403_bitcoin_difficulty_window_binding_tests {
+    use super::*;
+
+    fn context_with_window(mismatch_height: Option<u64>) -> BitcoinChainContext {
+        let base_header = BitcoinBlockHeader {
+            version: 1,
+            previous_block_hash: [1; 32],
+            merkle_root: [2; 32],
+            timestamp: 1,
+            bits: 0x1d00_ffff,
+            nonce: 1,
+        };
+        let chain_header = BitcoinBlockHeader {
+            version: 1,
+            previous_block_hash: [3; 32],
+            merkle_root: [4; 32],
+            timestamp: 2,
+            bits: 0x1d00_ffff,
+            nonce: 2,
+        };
+
+        let base_headers = vec![base_header.clone()];
+        let headers = vec![chain_header.clone(); 19];
+        let mut window_headers = vec![BitcoinBlockHeader {
+            version: 1,
+            previous_block_hash: [9; 32],
+            merkle_root: [8; 32],
+            timestamp: 9,
+            bits: 0x1d00_ffff,
+            nonce: 9,
+        }; BitcoinDifficultyWindow::INTERVAL as usize];
+
+        window_headers[1] = base_header;
+        for height in 2..=20 {
+            window_headers[height as usize] = chain_header.clone();
+        }
+
+        if let Some(height) = mismatch_height {
+            window_headers[height as usize].nonce = 99;
+        }
+
+        BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinNetworkCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 1,
+                block_hash: [5; 32],
+            },
+            start_height: 2,
+            base_start_height: 1,
+            base_headers,
+            tip_height: 20,
+            tip_hash: [6; 32],
+            max_future_timestamp: u32::MAX,
+            headers,
+            difficulty_windows: vec![BitcoinDifficultyWindow {
+                start_height: 0,
+                headers: window_headers,
+            }],
+        }
+    }
+
+    #[test]
+    fn difficulty_window_binding_accepts_matching_canonical_overlap() {
+        assert!(context_with_window(None).validate_difficulty_window_bindings());
+    }
+
+    #[test]
+    fn difficulty_window_binding_rejects_header_mismatch_inside_overlap() {
+        assert!(!context_with_window(Some(10)).validate_difficulty_window_bindings());
+    }
+}
