@@ -1651,12 +1651,12 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    Err(_)=>Err(StateError::InvalidBridgeWithdrawal)
   }
  }
- pub fn register_bridge_security_policy(&mut self, policy:BridgeSecurityPolicy)->Result<(),StateError>{
+ pub(crate) fn register_bridge_security_policy(&mut self, policy:BridgeSecurityPolicy)->Result<(),StateError>{
   if !policy.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
   if self.bridge_security_policies.contains_key(&policy.bridge_id){return Err(StateError::InvalidBridgeWithdrawal);}
   self.bridge_security_policies.insert(policy.bridge_id,policy); Ok(())
  }
- pub fn record_bridge_approval_set(&mut self, set:BridgeApprovalSet)->Result<(),StateError>{
+ pub(crate) fn record_bridge_approval_set(&mut self, set:BridgeApprovalSet)->Result<(),StateError>{
   if set.request_id==[0;32]||set.approvals.is_empty(){return Err(StateError::InvalidBridgeWithdrawal);}
   if self.bridge_approval_sets.contains_key(&set.request_id){return Err(StateError::DuplicateBridgeWithdrawal);}
   let policy_id=set.approvals.first().map(|a|a.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -1846,13 +1846,13 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   Ok(authorization.amount)
  }
 
- pub fn record_bridge_message(&mut self, message:BridgeMessage)->Result<Hash,StateError>{
+ pub(crate) fn record_bridge_message(&mut self, message:BridgeMessage)->Result<Hash,StateError>{
   let replay_key=self.validate_bridge_message(&message)?;
   self.processed_bridge_messages.insert(replay_key,message);
   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Verified);
   Ok(replay_key)
  }
- pub fn accept_bridge_message(&mut self,replay_key:Hash)->Result<(),StateError>{
+ pub(crate) fn accept_bridge_message(&mut self,replay_key:Hash)->Result<(),StateError>{
   let message=self.processed_bridge_messages.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
   if message.replay_key()!=replay_key {
    return Err(StateError::InvalidBridgeMessage);
@@ -1864,7 +1864,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Accepted);
   Ok(())
  }
- pub fn mark_bridge_message_minted(&mut self,replay_key:Hash)->Result<(),StateError>{
+ pub(crate) fn mark_bridge_message_minted(&mut self,replay_key:Hash)->Result<(),StateError>{
   let status=self.bridge_message_status.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
   if *status != BridgeMessageStatus::Accepted { return Err(StateError::InvalidBridgeMessage); }
   if !self.processed_bridge_messages.contains_key(&replay_key) { return Err(StateError::InvalidBridgeMessage); }
