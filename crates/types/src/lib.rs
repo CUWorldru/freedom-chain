@@ -2032,7 +2032,9 @@ impl BitcoinMerkleVerification {
         proof: &BitcoinUtxoProof,
         expected_merkle_root: Hash,
     ) -> Result<Self, BridgeAdapterError> {
-        if !proof.validate_transaction_binding() || proof.merkle_branch.is_empty() {
+        if !proof.validate_transaction_binding()
+            || !bitcoin_merkle_index_is_valid(&proof.merkle_branch, proof.merkle_index)
+        {
             return Err(BridgeAdapterError::InvalidProof);
         }
 
@@ -2678,6 +2680,9 @@ impl BitcoinUtxoProof {
             .block_header
             .as_ref()
             .ok_or(BridgeAdapterError::InvalidProof)?;
+        if !bitcoin_merkle_index_is_valid(&self.merkle_branch, self.merkle_index) {
+            return Err(BridgeAdapterError::InvalidProof);
+        }
         if header.merkle_root != bitcoin_merkle_root(
             self.tx_hash,
             &self.merkle_branch,
@@ -2710,6 +2715,9 @@ impl BitcoinUtxoProof {
         let Some(header) = self.block_header.as_ref() else {
             return false;
         };
+        if !bitcoin_merkle_index_is_valid(&self.merkle_branch, self.merkle_index) {
+            return false;
+        }
         if header.merkle_root
             != bitcoin_merkle_root(self.tx_hash, &self.merkle_branch, self.merkle_index)
         {
@@ -7516,6 +7524,51 @@ mod m392_bitcoin_reorg_evidence_binding_tests {
         let e=evidence(11,[9;32]);
         let policy=BitcoinReorgPolicy{elevated_confirmations:2,critical_chainwork_margin:[1;32]};
         assert_eq!(policy.classify(&checkpoint,&e),BitcoinReorgSeverity::Normal);
+    }
+}
+
+#[cfg(test)]
+mod m395_bitcoin_merkle_verifier_boundary_tests {
+    use super::*;
+
+    fn proof(index: u32) -> BitcoinUtxoProof {
+        let tx_hash = [1; 32];
+        let sibling = [2; 32];
+        let root = bitcoin_merkle_root(tx_hash, &[sibling], index);
+        BitcoinUtxoProof {
+            bridge_id: [3; 32],
+            chain_id: BITCOIN_MAINNET_CHAIN_ID,
+            tx_hash,
+            vout: 0,
+            amount_sat: 1,
+            block_height: 1,
+            confirmations: 1,
+            merkle_branch: vec![sibling],
+            merkle_index: index,
+            script_pubkey: vec![1],
+            raw_transaction: vec![],
+            block_header: Some(BitcoinBlockHeader {
+                version: 1,
+                previous_block_hash: [4; 32],
+                merkle_root: root,
+                timestamp: 1,
+                bits: 0x207f_ffff,
+                nonce: 0,
+            }),
+        }
+    }
+
+    #[test]
+    fn direct_block_header_verifier_rejects_index_above_branch_depth() {
+        assert_eq!(
+            proof(2).verify_block_header(),
+            Err(BridgeAdapterError::InvalidProof)
+        );
+    }
+
+    #[test]
+    fn chain_binding_rejects_index_above_branch_depth() {
+        assert!(!proof(2).validate_bitcoin_chain_binding());
     }
 }
 
