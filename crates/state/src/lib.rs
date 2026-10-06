@@ -2408,9 +2408,56 @@ mod m330_public_chain_id_boundary_tests {
   self.advance_nonce(tx.sender)
  }
  fn advance_nonce(&mut self,s:Address)->Result<(),StateError>{let a=self.accounts.get_mut(&s).ok_or(StateError::AccountNotFound)?;a.nonce=a.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;Ok(())}
- fn execute_transfer(&mut self,tx:&Transaction)->Result<(),StateError>{let balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance;let t=TransferPayload::decode(&tx.payload).map_err(|_|StateError::InvalidTransferPayload)?;if t.to==[0;32]{return Err(StateError::InvalidRecipient)}let cost=t.amount.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;if balance<cost{return Err(StateError::InsufficientBalance)}let nb=balance-cost;if t.to==tx.sender{let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;a.balance=nb.checked_add(t.amount).ok_or(StateError::ArithmeticOverflow)?}else{let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;a.balance=nb;let r=self.accounts.entry(t.to).or_insert(Account{address:t.to,public_key:[0;32],nonce:0,balance:0,locked:0,staked:0});r.balance=r.balance.checked_add(t.amount).ok_or(StateError::ArithmeticOverflow)?}self.supply.circulating=self.supply.circulating.checked_sub(tx.fee).ok_or(StateError::ArithmeticOverflow)?;self.supply.treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;self.events.push(Event::NativeAssetTransferred{from:tx.sender,to:t.to,amount:t.amount});self.advance_nonce(tx.sender)}
- fn register_node(&mut self,tx:&Transaction)->Result<(),StateError>{let p=RegisterNodePayload::decode(&tx.payload).map_err(|_|StateError::InvalidNodePayload)?;if p.node_id==[0;32]{return Err(StateError::InvalidNode)}if self.nodes.contains_key(&p.node_id){return Err(StateError::DuplicateNode)}self.nodes.insert(p.node_id,Node{node_id:p.node_id,owner:tx.sender,capabilities:p.capabilities,reputation:100,total_wu:0,successful_tasks:0,failed_tasks:0});self.advance_nonce(tx.sender)}
- fn submit_contribution(&mut self,tx:&Transaction)->Result<(),StateError>{let p=SubmitContributionPayload::decode(&tx.payload).map_err(|_|StateError::InvalidContributionPayload)?;if p.contribution_id==[0;32]||p.task_id==[0;32]||p.node_id==[0;32]{return Err(StateError::InvalidContribution)}if p.work_units==0{return Err(StateError::InvalidWorkUnits)}if p.quality_score>10000{return Err(StateError::InvalidQualityScore)}if self.contributions.contains_key(&p.contribution_id){return Err(StateError::DuplicateContribution)}let node=self.nodes.get(&p.node_id).ok_or(StateError::InvalidNode)?;if node.owner!=tx.sender{return Err(StateError::InvalidNode)}self.contributions.insert(p.contribution_id,Contribution{contribution_id:p.contribution_id,node_id:p.node_id,task_id:p.task_id,work_units:p.work_units,quality_score:p.quality_score,verification_score:0,result_hash:p.result_hash,verifier_set:Vec::new(),status:ContributionStatus::Submitted,reward_id:None,reward_amount:0});self.advance_nonce(tx.sender)}
+ fn execute_transfer(&mut self,tx:&Transaction)->Result<(),StateError>{
+  let balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance;
+  let t=TransferPayload::decode(&tx.payload).map_err(|_|StateError::InvalidTransferPayload)?;
+  if t.to==[0;32]{return Err(StateError::InvalidRecipient)}
+  let cost=t.amount.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+  if balance<cost{return Err(StateError::InsufficientBalance)}
+  let nb=balance-cost;
+  let sender_next_nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let fee_supply=self.supply.circulating.checked_sub(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+  let treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+  if t.to==tx.sender {
+   let restored=nb.checked_add(t.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+   a.balance=restored;
+   a.nonce=sender_next_nonce;
+  } else {
+   let recipient_balance=self.accounts.get(&t.to).map(|a|a.balance).unwrap_or(0);
+   let next_recipient=recipient_balance.checked_add(t.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+   a.balance=nb;a.nonce=sender_next_nonce;
+   let r=self.accounts.entry(t.to).or_insert(Account{address:t.to,public_key:[0;32],nonce:0,balance:0,locked:0,staked:0});
+   r.balance=next_recipient;
+  }
+  self.supply.circulating=fee_supply;
+  self.supply.treasury=treasury;
+  self.events.push(Event::NativeAssetTransferred{from:tx.sender,to:t.to,amount:t.amount});
+  Ok(())
+ }
+ fn register_node(&mut self,tx:&Transaction)->Result<(),StateError>{
+  let p=RegisterNodePayload::decode(&tx.payload).map_err(|_|StateError::InvalidNodePayload)?;
+  if p.node_id==[0;32]{return Err(StateError::InvalidNode)}
+  if self.nodes.contains_key(&p.node_id){return Err(StateError::DuplicateNode)}
+  let next_nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  self.nodes.insert(p.node_id,Node{node_id:p.node_id,owner:tx.sender,capabilities:p.capabilities,reputation:100,total_wu:0,successful_tasks:0,failed_tasks:0});
+  self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce=next_nonce;
+  Ok(())
+ }
+ fn submit_contribution(&mut self,tx:&Transaction)->Result<(),StateError>{
+  let p=SubmitContributionPayload::decode(&tx.payload).map_err(|_|StateError::InvalidContributionPayload)?;
+  if p.contribution_id==[0;32]||p.task_id==[0;32]||p.node_id==[0;32]{return Err(StateError::InvalidContribution)}
+  if p.work_units==0{return Err(StateError::InvalidWorkUnits)}
+  if p.quality_score>10000{return Err(StateError::InvalidQualityScore)}
+  if self.contributions.contains_key(&p.contribution_id){return Err(StateError::DuplicateContribution)}
+  let node=self.nodes.get(&p.node_id).ok_or(StateError::InvalidNode)?;
+  if node.owner!=tx.sender{return Err(StateError::InvalidNode)}
+  let next_nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  self.contributions.insert(p.contribution_id,Contribution{contribution_id:p.contribution_id,node_id:p.node_id,task_id:p.task_id,work_units:p.work_units,quality_score:p.quality_score,verification_score:0,result_hash:p.result_hash,verifier_set:Vec::new(),status:ContributionStatus::Submitted,reward_id:None,reward_amount:0});
+  self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce=next_nonce;
+  Ok(())
+ }
  pub(crate) fn verify_contribution(&mut self,id:Hash,verifiers:Vec<Hash>,score:u32)->Result<(),StateError>{if verifiers.is_empty()||score>10000{return Err(StateError::InvalidVerification)}if verifiers.iter().any(|v|!self.validators.contains_key(v)){return Err(StateError::InvalidVerification)}let(node_id,wu)={let c=self.contributions.get(&id).ok_or(StateError::InvalidContribution)?;if c.status!=ContributionStatus::Submitted{return Err(StateError::AlreadyVerified)}(c.node_id,c.work_units)};let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;c.verifier_set=verifiers;c.verification_score=score;c.status=ContributionStatus::Verified;let n=self.nodes.get_mut(&node_id).ok_or(StateError::InvalidNode)?;n.total_wu=n.total_wu.checked_add(wu).ok_or(StateError::ArithmeticOverflow)?;n.successful_tasks=n.successful_tasks.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;Ok(())}
  pub(crate) fn claim_reward(&mut self,id:Hash)->Result<(),StateError>{let c=self.contributions.get(&id).ok_or(StateError::InvalidContribution)?.clone();if c.status!=ContributionStatus::Verified{return Err(StateError::ContributionNotRewardable)}if c.reward_id.is_some(){return Err(StateError::DuplicateReward)}let gross=c.work_units.checked_mul(c.quality_score as u128).ok_or(StateError::ArithmeticOverflow)?.checked_mul(c.verification_score as u128).ok_or(StateError::ArithmeticOverflow)?.checked_div(100_000_000).ok_or(StateError::ArithmeticOverflow)?;let remaining=self.epoch_cap.checked_sub(self.epoch_issuance).ok_or(StateError::IssuanceCapExceeded)?;let reward=gross.min(remaining);if reward==0{return Err(StateError::IssuanceCapExceeded)}let reward_id=freedom_primitives::hash_bytes(&[b"FREEDOM-REWARD-V1".as_slice(),&id,&self.epoch.to_le_bytes()].concat());let owner=self.nodes.get(&c.node_id).ok_or(StateError::InvalidNode)?.owner;if self.rewards.contains_key(&reward_id){return Err(StateError::DuplicateReward)}let a=self.accounts.get_mut(&owner).ok_or(StateError::AccountNotFound)?;a.balance=a.balance.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;self.supply.total=self.supply.total.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;self.supply.circulating=self.supply.circulating.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;self.epoch_issuance=self.epoch_issuance.checked_add(reward).ok_or(StateError::ArithmeticOverflow)?;self.rewards.insert(reward_id,Reward{reward_id,owner,contribution_id:id,wu:c.work_units,gross_reward:gross,final_reward:reward,epoch:self.epoch});let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;c.status=ContributionStatus::Rewarded;c.reward_id=Some(reward_id);c.reward_amount=reward;Ok(())}
  pub(crate) fn create_draw(&mut self,config:DrawConfig)->Result<(),StateError>{
