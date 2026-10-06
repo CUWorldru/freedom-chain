@@ -2261,7 +2261,10 @@ impl BitcoinDifficultyWindow {
     pub const MAX_TIMESPAN: u64 = 4_838_400;
 
     pub fn validate(&self) -> bool {
-        if self.start_height % Self::INTERVAL != 0 || self.headers.len() != Self::INTERVAL as usize {
+        if self.start_height % Self::INTERVAL != 0
+            || self.start_height.checked_add(Self::INTERVAL - 1).is_none()
+            || self.headers.len() != Self::INTERVAL as usize
+        {
             return false;
         }
         if self.headers.iter().any(|h| h.timestamp == 0 || !h.validate_pow()) {
@@ -2501,25 +2504,35 @@ impl BitcoinChainContext {
             ) else {
                 return false;
             };
-            let overlap_start = window.start_height.max(context_start);
-            let overlap_end = window_end.min(context_end);
-            if overlap_start > overlap_end {                continue;
+            // A difficulty window influences consensus even when it lies
+            // entirely before the active segment. Such a window must therefore
+            // be fully covered by the canonical context, not merely overlap it.
+            if window.start_height < context_start || window_end > context_end {
+                return false;
             }
 
-            for height in overlap_start..=overlap_end {
-                let window_index = match height.checked_sub(window.start_height) {
-                    Some(value) => value as usize,
+            for offset in 0..BitcoinDifficultyWindow::INTERVAL {
+                let height = match window.start_height.checked_add(offset) {
+                    Some(height) => height,
                     None => return false,
                 };
+                let window_index = match usize::try_from(offset) {
+                    Ok(value) => value,
+                    Err(_) => return false,
+                };
                 let expected_header = if height < self.start_height {
-                    let index = match height.checked_sub(self.base_start_height) {
-                        Some(value) => value as usize,
+                    let index = match height.checked_sub(self.base_start_height)
+                        .and_then(|value| usize::try_from(value).ok())
+                    {
+                        Some(value) => value,
                         None => return false,
                     };
                     self.base_headers.get(index)
                 } else {
-                    let index = match height.checked_sub(self.start_height) {
-                        Some(value) => value as usize,
+                    let index = match height.checked_sub(self.start_height)
+                        .and_then(|value| usize::try_from(value).ok())
+                    {
+                        Some(value) => value,
                         None => return false,
                     };
                     self.headers.get(index)
@@ -5033,5 +5046,107 @@ mod m409_bitcoin_difficulty_window_boundary_tests {
     fn max_non_aligned_context_returns_none_on_overflow() {
         let start = u64::MAX - 100;
         assert_eq!(bitcoin_first_retarget_height(start), None);
+    }
+}
+
+#[cfg(test)]
+mod m410_bitcoin_difficulty_window_canonical_binding_tests {
+    use super::*;
+
+    fn dummy_header() -> BitcoinBlockHeader {
+        BitcoinBlockHeader {
+            version: 1,
+            prev_block_hash: [1; 32],
+            merkle_root: [2; 32],
+            time: 1,
+            bits: 0x1d00_ffff,
+            nonce: 0,
+        }
+    }
+
+    fn context_for_binding_test(
+        base_start_height: u64,
+        start_height: u64,
+        tip_height: u64,
+        base_headers: Vec<BitcoinBlockHeader>,
+        headers: Vec<BitcoinBlockHeader>,
+        window: BitcoinDifficultyWindow,
+    ) -> BitcoinChainContext {
+        BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinNetworkCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 227_931,
+                block_hash: BitcoinNetworkProfile::MAINNET_CHECKPOINTS[0].1,
+            },
+            start_height,
+            base_start_height,
+            base_headers,
+            tip_height,
+            tip_hash: [9; 32],
+            max_future_timestamp: u32::MAX,
+            headers,
+            difficulty_windows: vec![window],
+        }
+    }
+
+    #[test]
+    fn detached_pre_context_difficulty_window_is_rejected() {
+        let context = context_for_binding_test(
+            4032,
+            4033,
+            4033,
+            Vec::new(),
+            Vec::new(),
+            BitcoinDifficultyWindow {
+                start_height: 2016,
+                headers: vec![dummy_header(); BitcoinDifficultyWindow::INTERVAL as usize],
+            },
+        );
+        assert!(!context.validate_difficulty_window_bindings());
+    }
+
+    #[test]
+    fn fully_canonical_difficulty_window_is_accepted() {
+        let canonical = vec![dummy_header(); BitcoinDifficultyWindow::INTERVAL as usize];
+        let context = context_for_binding_test(
+            2016,
+            4032,
+            4032,
+            canonical.clone(),
+            Vec::new(),
+            BitcoinDifficultyWindow {
+                start_height: 2016,
+                headers: canonical,
+            },
+        );
+        assert!(context.validate_difficulty_window_bindings());
+    }
+
+    #[test]
+    fn difficulty_window_cannot_extend_beyond_canonical_context() {
+        let context = context_for_binding_test(
+            2016,
+            4032,
+            4032,
+            vec![dummy_header(); BitcoinDifficultyWindow::INTERVAL as usize],
+            Vec::new(),
+            BitcoinDifficultyWindow {
+                start_height: 2016,
+                headers: vec![dummy_header(); BitcoinDifficultyWindow::INTERVAL as usize],
+            },
+        );
+        let mut truncated = context;
+        truncated.tip_height = 3000;
+        assert!(!truncated.validate_difficulty_window_bindings());
+    }
+
+    #[test]
+    fn difficulty_window_height_range_overflow_is_rejected() {
+        let window = BitcoinDifficultyWindow {
+            start_height: u64::MAX - 100,
+            headers: vec![dummy_header(); BitcoinDifficultyWindow::INTERVAL as usize],
+        };
+        assert!(!window.validate());
     }
 }
