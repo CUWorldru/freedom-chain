@@ -7324,4 +7324,58 @@ mod m387_bitcoin_height_boundary_tests {
 }
 
 #[cfg(test)]
-mod m388_bitcoin_context_height_boundary_tests {\n    use super::*;\n\n    fn checkpoint() -> BitcoinNetworkCheckpoint {\n        BitcoinNetworkCheckpoint {\n            profile: BitcoinNetworkProfile::MAINNET,\n            height: 227_931,\n            block_hash: BitcoinNetworkProfile::MAINNET_CHECKPOINTS[0].1,\n        }\n    }\n\n    #[test]\n    fn context_validation_rejects_base_header_count_overflow() {\n        let context = BitcoinChainContext {\n            profile: BitcoinNetworkProfile::MAINNET,\n            checkpoint: checkpoint(),\n            start_height: u64::MAX,\n            base_start_height: u64::MAX,\n            base_headers: vec![BitcoinBlockHeader {\n                version: 1, previous_block_hash: [0; 32], merkle_root: [0; 32],\n                timestamp: 1, bits: 0x207fffff, nonce: 0,\n            }],\n            tip_height: u64::MAX,\n            tip_hash: [1; 32],\n            max_future_timestamp: u32::MAX,\n            headers: vec![BitcoinBlockHeader {\n                version: 1, previous_block_hash: [0; 32], merkle_root: [0; 32],\n                timestamp: 2, bits: 0x207fffff, nonce: 0,\n            }],\n            difficulty_windows: vec![],\n        };\n        assert!(!context.validate());\n    }\n\n    #[test]\n    fn header_chain_height_addition_is_checked() {\n        let context = BitcoinChainContext {\n            profile: BitcoinNetworkProfile::MAINNET,\n            checkpoint: checkpoint(),\n            start_height: u64::MAX,\n            base_start_height: u64::MAX - 1,\n            base_headers: vec![],\n            tip_height: u64::MAX,\n            tip_hash: [1; 32],\n            max_future_timestamp: u32::MAX,\n            headers: vec![],\n            difficulty_windows: vec![],\n        };\n        let header = BitcoinBlockHeader {\n            version: 1, previous_block_hash: [0; 32], merkle_root: [0; 32],\n            timestamp: 1, bits: 0x207fffff, nonce: 0,\n        };\n        assert_eq!(context.verify_header_chain(u64::MAX, &header), Err(BridgeAdapterError::InvalidProof));\n    }\n}\n
+mod m388_bitcoin_context_height_boundary_tests {
+    use super::*;
+
+    fn checkpoint() -> BitcoinNetworkCheckpoint {
+        BitcoinNetworkCheckpoint {
+            profile: BitcoinNetworkProfile::MAINNET,
+            height: 227_931,
+            block_hash: BitcoinNetworkProfile::MAINNET_CHECKPOINTS[0].1,
+        }
+    }
+
+    #[test]
+    fn context_validation_rejects_base_header_count_overflow() {
+        let context = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: checkpoint(),
+            start_height: u64::MAX,
+            base_start_height: u64::MAX,
+            base_headers: vec![BitcoinBlockHeader {
+                version: 1, previous_block_hash: [0; 32], merkle_root: [0; 32],
+                timestamp: 1, bits: 0x207fffff, nonce: 0,
+            }],
+            tip_height: u64::MAX,
+            tip_hash: [1; 32],
+            max_future_timestamp: u32::MAX,
+            headers: vec![BitcoinBlockHeader {
+                version: 1, previous_block_hash: [0; 32], merkle_root: [0; 32],
+                timestamp: 2, bits: 0x207fffff, nonce: 0,
+            }],
+            difficulty_windows: vec![],
+        };
+        assert!(!context.validate());
+    }
+
+    #[test]
+    fn header_chain_height_addition_is_checked() {
+        let context = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: checkpoint(),
+            start_height: u64::MAX,
+            base_start_height: u64::MAX - 1,
+            base_headers: vec![],
+            tip_height: u64::MAX,
+            tip_hash: [1; 32],
+            max_future_timestamp: u32::MAX,
+            headers: vec![],
+            difficulty_windows: vec![],
+        };
+        let header = BitcoinBlockHeader {
+            version: 1, previous_block_hash: [0; 32], merkle_root: [0; 32],
+            timestamp: 1, bits: 0x207fffff, nonce: 0,
+        };
+        assert_eq!(context.verify_header_chain(u64::MAX, &header), Err(BridgeAdapterError::InvalidProof));
+    }
+}
