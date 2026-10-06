@@ -1,4 +1,5 @@
 use freedom_primitives::{Address, Hash};
+use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -2071,73 +2072,30 @@ impl BitcoinMerkleVerification {
 pub type BitcoinChainWork = [u64; 5];
 
 fn bitcoin_chainwork_add(work: &mut BitcoinChainWork, target: Hash) -> bool {
-    let mut carry = 0u128;
-    let mut add = [0u64; 5];
-    let mut borrow = 0i128;
-    let mut denominator = [0u64; 5];
-    for i in 0..4 {
-        denominator[i] = u64::from_le_bytes(target[i * 8..i * 8 + 8].try_into().unwrap());
-    }
-    let mut value = denominator;
-    let mut one = 1u64;
+    let target_value = BigUint::from_bytes_le(&target);
+    let chain_work = (BigUint::from(1u8) << 256usize)
+        / (target_value + BigUint::from(1u8));
+
+    let mut current = [0u8; 40];
     for i in 0..5 {
-        let (v, c) = value[i].overflowing_add(one);
-        value[i] = v;
-        one = u64::from(c);
+        current[i * 8..i * 8 + 8].copy_from_slice(&work[i].to_le_bytes());
     }
-    if one != 0 {
+    let total = BigUint::from_bytes_le(&current) + chain_work;
+    let bytes = total.to_bytes_le();
+    if bytes.len() > 40 {
         return false;
     }
-    // Long division of 2^256 by (target + 1), yielding a 257-bit quotient.
-    let mut rem = [0u64; 5];
-    for bit in (0..=256).rev() {
-        let word = bit / 64;
-        let offset = bit % 64;
-        if word < 5 {
-            rem[word] |= 1u64 << offset;
-        }
-        let mut ge = true;
-        for j in (0..5).rev() {
-            if rem[j] != value[j] {
-                ge = rem[j] > value[j];
-                break;
-            }
-        }
-        if ge {
-            let mut b = 0u64;
-            for j in 0..5 {
-                let (subtrahend, carry) = value[j].overflowing_add(b);
-                if carry {
-                    b = 1;
-                    let (v, under) = rem[j].overflowing_sub(subtrahend);
-                    rem[j] = v;
-                    if !under {
-                        b = 0;
-                    }
-                } else {
-                    let (v, under) = rem[j].overflowing_sub(subtrahend);
-                    b = u64::from(under);
-                    rem[j] = v;
-                }
-            }
-            if bit < 320 {
-                let qword = bit / 64;
-                let qoff = bit % 64;
-                if qword < 5 {
-                    add[qword] |= 1u64 << qoff;
-                }
-            }
-        }
-    }
+
+    current.fill(0);
+    current[..bytes.len()].copy_from_slice(&bytes);
     for i in 0..5 {
-        let sum = u128::from(work[i]) + u128::from(add[i]) + carry;
-        work[i] = sum as u64;
-        carry = sum >> 64;
+        work[i] = u64::from_le_bytes(
+            current[i * 8..i * 8 + 8]
+                .try_into()
+                .expect("fixed 8-byte chainwork limb"),
+        );
     }
-    if carry != 0 {
-        borrow = 1;
-    }
-    borrow == 0
+    true
 }
 
 pub fn bitcoin_chain_contains_deposit(
@@ -5162,5 +5120,49 @@ mod m410_bitcoin_difficulty_window_canonical_binding_tests {
             headers: vec![dummy_header(); BitcoinDifficultyWindow::INTERVAL as usize],
         };
         assert!(!window.validate());
+    }
+}
+
+#[cfg(test)]
+mod m411_bitcoin_chainwork_exactness_tests {
+    use super::*;
+
+    fn chainwork_for_target(target: u64) -> BitcoinChainWork {
+        let mut encoded = [0u8; 32];
+        encoded[..8].copy_from_slice(&target.to_le_bytes());
+        let mut work = [0u64; 5];
+        assert!(bitcoin_chainwork_add(&mut work, encoded));
+        work
+    }
+
+    #[test]
+    fn chainwork_for_target_one_is_exactly_two_to_the_255() {
+        let work = chainwork_for_target(1);
+        assert_eq!(work, [0, 0, 0, 0, 1u64 << 63]);
+    }
+
+    #[test]
+    fn chainwork_for_target_two_is_exact_floor_division() {
+        let work = chainwork_for_target(2);
+        let expected = BigUint::from(1u8) << 256usize;
+        let expected = expected / BigUint::from(3u8);
+        let mut bytes = [0u8; 40];
+        let encoded = expected.to_bytes_le();
+        bytes[..encoded.len()].copy_from_slice(&encoded);
+        let expected_limbs = [
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+            u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
+        ];
+        assert_eq!(work, expected_limbs);
+    }
+
+    #[test]
+    fn chainwork_addition_rejects_320_bit_overflow() {
+        let mut work = [u64::MAX; 5];
+        assert!(!bitcoin_chainwork_add(&mut work, [0xff; 32]));
+        assert_eq!(work, [u64::MAX; 5]);
     }
 }
