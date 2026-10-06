@@ -5194,6 +5194,8 @@ mod m412_bitcoin_transaction_length_conversion_tests {
     fn oversized_witness_item_length_never_truncates_to_usize() {
         let mut raw = Vec::new();
         raw.extend_from_slice(&1i32.to_le_bytes());
+        raw.extend_from_slice(&[0u8, 1u8]);
+        raw.push(1);
         raw.extend_from_slice(&[0u8; 32]);
         raw.extend_from_slice(&0u32.to_le_bytes());
         raw.push(0);
