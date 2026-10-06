@@ -1960,29 +1960,47 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn bitcoin_deposit_allowed(&self,bridge_id:Hash)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)}
  pub(crate) fn record_verified_external_lock(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 || !self.asset_registry.contains_key(&asset_id) { return Err(StateError::InvalidBridgeAccounting); }
-  let a=self.bridge_accounting.entry(asset_id).or_default();
-  a.verified_external_locked=a.verified_external_locked.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?; self.validate_bridge_accounting(asset_id)
+  let current=self.bridge_accounting.get(&asset_id).cloned().unwrap_or_default();
+  let mut next=current.clone();
+  next.verified_external_locked=next.verified_external_locked.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
+  if next.freedom_minted>next.verified_external_locked || next.freedom_burned>next.freedom_minted || next.external_released>next.freedom_burned {
+   return Err(StateError::InvalidBridgeAccounting);
+  }
+  self.bridge_accounting.insert(asset_id,next);
+  Ok(())
  }
  pub(crate) fn record_freedom_mint(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 { return Err(StateError::InvalidBridgeAccounting); }
-  let a=self.bridge_accounting.entry(asset_id).or_default();
-  let next=a.freedom_minted.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
-  if next>a.verified_external_locked { return Err(StateError::InvalidBridgeAccounting); }
-  a.freedom_minted=next; self.validate_bridge_accounting(asset_id)
+  let current=self.bridge_accounting.get(&asset_id).cloned().unwrap_or_default();
+  let mut next_accounting=current.clone();
+  next_accounting.freedom_minted=next_accounting.freedom_minted.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
+  if next_accounting.freedom_minted>next_accounting.verified_external_locked || next_accounting.freedom_burned>next_accounting.freedom_minted || next_accounting.external_released>next_accounting.freedom_burned {
+   return Err(StateError::InvalidBridgeAccounting);
+  }
+  self.bridge_accounting.insert(asset_id,next_accounting);
+  Ok(())
  }
  pub(crate) fn record_freedom_burn(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 { return Err(StateError::InvalidBridgeAccounting); }
-  let a=self.bridge_accounting.entry(asset_id).or_default();
-  let next=a.freedom_burned.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
-  if next>a.freedom_minted { return Err(StateError::InvalidBridgeAccounting); }
-  a.freedom_burned=next; self.validate_bridge_accounting(asset_id)
+  let current=self.bridge_accounting.get(&asset_id).cloned().unwrap_or_default();
+  let mut next_accounting=current.clone();
+  next_accounting.freedom_burned=next_accounting.freedom_burned.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
+  if next_accounting.freedom_burned>next_accounting.freedom_minted || next_accounting.external_released>next_accounting.freedom_burned || next_accounting.freedom_minted>next_accounting.verified_external_locked {
+   return Err(StateError::InvalidBridgeAccounting);
+  }
+  self.bridge_accounting.insert(asset_id,next_accounting);
+  Ok(())
  }
  pub(crate) fn record_external_release(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 { return Err(StateError::InvalidBridgeAccounting); }
-  let a=self.bridge_accounting.entry(asset_id).or_default();
-  let next=a.external_released.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
-  if next>a.freedom_burned { return Err(StateError::InvalidBridgeAccounting); }
-  a.external_released=next; self.validate_bridge_accounting(asset_id)
+  let current=self.bridge_accounting.get(&asset_id).cloned().unwrap_or_default();
+  let mut next_accounting=current.clone();
+  next_accounting.external_released=next_accounting.external_released.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
+  if next_accounting.external_released>next_accounting.freedom_burned || next_accounting.freedom_burned>next_accounting.freedom_minted || next_accounting.freedom_minted>next_accounting.verified_external_locked {
+   return Err(StateError::InvalidBridgeAccounting);
+  }
+  self.bridge_accounting.insert(asset_id,next_accounting);
+  Ok(())
  }
  pub fn validate_bridge_accounting(&self,asset_id:Hash)->Result<(),StateError>{
   let a=self.bridge_accounting.get(&asset_id).cloned().unwrap_or_default();
