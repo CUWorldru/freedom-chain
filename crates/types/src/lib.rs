@@ -3037,13 +3037,16 @@ pub fn bitcoin_validate_from_checkpoint(checkpoint:&BitcoinChainCheckpoint,heade
     if headers[0].prev_block_hash!=checkpoint.block_hash{return Err(BitcoinCheckpointError::LinkageMismatch);}
     let end_height=checkpoint.height.checked_add(headers.len() as u64).ok_or(BitcoinCheckpointError::HeightMismatch)?;
     let work=bitcoin_chainwork(headers).map_err(|_|BitcoinCheckpointError::InsufficientChainwork)?;
-    let total=bitcoin_add_chainwork(checkpoint.chainwork,work);
+    let Some(total)=bitcoin_add_chainwork(checkpoint.chainwork,work) else {
+        return Err(BitcoinCheckpointError::HeightMismatch);
+    };
     if total<=checkpoint.chainwork{return Err(BitcoinCheckpointError::InsufficientChainwork);}
     Ok(BitcoinChainCheckpoint{height:end_height,block_hash:headers.last().unwrap().block_hash(),chainwork:total})
 }
-fn bitcoin_add_chainwork(a:[u8;32],b:[u8;32])->[u8;32]{
+fn bitcoin_add_chainwork(a:[u8;32],b:[u8;32])->Option<[u8;32]>{
     let mut out=[0u8;32];let mut carry=0u16;
-    for i in (0..32).rev(){let x=a[i] as u16+b[i] as u16+carry;out[i]=(x&0xff) as u8;carry=x>>8;}out
+    for i in (0..32).rev(){let x=a[i] as u16+b[i] as u16+carry;out[i]=(x&0xff) as u8;carry=x>>8;}
+    if carry!=0 { None } else { Some(out) }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub const BITCOIN_REORG_EVIDENCE_LIMIT:usize=32;
@@ -3095,7 +3098,7 @@ pub struct BitcoinReorgReport { pub checkpoint_height:u64, pub checkpoint_hash:H
 pub fn bitcoin_evaluate_reorg(checkpoint:&BitcoinChainCheckpoint,headers:&[BitcoinBlockHeader])->Result<BitcoinReorgReport,BitcoinCheckpointError>{
  if !checkpoint.validate(){return Err(BitcoinCheckpointError::InvalidCheckpoint);} if headers.is_empty(){return Err(BitcoinCheckpointError::EmptyHeaders);}
  let work=bitcoin_chainwork(headers).map_err(|_|BitcoinCheckpointError::InsufficientChainwork)?;
- let candidate_work=bitcoin_add_chainwork(checkpoint.chainwork,work);
+ let candidate_work=bitcoin_add_chainwork(checkpoint.chainwork,work).ok_or(BitcoinCheckpointError::HeightMismatch)?;
  let tip=bitcoin_validate_from_checkpoint(checkpoint,headers).map_err(|e|if e==BitcoinCheckpointError::LinkageMismatch{BitcoinCheckpointError::ReorgDetected}else{e})?;
  Ok(BitcoinReorgReport{checkpoint_height:checkpoint.height,checkpoint_hash:checkpoint.block_hash,candidate_tip_height:tip.height,candidate_tip_hash:tip.block_hash,candidate_chainwork:candidate_work})
 }
@@ -7444,5 +7447,22 @@ mod m390_bitcoin_merkle_index_boundary_tests {
             block_header:BitcoinBlockHeader{version:1,prev_block_hash:[4;32],merkle_root:root,time:1,bits:1,nonce:1},
         };
         assert!(p.verify(1));
+    }
+}
+
+#[cfg(test)]
+mod m391_bitcoin_chainwork_overflow_tests {
+    use super::*;
+
+    #[test]
+    fn chainwork_addition_rejects_256_bit_overflow(){
+        assert_eq!(bitcoin_add_chainwork([0xff;32],[1;32]),None);
+    }
+
+    #[test]
+    fn chainwork_addition_preserves_non_overflowing_sum(){
+        let mut expected=[0u8;32];
+        expected[31]=2;
+        assert_eq!(bitcoin_add_chainwork([0;32],[2;32]),Some(expected));
     }
 }
