@@ -5107,19 +5107,33 @@ mod m410_bitcoin_difficulty_window_canonical_binding_tests {
     }
 
     #[test]
-    fn fully_canonical_difficulty_window_is_accepted() {
-        let canonical = vec![dummy_header(); BitcoinDifficultyWindow::INTERVAL as usize];
-        let context = context_for_binding_test(
-            2016,
-            4032,
-            4032,
-            canonical.clone(),
-            Vec::new(),
-            BitcoinDifficultyWindow {
-                start_height: 2016,
-                headers: canonical,
+    fn fully_canonical_difficulty_windows_are_accepted() {
+        let canonical = vec![dummy_header(); 4032];
+        let context = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinNetworkCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 227_931,
+                block_hash: BitcoinNetworkProfile::MAINNET_CHECKPOINTS[0].1,
             },
-        );
+            start_height: 4032,
+            base_start_height: 0,
+            base_headers: canonical.clone(),
+            tip_height: 4032,
+            tip_hash: [9; 32],
+            max_future_timestamp: u32::MAX,
+            headers: Vec::new(),
+            difficulty_windows: vec![
+                BitcoinDifficultyWindow {
+                    start_height: 0,
+                    headers: canonical[..2016].to_vec(),
+                },
+                BitcoinDifficultyWindow {
+                    start_height: 2016,
+                    headers: canonical[2016..4032].to_vec(),
+                },
+            ],
+        };
         assert!(context.validate_difficulty_window_bindings());
     }
 
