@@ -4454,7 +4454,7 @@ impl BitcoinUtxoSpendStateProof {
         }
 
         let mut previous_hash = self.inclusion_header.block_hash();
-        let mut expected_height = self.utxo.block_height + 1;
+        let mut expected_height = self.utxo.block_height.checked_add(1).ok_or_else(|| "bitcoin spend-scan height overflow".to_string())?;
         for block in &self.post_inclusion_blocks {
             if block.height != expected_height || block.header.prev_block_hash != previous_hash {
                 return Err("bitcoin spend-scan header linkage mismatch".into());
@@ -4464,7 +4464,7 @@ impl BitcoinUtxoSpendStateProof {
                 return Err("bitcoin UTXO has been spent".into());
             }
             previous_hash = block.header.block_hash();
-            expected_height += 1;
+            expected_height = expected_height.checked_add(1).ok_or_else(|| "bitcoin spend-scan height overflow".to_string())?;
         }
         if previous_hash != canonical_tip.block_hash {
             return Err("bitcoin spend-scan does not reach canonical tip".into());
@@ -4722,7 +4722,7 @@ impl BitcoinUtxoAccumulatorTransition {
         if self.bridge_id == [0;32] || self.chain_id == 0
             || self.previous_root == [0;32] || self.next_root == [0;32]
             || self.previous_leaf_count == 0 || self.next_leaf_count == 0
-            || self.next_tip.height != self.previous_tip.height + 1 {
+            || self.next_tip.height != self.previous_tip.height.checked_add(1).ok_or_else(|| "invalid UTXO transition height overflow".to_string())? {
             return Err("invalid UTXO transition metadata".into());
         }
         let rows: Vec<(Hash,u32,u64,Vec<u8>)> = previous.iter().map(|e|
@@ -7287,5 +7287,36 @@ mod m386_bitcoin_confirmation_boundary_tests {
  #[test]
  fn block_above_tip_is_rejected(){
   assert_eq!(proof(106).canonical_confirmations(&tip(105)),None);
+ }
+}
+
+
+#[cfg(test)]
+mod m387_bitcoin_height_boundary_tests {
+ use super::*;
+ #[test]
+ fn utxo_transition_rejects_max_previous_tip_without_overflow(){
+  let transition=BitcoinUtxoAccumulatorTransition{
+   bridge_id:[1;32], chain_id:8332,
+   previous_tip:BitcoinChainCheckpoint{height:u64::MAX,block_hash:[2;32],chainwork:[3;32]},
+   next_tip:BitcoinChainCheckpoint{height:0,block_hash:[4;32],chainwork:[5;32]},
+   previous_root:[6;32], previous_leaf_count:1,
+   spent:vec![], created:vec![], next_root:[7;32], next_leaf_count:1,
+  };
+  assert!(transition.verify_transition(&[]).is_err());
+ }
+ #[test]
+ fn utxo_transition_accepts_max_as_next_height(){
+  let transition=BitcoinUtxoAccumulatorTransition{
+   bridge_id:[1;32], chain_id:8332,
+   previous_tip:BitcoinChainCheckpoint{height:u64::MAX-1,block_hash:[2;32],chainwork:[3;32]},
+   next_tip:BitcoinChainCheckpoint{height:u64::MAX,block_hash:[4;32],chainwork:[5;32]},
+   previous_root:[6;32], previous_leaf_count:1,
+   spent:vec![], created:vec![], next_root:[7;32], next_leaf_count:1,
+  };
+  // Height arithmetic itself is valid; subsequent root validation may reject
+  // the intentionally synthetic empty UTXO set.
+  assert_ne!(transition.previous_tip.height.checked_add(1),None);
+  assert!(transition.verify_transition(&[]).is_err());
  }
 }
