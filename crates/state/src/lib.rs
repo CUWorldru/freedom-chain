@@ -1822,10 +1822,19 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     return Err(StateError::InvalidBridgeMessage);
   }
 
-  let accounting_entry = self.bridge_accounting.entry(authorization.canonical_asset_id).or_default();
-  accounting_entry.freedom_minted = next_minted;
-  self.validate_bridge_accounting(authorization.canonical_asset_id)?;
+  // Preflight the resulting bridge-accounting state before mutating it.
+  // The post-mint invariant must hold even if the transaction later exits
+  // through an error path.
+  let mut next_accounting = accounting.clone();
+  next_accounting.freedom_minted = next_minted;
+  if next_accounting.freedom_burned > next_accounting.freedom_minted
+    || next_accounting.external_released > next_accounting.freedom_burned
+    || next_accounting.freedom_minted > next_accounting.verified_external_locked
+  {
+    return Err(StateError::InvalidBridgeAccounting);
+  }
 
+  self.bridge_accounting.insert(authorization.canonical_asset_id, next_accounting);
   let account = self.accounts.entry(authorization.recipient).or_insert(Account {
     address: authorization.recipient,
     public_key: [0; 32],
