@@ -2246,8 +2246,8 @@ impl BitcoinDifficultyWindow {
         }
         let first = self.headers.first()?;
         let last = self.headers.last()?;
-        let mut actual = u64::from(last.timestamp.saturating_sub(first.timestamp));
-        actual = actual.clamp(Self::MIN_TIMESPAN, Self::MAX_TIMESPAN);
+        let actual_timespan = last.timestamp.checked_sub(first.timestamp).unwrap_or(0);
+        let actual = u64::from(actual_timespan).clamp(Self::MIN_TIMESPAN, Self::MAX_TIMESPAN);
         let old_target = BitcoinBlockHeader::target_from_bits(last.bits)?;
         let new_target = bitcoin_target_mul_div(old_target, actual, Self::TARGET_TIMESPAN);
         let pow_limit = BitcoinBlockHeader::target_from_bits(0x1d00_ffff)?;
