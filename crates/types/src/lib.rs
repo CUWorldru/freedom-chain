@@ -2441,6 +2441,7 @@ impl BitcoinChainContext {
             && !self.headers.is_empty()
             && self.difficulty_windows.iter().all(BitcoinDifficultyWindow::validate)
             && self.validate_difficulty_window_bindings()
+            && self.validate_header_difficulty_rules()
             && self.validate_timestamp_rules()
             && self.verify_checkpoint_anchor()
     }
@@ -2519,6 +2520,36 @@ impl BitcoinChainContext {
                     return false;
                 }
             }
+        }
+        true
+    }
+
+    fn validate_header_difficulty_rules(&self) -> bool {
+        let mut previous_bits = None;
+        let mut all = Vec::with_capacity(self.base_headers.len() + self.headers.len());
+        all.extend_from_slice(&self.base_headers);
+        all.extend_from_slice(&self.headers);
+
+        for (index, header) in all.iter().enumerate() {
+            let Some(height) = self.base_start_height.checked_add(index as u64) else {
+                return false;
+            };
+            let expected_bits = if height % BitcoinDifficultyWindow::INTERVAL == 0 {
+                let fallback = previous_bits.unwrap_or(header.bits);
+                match self.expected_bits_for_height(height, fallback) {
+                    Some(bits) => bits,
+                    None => return false,
+                }
+            } else {
+                match previous_bits {
+                    Some(bits) => bits,
+                    None => header.bits,
+                }
+            };
+            if header.bits != expected_bits {
+                return false;
+            }
+            previous_bits = Some(header.bits);
         }
         true
     }
