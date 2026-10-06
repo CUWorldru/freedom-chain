@@ -2110,8 +2110,11 @@ pub fn bitcoin_chain_contains_deposit(
         return false;
     }
 
-    let offset = match deposit_height.checked_sub(chain.start_height) {
-        Some(value) => value as usize,
+    let offset = match deposit_height
+        .checked_sub(chain.start_height)
+        .and_then(|value| usize::try_from(value).ok())
+    {
+        Some(value) => value,
         None => return false,
     };
     if offset >= chain.headers.len() || chain.headers[offset] != *deposit_header {
@@ -2688,12 +2691,26 @@ impl BitcoinChainContext {
         if deposit_height < self.start_height {
             return Err(BridgeAdapterError::InvalidProof);
         }
-        let expected_count = (self.tip_height - self.start_height + 1) as usize;
+        let expected_count = match self
+            .tip_height
+            .checked_sub(self.start_height)
+            .and_then(|value| value.checked_add(1))
+            .and_then(|value| usize::try_from(value).ok())
+        {
+            Some(value) => value,
+            None => return Err(BridgeAdapterError::InvalidProof),
+        };
         if self.headers.len() != expected_count {
             return Err(BridgeAdapterError::InvalidProof);
         }
 
-        let deposit_index = (deposit_height - self.start_height) as usize;
+        let deposit_index = match deposit_height
+            .checked_sub(self.start_height)
+            .and_then(|value| usize::try_from(value).ok())
+        {
+            Some(value) => value,
+            None => return Err(BridgeAdapterError::InvalidProof),
+        };
         if deposit_index >= self.headers.len() || self.headers[deposit_index] != *deposit_header {
             return Err(BridgeAdapterError::InvalidProof);
         }
@@ -5207,5 +5224,69 @@ mod m412_bitcoin_transaction_length_conversion_tests {
         raw.push(0xff);
         raw.extend_from_slice(&u64::MAX.to_le_bytes());
         assert_length_result(BitcoinTransaction::parse(&raw));
+    }
+}
+#[cfg(test)]
+mod m413_bitcoin_height_index_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn deposit_membership_rejects_unrepresentable_height_offset() {
+        let chain = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinNetworkCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 227_931,
+                block_hash: BitcoinNetworkProfile::MAINNET_CHECKPOINTS[0].1,
+            },
+            start_height: 1,
+            base_start_height: 0,
+            base_headers: vec![BitcoinBlockHeader {
+                version: 1,
+                prev_block_hash: [0; 32],
+                merkle_root: [0; 32],
+                time: 1,
+                bits: 0x1d00_ffff,
+                nonce: 0,
+            }],
+            tip_height: 1,
+            tip_hash: [1; 32],
+            max_future_timestamp: u32::MAX,
+            headers: Vec::new(),
+            difficulty_windows: Vec::new(),
+        };
+        assert!(!bitcoin_chain_contains_deposit(&chain, u64::MAX, &chain.base_headers[0]));
+    }
+
+    #[test]
+    fn header_chain_rejects_unrepresentable_expected_count() {
+        let context = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinNetworkCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: 227_931,
+                block_hash: BitcoinNetworkProfile::MAINNET_CHECKPOINTS[0].1,
+            },
+            start_height: 1,
+            base_start_height: 0,
+            base_headers: vec![BitcoinBlockHeader {
+                version: 1,
+                prev_block_hash: [0; 32],
+                merkle_root: [0; 32],
+                time: 1,
+                bits: 0x1d00_ffff,
+                nonce: 0,
+            }],
+            tip_height: u64::MAX,
+            tip_hash: [1; 32],
+            max_future_timestamp: u32::MAX,
+            headers: Vec::new(),
+            difficulty_windows: Vec::new(),
+        };
+        let header = context.base_headers[0].clone();
+        assert_eq!(
+            context.verify_header_chain(1, &header),
+            Err(BridgeAdapterError::InvalidProof)
+        );
     }
 }
