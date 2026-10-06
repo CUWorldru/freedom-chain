@@ -3103,7 +3103,8 @@ impl BitcoinReorgPolicy {
 pub struct BitcoinCanonicalTipProof { pub start_height:u64, pub headers:Vec<BitcoinBlockHeader>, pub tip_height:u64, pub tip_hash:Hash, pub chainwork:[u8;32] }
 impl BitcoinCanonicalTipProof {
  pub fn verify(&self,checkpoint:&BitcoinChainCheckpoint)->bool{
-  if self.headers.is_empty()||self.start_height!=checkpoint.height.saturating_add(1){return false;}
+  let Some(expected_start_height)=checkpoint.height.checked_add(1) else{return false;};
+  if self.headers.is_empty()||self.start_height!=expected_start_height{return false;}
   let Ok(cp)=bitcoin_validate_from_checkpoint(checkpoint,&self.headers) else{return false;};
   cp.height==self.tip_height&&cp.block_hash==self.tip_hash&&cp.chainwork==self.chainwork
  }
@@ -7524,6 +7525,50 @@ mod m392_bitcoin_reorg_evidence_binding_tests {
         let e=evidence(11,[9;32]);
         let policy=BitcoinReorgPolicy{elevated_confirmations:2,critical_chainwork_margin:[1;32]};
         assert_eq!(policy.classify(&checkpoint,&e),BitcoinReorgSeverity::Normal);
+    }
+}
+
+#[cfg(test)]
+mod m396_bitcoin_canonical_tip_height_boundary_tests {
+    use super::*;
+
+    fn checkpoint(height: u64) -> BitcoinChainCheckpoint {
+        BitcoinChainCheckpoint {
+            height,
+            block_hash: [1; 32],
+            chainwork: [2; 32],
+        }
+    }
+
+    #[test]
+    fn canonical_tip_rejects_max_checkpoint_height_without_next_height() {
+        let proof = BitcoinCanonicalTipProof {
+            start_height: u64::MAX,
+            headers: vec![BitcoinBlockHeader {
+                version: 1,
+                prev_block_hash: [1; 32],
+                merkle_root: [3; 32],
+                time: 1,
+                bits: 0x1d00_ffff,
+                nonce: 0,
+            }],
+            tip_height: u64::MAX,
+            tip_hash: [4; 32],
+            chainwork: [5; 32],
+        };
+        assert!(!proof.verify(&checkpoint(u64::MAX)));
+    }
+
+    #[test]
+    fn canonical_tip_requires_exact_next_height() {
+        let proof = BitcoinCanonicalTipProof {
+            start_height: 11,
+            headers: vec![],
+            tip_height: 11,
+            tip_hash: [4; 32],
+            chainwork: [5; 32],
+        };
+        assert!(!proof.verify(&checkpoint(10)));
     }
 }
 
