@@ -1952,26 +1952,26 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   || !proof.validate_binding(expected_tx,expected_vout,expected_amount,expected_script)||!proof.validate_output_binding()||proof.merkle_branch.is_empty()||proof.computed_tx_hash()!=Some(proof.tx_hash)||bitcoin_merkle_root(proof.tx_hash,&proof.merkle_branch,proof.merkle_index)==[0;32]||proof.block_height>tip.height||proof.confirmations!=tip.height.saturating_sub(proof.block_height).saturating_add(1)||proof.confirmations<policy.min_external_confirmations{return Err(StateError::BitcoinReorgDetected);}Ok(())}
  pub fn validate_bitcoin_deposit_against_canonical_tip(&self,bridge_id:Hash,proof:&freedom_types::BitcoinMerkleProof,headers:&[freedom_types::BitcoinBlockHeader])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id||proof.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID||!proof.verify_against_canonical_tip(policy.min_external_confirmations,tip,headers){return Err(StateError::BitcoinReorgDetected);}Ok(())}
  pub fn bitcoin_deposit_allowed(&self,bridge_id:Hash)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)}
- pub fn record_verified_external_lock(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
+ pub(crate) fn record_verified_external_lock(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 || !self.asset_registry.contains_key(&asset_id) { return Err(StateError::InvalidBridgeAccounting); }
   let a=self.bridge_accounting.entry(asset_id).or_default();
   a.verified_external_locked=a.verified_external_locked.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?; self.validate_bridge_accounting(asset_id)
  }
- pub fn record_freedom_mint(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
+ pub(crate) fn record_freedom_mint(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 { return Err(StateError::InvalidBridgeAccounting); }
   let a=self.bridge_accounting.entry(asset_id).or_default();
   let next=a.freedom_minted.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
   if next>a.verified_external_locked { return Err(StateError::InvalidBridgeAccounting); }
   a.freedom_minted=next; self.validate_bridge_accounting(asset_id)
  }
- pub fn record_freedom_burn(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
+ pub(crate) fn record_freedom_burn(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 { return Err(StateError::InvalidBridgeAccounting); }
   let a=self.bridge_accounting.entry(asset_id).or_default();
   let next=a.freedom_burned.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
   if next>a.freedom_minted { return Err(StateError::InvalidBridgeAccounting); }
   a.freedom_burned=next; self.validate_bridge_accounting(asset_id)
  }
- pub fn record_external_release(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
+ pub(crate) fn record_external_release(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
   if amount==0 { return Err(StateError::InvalidBridgeAccounting); }
   let a=self.bridge_accounting.entry(asset_id).or_default();
   let next=a.external_released.checked_add(amount).ok_or(StateError::InvalidBridgeAccounting)?;
