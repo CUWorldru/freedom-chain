@@ -7921,3 +7921,25 @@ mod m401_bitcoin_difficulty_timestamp_boundary_tests {
         );
     }
 }
+
+
+#[cfg(test)]
+mod m402_bitcoin_compact_target_canonical_tests {
+    use super::*;
+
+    #[test]
+    fn compact_target_rejects_zero_exponent() {
+        assert_eq!(BitcoinBlockHeader::target_from_bits(0x00_00_0001), None);
+    }
+
+    #[test]
+    fn compact_target_rejects_one_and_two_byte_exponents() {
+        assert_eq!(BitcoinBlockHeader::target_from_bits(0x01_00_0001), None);
+        assert_eq!(BitcoinBlockHeader::target_from_bits(0x02_00_0001), None);
+    }
+
+    #[test]
+    fn compact_target_accepts_minimum_canonical_exponent() {
+        assert!(BitcoinBlockHeader::target_from_bits(0x03_00_0001).is_some());
+    }
+}
