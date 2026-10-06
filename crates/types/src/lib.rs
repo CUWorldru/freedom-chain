@@ -8338,3 +8338,25 @@ mod m406_bitcoin_difficulty_schedule_tests {
         assert!(context.validate_header_difficulty_rules());
     }
 }
+
+
+#[cfg(test)]
+mod m407_bitcoin_pow_limit_tests {
+    use super::*;
+
+    #[test]
+    fn low_level_target_parser_rejects_target_above_mainnet_pow_limit() {
+        assert_eq!(bitcoin_target_from_bits(0x1e7f_ffff), None);
+    }
+
+    #[test]
+    fn block_header_target_parser_rejects_target_above_mainnet_pow_limit() {
+        assert_eq!(BitcoinBlockHeader::target_from_bits(0x1e7f_ffff), None);
+    }
+
+    #[test]
+    fn mainnet_pow_limit_itself_remains_representable() {
+        assert!(bitcoin_target_from_bits(0x1d00_ffff).is_some());
+        assert!(BitcoinBlockHeader::target_from_bits(0x1d00_ffff).is_some());
+    }
+}
