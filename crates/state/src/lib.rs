@@ -6512,8 +6512,6 @@ mod m284_validator_consensus_identity_hardening_tests {
         );
     }
 
-    #[test]
-
 #[cfg(test)]
 mod m392_reorg_severity_checkpoint_binding_tests {
     use super::*;
