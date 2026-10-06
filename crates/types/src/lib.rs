@@ -7530,6 +7530,53 @@ mod m392_bitcoin_reorg_evidence_binding_tests {
 }
 
 #[cfg(test)]
+mod m399_bitcoin_reorg_recovery_signer_set_tests {
+    use super::*;
+
+    fn recovery(validator_ids: Vec<Hash>, signatures: Vec<BitcoinReorgRecoverySignature>) -> BitcoinReorgRecovery {
+        let mut r = BitcoinReorgRecovery {
+            bridge_id: [1; 32],
+            evidence_fingerprint: [2; 32],
+            nonce: 1,
+            canonical_height: 10,
+            canonical_block_hash: [3; 32],
+            canonical_chainwork: [4; 32],
+            validator_ids,
+            signatures,
+            recovery_hash: [0; 32],
+        };
+        r.recovery_hash = r.compute_hash();
+        r
+    }
+
+    #[test]
+    fn recovery_rejects_duplicate_validator_ids() {
+        let id = [7; 32];
+        let r = recovery(
+            vec![id, id],
+            vec![
+                BitcoinReorgRecoverySignature { validator_id: id, signature: vec![1; 64] },
+                BitcoinReorgRecoverySignature { validator_id: id, signature: vec![2; 64] },
+            ],
+        );
+        assert!(!r.validate());
+    }
+
+    #[test]
+    fn recovery_rejects_duplicate_signature_ids() {
+        let id = [7; 32];
+        let r = recovery(
+            vec![id, [8; 32]],
+            vec![
+                BitcoinReorgRecoverySignature { validator_id: id, signature: vec![1; 64] },
+                BitcoinReorgRecoverySignature { validator_id: id, signature: vec![2; 64] },
+            ],
+        );
+        assert!(!r.validate());
+    }
+}
+
+#[cfg(test)]
 mod m398_bitcoin_reorg_recovery_signer_binding_tests {
     use super::*;
 
