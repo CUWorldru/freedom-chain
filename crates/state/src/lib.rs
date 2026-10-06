@@ -2067,7 +2067,9 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
 
-  let required_quorum=(previous_keys.len()*2)/3+1;
+  let n=previous_keys.len();
+  let ceil_third=n/3+usize::from(n%3!=0);
+  let required_quorum=n-ceil_third+1;
   if certificate.authenticated_vote_count(previous_keys) as usize < required_quorum {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
