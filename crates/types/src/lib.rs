@@ -2444,16 +2444,23 @@ impl BitcoinChainContext {
 
         let mut expected_windows = 0usize;
         if first_retarget <= last_retarget {
-            expected_windows = ((last_retarget - first_retarget)
-                / BitcoinDifficultyWindow::INTERVAL) as usize + 1;
+            expected_windows = match ((last_retarget - first_retarget)
+                / BitcoinDifficultyWindow::INTERVAL)
+                .checked_add(1)
+                .and_then(|count| usize::try_from(count).ok())
+            {
+                Some(count) => count,
+                None => return false,
+            };
         }
         if self.difficulty_windows.len() != expected_windows {
             return false;
         }
 
         for (index, window) in self.difficulty_windows.iter().enumerate() {
-            let expected_start = match first_retarget
-                .checked_add((index as u64) * BitcoinDifficultyWindow::INTERVAL)
+            let expected_start = match (index as u64)
+                .checked_mul(BitcoinDifficultyWindow::INTERVAL)
+                .and_then(|offset| first_retarget.checked_add(offset))
                 .and_then(|height| height.checked_sub(BitcoinDifficultyWindow::INTERVAL))
             {
                 Some(height) => height,
