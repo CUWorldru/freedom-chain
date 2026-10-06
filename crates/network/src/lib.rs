@@ -163,7 +163,7 @@ pub fn make_proposal(
     if validator.consensus_key != consensus_key.verifying_key().to_bytes() {
         return Err("proposal proposer key mismatch".into());
     }
-    freedom_consensus::validate_block_transition(state, &block)?;
+    validate_block_transition(state, &block)?;
     let block_hash = block_hash(&block);
     let mut proposal = BlockProposal {
         block_hash,
