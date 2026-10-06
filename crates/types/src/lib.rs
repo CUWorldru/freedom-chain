@@ -3094,7 +3094,8 @@ impl BitcoinReorgPolicy {
   if !checkpoint.validate() || !e.validate() || e.checkpoint_height!=checkpoint.height || e.checkpoint_hash!=checkpoint.block_hash {
    return BitcoinReorgSeverity::Normal;
   }
-  if e.candidate_chainwork>checkpoint.chainwork { BitcoinReorgSeverity::Critical }
+  let critical_threshold=bitcoin_add_chainwork(checkpoint.chainwork,self.critical_chainwork_margin);
+  if critical_threshold.map(|threshold|e.candidate_chainwork>threshold).unwrap_or(false) { BitcoinReorgSeverity::Critical }
   else if e.candidate_tip_height>=checkpoint.height.saturating_add(self.elevated_confirmations) { BitcoinReorgSeverity::Elevated }
   else { BitcoinReorgSeverity::Normal }
  }
@@ -7525,6 +7526,83 @@ mod m392_bitcoin_reorg_evidence_binding_tests {
         let e=evidence(11,[9;32]);
         let policy=BitcoinReorgPolicy{elevated_confirmations:2,critical_chainwork_margin:[1;32]};
         assert_eq!(policy.classify(&checkpoint,&e),BitcoinReorgSeverity::Normal);
+    }
+}
+
+#[cfg(test)]
+mod m397_bitcoin_reorg_chainwork_margin_tests {
+    use super::*;
+
+    fn checkpoint() -> BitcoinChainCheckpoint {
+        BitcoinChainCheckpoint {
+            height: 10,
+            block_hash: [1; 32],
+            chainwork: {
+                let mut v = [0u8; 32];
+                v[31] = 100;
+                v
+            },
+        }
+    }
+
+    fn evidence(candidate_chainwork: [u8; 32]) -> BitcoinReorgEvidence {
+        let mut e = BitcoinReorgEvidence {
+            checkpoint_height: 10,
+            checkpoint_hash: [1; 32],
+            candidate_tip_height: 11,
+            candidate_tip_hash: [3; 32],
+            candidate_chainwork,
+            fingerprint: [0; 32],
+        };
+        e.fingerprint = e.compute_fingerprint();
+        e
+    }
+
+    fn work(value: u8) -> [u8; 32] {
+        let mut v = [0u8; 32];
+        v[31] = value;
+        v
+    }
+
+    #[test]
+    fn reorg_is_not_critical_below_configured_chainwork_margin() {
+        let policy = BitcoinReorgPolicy {
+            elevated_confirmations: 2,
+            critical_chainwork_margin: work(10),
+        };
+        assert_eq!(
+            policy.classify(&checkpoint(), &evidence(work(105))),
+            BitcoinReorgSeverity::Normal
+        );
+    }
+
+    #[test]
+    fn reorg_becomes_critical_only_above_configured_chainwork_margin() {
+        let policy = BitcoinReorgPolicy {
+            elevated_confirmations: 2,
+            critical_chainwork_margin: work(10),
+        };
+        assert_eq!(
+            policy.classify(&checkpoint(), &evidence(work(111))),
+            BitcoinReorgSeverity::Critical
+        );
+    }
+
+    #[test]
+    fn overflowing_critical_threshold_cannot_classify_any_256_bit_work_as_critical() {
+        let checkpoint = BitcoinChainCheckpoint {
+            height: 10,
+            block_hash: [1; 32],
+            chainwork: [0xff; 32],
+        };
+        let policy = BitcoinReorgPolicy {
+            elevated_confirmations: 2,
+            critical_chainwork_margin: work(1),
+        };
+        assert_eq!(
+            policy.classify(&checkpoint, &evidence([0xff; 32])),
+            BitcoinReorgSeverity::Elevated
+        );
     }
 }
 
