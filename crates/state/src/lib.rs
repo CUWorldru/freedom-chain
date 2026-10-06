@@ -2543,9 +2543,35 @@ mod m330_public_chain_id_boundary_tests {
   let mut ids:Vec<Hash>=self.tickets.values().filter(|t|t.draw_id==draw_id).map(|t|t.ticket_id).collect(); ids.sort();
   let mut winners=Vec::new(); let mut salt=0u64; while winners.len()<draw.config.winner_count as usize {let h=freedom_primitives::hash_bytes(&[&seed,&salt.to_le_bytes()].concat());let idx=(u128::from_le_bytes(h[..16].try_into().unwrap())%(ids.len() as u128)) as usize;let id=ids[idx];if !winners.contains(&id){winners.push(id)}salt=salt.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;}
   let selection_proof=freedom_primitives::hash_bytes(&[b"FREEDOM-DRAW-PROOF-V1".as_slice(),&seed,winners.concat().as_slice()].concat()); let result=DrawResult{draw_id,total_tickets:draw.total_tickets,prize_pool_native_units:draw.prize_pool_native_units,cu_fund_native_units:draw.cu_fund_native_units,annual_reserve_native_units:draw.annual_reserve_native_units,winners:winners.clone(),randomness_seed:seed,selection_proof};
-  let per=draw.prize_pool_native_units.checked_div(winners.len() as u128).ok_or(StateError::ArithmeticOverflow)?;let remainder=draw.prize_pool_native_units.checked_sub(per.checked_mul(winners.len() as u128).ok_or(StateError::ArithmeticOverflow)?).ok_or(StateError::ArithmeticOverflow)?;
-  for (i,id) in winners.iter().enumerate(){let owner=self.tickets.get(id).ok_or(StateError::InvalidDraw)?.owner;let amount=per.checked_add(if i==0{remainder}else{0}).ok_or(StateError::ArithmeticOverflow)?;let a=self.accounts.get_mut(&owner).ok_or(StateError::AccountNotFound)?;a.balance=a.balance.checked_add(amount).ok_or(StateError::ArithmeticOverflow)?;self.supply.treasury=self.supply.treasury.checked_sub(amount).ok_or(StateError::InsufficientPrizePool)?;self.supply.circulating=self.supply.circulating.checked_add(amount).ok_or(StateError::ArithmeticOverflow)?;self.events.push(Event::PrizePaid{draw_id,ticket_id:*id,winner:owner,amount});}
-  self.draw_prize_pool_native_units=self.draw_prize_pool_native_units.checked_sub(draw.prize_pool_native_units).ok_or(StateError::InsufficientPrizePool)?;let d=self.draws.get_mut(&draw_id).ok_or(StateError::InvalidDraw)?;d.prize_pool_native_units=0;d.executed=true;self.draw_results.insert(draw_id,result.clone());self.events.push(Event::DrawExecuted{draw_id,randomness_seed:seed,selection_proof});Ok(result)
+  let per=draw.prize_pool_native_units.checked_div(winners.len() as u128).ok_or(StateError::ArithmeticOverflow)?;
+  let remainder=draw.prize_pool_native_units.checked_sub(per.checked_mul(winners.len() as u128).ok_or(StateError::ArithmeticOverflow)?).ok_or(StateError::ArithmeticOverflow)?;
+  let next_treasury=self.supply.treasury.checked_sub(draw.prize_pool_native_units).ok_or(StateError::InsufficientPrizePool)?;
+  let next_circulating=self.supply.circulating.checked_add(draw.prize_pool_native_units).ok_or(StateError::ArithmeticOverflow)?;
+  let next_draw_pool=self.draw_prize_pool_native_units.checked_sub(draw.prize_pool_native_units).ok_or(StateError::InsufficientPrizePool)?;
+  let mut payouts=Vec::with_capacity(winners.len());
+  for (i,id) in winners.iter().enumerate(){
+   let owner=self.tickets.get(id).ok_or(StateError::InvalidDraw)?.owner;
+   let amount=per.checked_add(if i==0{remainder}else{0}).ok_or(StateError::ArithmeticOverflow)?;
+   let balance=self.accounts.get(&owner).ok_or(StateError::AccountNotFound)?.balance;
+   let next_balance=balance.checked_add(amount).ok_or(StateError::ArithmeticOverflow)?;
+   payouts.push((*id,owner,amount,next_balance));
+  }
+  // Preflight every winner/account and global monetary mutation before paying anyone.
+  let d=self.draws.get(&draw_id).ok_or(StateError::InvalidDraw)?;
+  if d.prize_pool_native_units!=draw.prize_pool_native_units || d.executed { return Err(StateError::DrawAlreadyExecuted); }
+  for (id,owner,amount,next_balance) in payouts {
+   let a=self.accounts.get_mut(&owner).ok_or(StateError::AccountNotFound)?;
+   a.balance=next_balance;
+   self.events.push(Event::PrizePaid{draw_id,ticket_id:id,winner:owner,amount});
+  }
+  self.supply.treasury=next_treasury;
+  self.supply.circulating=next_circulating;
+  self.draw_prize_pool_native_units=next_draw_pool;
+  let d=self.draws.get_mut(&draw_id).ok_or(StateError::InvalidDraw)?;
+  d.prize_pool_native_units=0;d.executed=true;
+  self.draw_results.insert(draw_id,result.clone());
+  self.events.push(Event::DrawExecuted{draw_id,randomness_seed:seed,selection_proof});
+  Ok(result)
  }
  pub fn quote_price(&self,product_id:u8)->Result<u128,StateError>{if product_id==1{Ok(10_000)}else{Err(StateError::InvalidPurchase)}}
 
@@ -2556,22 +2582,43 @@ mod m330_public_chain_id_boundary_tests {
   if p.amount!=self.quote_price(p.product_id)?{return Err(StateError::InvalidPurchase)}
   let balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance;
   if balance<p.amount{return Err(StateError::InsufficientBalanceForPurchase)}
-  let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;a.balance-=p.amount;a.locked=a.locked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let account=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  let next_locked=account.locked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_balance=account.balance.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  a.balance=next_balance;a.locked=next_locked;a.nonce=next_nonce;
   self.billing.insert(p.billing_id,BillingRecord{billing_id:p.billing_id,buyer:tx.sender,merchant:p.merchant,product_id:p.product_id,amount:p.amount,reference:p.reference,status:2,reserved_at:self.height,captured_at:None,refunded_at:None});
-  self.advance_nonce(tx.sender)
+  Ok(())
  }
 
  pub(crate) fn capture_billing(&mut self,billing_id:Hash)->Result<(),StateError>{
   let b=self.billing.get(&billing_id).cloned().ok_or(StateError::InvalidPurchase)?;if b.status!=2{return Err(StateError::InvalidPurchase)}
-  let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.locked=a.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
-  let m=self.accounts.entry(b.merchant).or_insert(Account{address:b.merchant,public_key:[0;32],nonce:0,balance:0,locked:0,staked:0});m.balance=m.balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let buyer=self.accounts.get(&b.buyer).ok_or(StateError::AccountNotFound)?;
+  let next_locked=buyer.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let merchant_balance=self.accounts.get(&b.merchant).map(|a|a.balance).unwrap_or(0);
+  let next_merchant_balance=merchant_balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.locked=next_locked;
+  let m=self.accounts.entry(b.merchant).or_insert(Account{address:b.merchant,public_key:[0;32],nonce:0,balance:0,locked:0,staked:0});m.balance=next_merchant_balance;
   let x=self.billing.get_mut(&billing_id).ok_or(StateError::InvalidPurchase)?;x.status=3;x.captured_at=Some(self.height);Ok(())
  }
 
  pub(crate) fn refund_billing(&mut self,billing_id:Hash)->Result<(),StateError>{
   let b=self.billing.get(&billing_id).cloned().ok_or(StateError::InvalidPurchase)?;if b.status!=2&&b.status!=3{return Err(StateError::InvalidPurchase)}
-  if b.status==2{let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.locked=a.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;a.balance=a.balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?}
-  else{let m=self.accounts.get_mut(&b.merchant).ok_or(StateError::AccountNotFound)?;if m.balance<b.amount{return Err(StateError::InsufficientBalanceForPurchase)}m.balance-=b.amount;let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.balance=a.balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?}
+  if b.status==2{
+   let buyer=self.accounts.get(&b.buyer).ok_or(StateError::AccountNotFound)?;
+   let next_locked=buyer.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let next_balance=buyer.balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.locked=next_locked;a.balance=next_balance;
+  } else {
+   let merchant=self.accounts.get(&b.merchant).ok_or(StateError::AccountNotFound)?;
+   if merchant.balance<b.amount{return Err(StateError::InsufficientBalanceForPurchase)}
+   let next_merchant=merchant.balance-b.amount;
+   let buyer=self.accounts.get(&b.buyer).ok_or(StateError::AccountNotFound)?;
+   let next_buyer=buyer.balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let m=self.accounts.get_mut(&b.merchant).ok_or(StateError::AccountNotFound)?;m.balance=next_merchant;
+   let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.balance=next_buyer;
+  }
   let x=self.billing.get_mut(&billing_id).ok_or(StateError::InvalidPurchase)?;x.status=4;x.refunded_at=Some(self.height);Ok(())
  }
 
