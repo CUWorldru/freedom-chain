@@ -1592,7 +1592,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn validate_bitcoin_block_utxo_commitment(&self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment)->Result<(),StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  let expected_height=canonical.height.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  block.verify_against_parent(canonical.block_hash,expected_height).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if commitment.block_height!=block.height||commitment.block_hash!=block.header.block_hash()||!commitment.verify(){return Err(StateError::InvalidBridgeWithdrawal);} if let Some(attestation)=self.bitcoin_utxo_attestations.get(&bridge_id){if commitment.previous_root!=attestation.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}}
   Ok(())
  }
@@ -1606,8 +1607,9 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn validate_bitcoin_block_utxo_transition(&self,transition:&freedom_types::BitcoinUtxoAccumulatorTransition,previous:&[freedom_types::BitcoinUtxoStateEntry],block:&freedom_types::BitcoinSpendScanBlock)->Result<(),StateError>{
   self.bitcoin_bridge_gate(transition.bridge_id)?;
   let canonical=self.bitcoin_canonical_tips.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-  if transition.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID || transition.previous_tip!=*canonical || block.height!=canonical.height+1 || transition.next_tip.height!=block.height || transition.next_tip.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
-  block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  let expected_height=canonical.height.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if transition.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID || transition.previous_tip!=*canonical || block.height!=expected_height || transition.next_tip.height!=block.height || transition.next_tip.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
+  block.verify_against_parent(canonical.block_hash,expected_height).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   let (root,count)=freedom_types::BitcoinUtxoAccumulatorTransition::verify_block_against_header(previous,block).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if root!=transition.next_root||count!=transition.next_leaf_count{return Err(StateError::InvalidBridgeWithdrawal)}
   Ok(())
