@@ -306,7 +306,7 @@ fn build_local_proposal(
         state.epoch
     };
     let block = build_next_block(state, &mempool, owner, 1, epoch, round, 100)?;
-    let proposal = make_proposal(block.clone(), round, consensus_key, None, Vec::new(), None);
+    let proposal = make_proposal(state, block.clone(), round, consensus_key, None, Vec::new(), None)?;
     Ok((proposal, block))
 }
 
@@ -1636,7 +1636,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 let mempool = Mempool::new();
                                                 (build_next_block(&state, &mempool, owner, 1, if state.epoch_length > 0 && (next_height) % state.epoch_length == 0 { state.epoch.checked_add(1).ok_or_else(|| "epoch transition exceeds u64::MAX".to_string())? } else { state.epoch }, round, 100)?, None, Vec::new())
                                             };
-                                            let proposal = make_proposal(block.clone(), round, &consensus_key, valid_round, valid_precommits, Some(timeout_certificate));
+                                            let proposal = make_proposal(&state, block.clone(), round, &consensus_key, valid_round, valid_precommits, Some(timeout_certificate))?;
                                             blocks.insert(proposal.block_hash, block);
                                             println!("proposing height={} round={} hash={} previous_round={}", next_height, round, hex::encode(proposal.block_hash), previous_round);
                                             publish(&mut swarm, &NetworkMessage::Proposal(proposal))?;
