@@ -1955,7 +1955,7 @@ impl BitcoinBlockHeader {
     pub fn target_from_bits(bits: u32) -> Option<Hash> {
         let exponent = (bits >> 24) as usize;
         let mantissa = bits & 0x007f_ffff;
-        if mantissa == 0 || (bits & 0x0080_0000) != 0 {
+        if mantissa == 0 || exponent < 3 || (bits & 0x0080_0000) != 0 {
             return None;
         }
         let mut target = [0u8; 32];
