@@ -3057,25 +3057,25 @@ impl BitcoinTransaction {
         let input_count_u64=read_varint(raw,&mut p)?;
         if input_count_u64==0{return Err(BitcoinTransactionParseError::MissingInputs);}
         if input_count_u64>raw.len().saturating_sub(p) as u64{return Err(BitcoinTransactionParseError::UnexpectedEof);}
-        let input_count=input_count_u64 as usize;
+        let input_count=usize::try_from(input_count_u64).map_err(|_| BitcoinTransactionParseError::LengthOverflow)?;
         let mut inputs=Vec::with_capacity(input_count);
         for _ in 0..input_count{
             let b=read_bytes(raw,&mut p,32)?;let mut previous_txid=[0u8;32];previous_txid.copy_from_slice(&b);
-            let previous_vout=read_u32(raw,&mut p)?;let n=read_varint(raw,&mut p)? as usize;let script_sig=read_bytes(raw,&mut p,n)?;let sequence=read_u32(raw,&mut p)?;
+            let previous_vout=read_u32(raw,&mut p)?;let n_u64=read_varint(raw,&mut p)?;let n=usize::try_from(n_u64).map_err(|_| BitcoinTransactionParseError::LengthOverflow)?;let script_sig=read_bytes(raw,&mut p,n)?;let sequence=read_u32(raw,&mut p)?;
             inputs.push(BitcoinTransactionInput{previous_txid,previous_vout,script_sig,sequence,witness:Vec::new()});
         }
         let output_count_u64=read_varint(raw,&mut p)?;
         if output_count_u64==0{return Err(BitcoinTransactionParseError::MissingOutputs);}
         if output_count_u64>raw.len().saturating_sub(p) as u64{return Err(BitcoinTransactionParseError::UnexpectedEof);}
-        let output_count=output_count_u64 as usize;
+        let output_count=usize::try_from(output_count_u64).map_err(|_| BitcoinTransactionParseError::LengthOverflow)?;
         let mut outputs=Vec::with_capacity(output_count);
         for _ in 0..output_count{let amount_sat=read_u64(raw,&mut p)?;let n=read_varint(raw,&mut p)? as usize;let script_pubkey=read_bytes(raw,&mut p,n)?;outputs.push(BitcoinTransactionOutput{amount_sat,script_pubkey});}
         if segwit{
             for i in &mut inputs{
                 let n_u64=read_varint(raw,&mut p)?;
                 if n_u64>raw.len().saturating_sub(p) as u64{return Err(BitcoinTransactionParseError::UnexpectedEof);}
-                let n=n_u64 as usize;let mut witness=Vec::with_capacity(n);
-                for _ in 0..n{let len=read_varint(raw,&mut p)? as usize;witness.push(read_bytes(raw,&mut p,len)?);}
+                let n=usize::try_from(n_u64).map_err(|_| BitcoinTransactionParseError::LengthOverflow)?;let mut witness=Vec::with_capacity(n);
+                for _ in 0..n{let len_u64=read_varint(raw,&mut p)?;let len=usize::try_from(len_u64).map_err(|_| BitcoinTransactionParseError::LengthOverflow)?;witness.push(read_bytes(raw,&mut p,len)?);}
                 i.witness=witness;
             }
         }
@@ -3084,7 +3084,7 @@ impl BitcoinTransaction {
         tx.txid=bitcoin_sha256d(&serialize_no_witness(&tx));Ok(tx)
     }
 
-    pub fn output(&self, vout:u32)->Option<&BitcoinTransactionOutput>{self.outputs.get(vout as usize)}
+    pub fn output(&self, vout:u32)->Option<&BitcoinTransactionOutput>{usize::try_from(vout).ok().and_then(|index| self.outputs.get(index))}
 }
 
 pub fn bitcoin_parse_transaction(raw:&[u8])->Result<BitcoinTransaction,BitcoinTransactionParseError>{BitcoinTransaction::parse(raw)}
@@ -5164,5 +5164,44 @@ mod m411_bitcoin_chainwork_exactness_tests {
         let mut work = [u64::MAX; 5];
         assert!(!bitcoin_chainwork_add(&mut work, [0xff; 32]));
         assert_eq!(work, [u64::MAX; 5]);
+    }
+}
+#[cfg(test)]
+mod m412_bitcoin_transaction_length_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn oversized_script_length_is_rejected_without_truncating_to_usize() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&1i32.to_le_bytes());
+        raw.push(1);
+        raw.extend_from_slice(&[0u8; 32]);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.push(0xff);
+        raw.extend_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(
+            BitcoinTransaction::parse(&raw),
+            Err(BitcoinTransactionParseError::LengthOverflow)
+        );
+    }
+
+    #[test]
+    fn oversized_witness_item_length_is_rejected_without_truncating_to_usize() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&1i32.to_le_bytes());
+        raw.extend_from_slice(&[0u8; 32]);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.push(0);
+        raw.extend_from_slice(&0xffff_ffffu32.to_le_bytes());
+        raw.push(1);
+        raw.extend_from_slice(&1u64.to_le_bytes());
+        raw.push(0);
+        raw.push(1);
+        raw.push(0xff);
+        raw.extend_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(
+            BitcoinTransaction::parse(&raw),
+            Err(BitcoinTransactionParseError::LengthOverflow)
+        );
     }
 }
