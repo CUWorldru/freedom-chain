@@ -8363,3 +8363,31 @@ mod m407_bitcoin_pow_limit_tests {
         assert!(BitcoinBlockHeader::target_from_bits(0x1d00_ffff).is_some());
     }
 }
+
+
+#[cfg(test)]
+mod m408_bitcoin_compact_target_canonicality_tests {
+    use super::*;
+
+    #[test]
+    fn low_level_target_parser_rejects_leading_zero_compact_mantissa() {
+        assert_eq!(bitcoin_target_from_bits(0x04_000001), None);
+    }
+
+    #[test]
+    fn header_target_parser_rejects_leading_zero_compact_mantissa() {
+        assert_eq!(BitcoinBlockHeader::target_from_bits(0x04_000001), None);
+    }
+
+    #[test]
+    fn canonical_four_byte_target_remains_valid() {
+        assert!(bitcoin_target_from_bits(0x04_010000).is_some());
+        assert!(BitcoinBlockHeader::target_from_bits(0x04_010000).is_some());
+    }
+
+    #[test]
+    fn mainnet_genesis_compact_target_remains_valid() {
+        assert!(bitcoin_target_from_bits(0x1d00_ffff).is_some());
+        assert!(BitcoinBlockHeader::target_from_bits(0x1d00_ffff).is_some());
+    }
+}
