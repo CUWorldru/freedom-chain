@@ -5138,7 +5138,7 @@ mod m411_bitcoin_chainwork_exactness_tests {
     #[test]
     fn chainwork_for_target_one_is_exactly_two_to_the_255() {
         let work = chainwork_for_target(1);
-        assert_eq!(work, [0, 0, 0, 0, 1u64 << 63]);
+        assert_eq!(work, [0, 0, 0, 1u64 << 63, 0]);
     }
 
     #[test]
