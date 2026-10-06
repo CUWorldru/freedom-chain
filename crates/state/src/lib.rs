@@ -2458,7 +2458,19 @@ mod m330_public_chain_id_boundary_tests {
   self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce=next_nonce;
   Ok(())
  }
- pub(crate) fn verify_contribution(&mut self,id:Hash,verifiers:Vec<Hash>,score:u32)->Result<(),StateError>{if verifiers.is_empty()||score>10000{return Err(StateError::InvalidVerification)}if verifiers.iter().any(|v|!self.validators.contains_key(v)){return Err(StateError::InvalidVerification)}let(node_id,wu)={let c=self.contributions.get(&id).ok_or(StateError::InvalidContribution)?;if c.status!=ContributionStatus::Submitted{return Err(StateError::AlreadyVerified)}(c.node_id,c.work_units)};let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;c.verifier_set=verifiers;c.verification_score=score;c.status=ContributionStatus::Verified;let n=self.nodes.get_mut(&node_id).ok_or(StateError::InvalidNode)?;n.total_wu=n.total_wu.checked_add(wu).ok_or(StateError::ArithmeticOverflow)?;n.successful_tasks=n.successful_tasks.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;Ok(())}
+ pub(crate) fn verify_contribution(&mut self,id:Hash,verifiers:Vec<Hash>,score:u32)->Result<(),StateError>{
+  if verifiers.is_empty()||score>10000{return Err(StateError::InvalidVerification)}
+  if verifiers.iter().any(|v|!self.validators.contains_key(v)){return Err(StateError::InvalidVerification)}
+  let(node_id,wu)={let c=self.contributions.get(&id).ok_or(StateError::InvalidContribution)?;if c.status!=ContributionStatus::Submitted{return Err(StateError::AlreadyVerified)}(c.node_id,c.work_units)};
+  let n=self.nodes.get(&node_id).ok_or(StateError::InvalidNode)?;
+  let next_total_wu=n.total_wu.checked_add(wu).ok_or(StateError::ArithmeticOverflow)?;
+  let next_successful=n.successful_tasks.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let c=self.contributions.get_mut(&id).ok_or(StateError::InvalidContribution)?;
+  c.verifier_set=verifiers;c.verification_score=score;c.status=ContributionStatus::Verified;
+  let n=self.nodes.get_mut(&node_id).ok_or(StateError::InvalidNode)?;
+  n.total_wu=next_total_wu;n.successful_tasks=next_successful;
+  Ok(())
+ }
  pub(crate) fn claim_reward(&mut self,id:Hash)->Result<(),StateError>{
   let c=self.contributions.get(&id).ok_or(StateError::InvalidContribution)?.clone();
   if c.status!=ContributionStatus::Verified{return Err(StateError::ContributionNotRewardable)}
@@ -2503,18 +2515,27 @@ mod m330_public_chain_id_boundary_tests {
   if draw.config.ticket_price_native_units!=10_000{return Err(StateError::InvalidTicketPrice)}
   let cost=draw.config.ticket_price_native_units.checked_mul(p.quantity as u128).ok_or(StateError::ArithmeticOverflow)?;
   let new_total=draw.total_tickets.checked_add(p.quantity).ok_or(StateError::ArithmeticOverflow)?;
+  let prize=cost.checked_mul(60).ok_or(StateError::ArithmeticOverflow)?.checked_div(100).ok_or(StateError::ArithmeticOverflow)?;
+  let fund=cost.checked_mul(30).ok_or(StateError::ArithmeticOverflow)?.checked_div(100).ok_or(StateError::ArithmeticOverflow)?;
+  let reserve=cost.checked_sub(prize).and_then(|x|x.checked_sub(fund)).ok_or(StateError::ArithmeticOverflow)?;
+  let next_draw_prize=draw.prize_pool_native_units.checked_add(prize).ok_or(StateError::ArithmeticOverflow)?;
+  let next_draw_fund=draw.cu_fund_native_units.checked_add(fund).ok_or(StateError::ArithmeticOverflow)?;
+  let next_draw_reserve=draw.annual_reserve_native_units.checked_add(reserve).ok_or(StateError::ArithmeticOverflow)?;
+  let next_global_prize=self.draw_prize_pool_native_units.checked_add(prize).ok_or(StateError::ArithmeticOverflow)?;
+  let next_global_fund=self.cu_fund_native_units.checked_add(fund).ok_or(StateError::ArithmeticOverflow)?;
+  let next_global_reserve=self.annual_reserve_native_units.checked_add(reserve).ok_or(StateError::ArithmeticOverflow)?;
+  let next_circulating=self.supply.circulating.checked_sub(cost).ok_or(StateError::ArithmeticOverflow)?;
+  let next_treasury=self.supply.treasury.checked_add(cost).ok_or(StateError::ArithmeticOverflow)?;
+  let next_nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
   let mut new_ids=Vec::with_capacity(p.quantity as usize);
   let start=draw.total_tickets+1;
   for n in start..=new_total { let id=freedom_primitives::hash_bytes(&[b"FREEDOM-TICKET-V1".as_slice(),&tx.sender,&p.draw_id,&n.to_le_bytes()].concat()); if self.tickets.contains_key(&id){return Err(StateError::DuplicateTicket)} new_ids.push(id); }
   let balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance; if balance<cost{return Err(StateError::InsufficientBalanceForPurchase)}
-  {let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;a.balance-=cost;}
-  self.supply.circulating=self.supply.circulating.checked_sub(cost).ok_or(StateError::ArithmeticOverflow)?; self.supply.treasury=self.supply.treasury.checked_add(cost).ok_or(StateError::ArithmeticOverflow)?;
-  let prize=cost.checked_mul(60).ok_or(StateError::ArithmeticOverflow)?.checked_div(100).ok_or(StateError::ArithmeticOverflow)?;
-  let fund=cost.checked_mul(30).ok_or(StateError::ArithmeticOverflow)?.checked_div(100).ok_or(StateError::ArithmeticOverflow)?;
-  let reserve=cost.checked_sub(prize).and_then(|x|x.checked_sub(fund)).ok_or(StateError::ArithmeticOverflow)?;
-  let d=self.draws.get_mut(&p.draw_id).ok_or(StateError::InvalidDraw)?; d.total_tickets=new_total; d.prize_pool_native_units=d.prize_pool_native_units.checked_add(prize).ok_or(StateError::ArithmeticOverflow)?; d.cu_fund_native_units=d.cu_fund_native_units.checked_add(fund).ok_or(StateError::ArithmeticOverflow)?; d.annual_reserve_native_units=d.annual_reserve_native_units.checked_add(reserve).ok_or(StateError::ArithmeticOverflow)?;
-  self.draw_prize_pool_native_units=self.draw_prize_pool_native_units.checked_add(prize).ok_or(StateError::ArithmeticOverflow)?; self.cu_fund_native_units=self.cu_fund_native_units.checked_add(fund).ok_or(StateError::ArithmeticOverflow)?; self.annual_reserve_native_units=self.annual_reserve_native_units.checked_add(reserve).ok_or(StateError::ArithmeticOverflow)?;
-  for id in new_ids {self.tickets.insert(id,Ticket{ticket_id:id,owner:tx.sender,draw_id:p.draw_id,created_at:self.height});self.events.push(Event::TicketCreated{ticket_id:id,draw_id:p.draw_id,owner:tx.sender});} self.events.push(Event::DrawFundAllocated{draw_id:p.draw_id,prize_pool:prize,cu_fund:fund,annual_reserve:reserve}); self.advance_nonce(tx.sender)
+  {let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;a.balance-=cost;a.nonce=next_nonce;}
+  self.supply.circulating=next_circulating; self.supply.treasury=next_treasury;
+  let d=self.draws.get_mut(&p.draw_id).ok_or(StateError::InvalidDraw)?; d.total_tickets=new_total; d.prize_pool_native_units=next_draw_prize; d.cu_fund_native_units=next_draw_fund; d.annual_reserve_native_units=next_draw_reserve;
+  self.draw_prize_pool_native_units=next_global_prize; self.cu_fund_native_units=next_global_fund; self.annual_reserve_native_units=next_global_reserve;
+  for id in new_ids {self.tickets.insert(id,Ticket{ticket_id:id,owner:tx.sender,draw_id:p.draw_id,created_at:self.height});self.events.push(Event::TicketCreated{ticket_id:id,draw_id:p.draw_id,owner:tx.sender});} self.events.push(Event::DrawFundAllocated{draw_id:p.draw_id,prize_pool:prize,cu_fund:fund,annual_reserve:reserve}); Ok(())
  }
  pub(crate) fn execute_draw(&mut self,draw_id:Hash)->Result<DrawResult,StateError>{
   let draw=self.draws.get(&draw_id).cloned().ok_or(StateError::InvalidDraw)?; if draw.executed{return Err(StateError::DrawAlreadyExecuted)} if self.height<draw.config.ends_at{return Err(StateError::DrawNotReady)} if draw.total_tickets==0||draw.config.winner_count as u64>draw.total_tickets{return Err(StateError::InvalidDraw)}
