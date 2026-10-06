@@ -3113,7 +3113,7 @@ impl BitcoinMerkleProof {
         if bitcoin_validate_header_chain(self.block_height,headers).ok()!=Some(tip.block_hash){return false;}
         headers.last().map(|h|h.block_hash())==Some(tip.block_hash)
     }
- pub fn canonical_confirmations(&self,tip:&BitcoinChainCheckpoint)->Option<u64>{if self.block_height>tip.height{return None;}Some(tip.height-self.block_height+1)}
+ pub fn canonical_confirmations(&self,tip:&BitcoinChainCheckpoint)->Option<u64>{if self.block_height==0||self.block_height>tip.height{return None;}tip.height.checked_sub(self.block_height)?.checked_add(1)}
 }
 
 
