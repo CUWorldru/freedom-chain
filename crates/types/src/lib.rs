@@ -7262,3 +7262,30 @@ mod m269_validator_certificate_canonical_tests {
         assert_ne!(certificate.hash(),[0;32]);
     }
 }
+
+#[cfg(test)]
+mod m386_bitcoin_confirmation_boundary_tests {
+ use super::*;
+ fn proof(block_height:u64)->BitcoinMerkleProof{
+  BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:[1;32],block_height,confirmations:1,merkle_root:[2;32],merkle_branch:vec![[3;32]],merkle_index:0,block_header:BitcoinBlockHeader{version:1,prev_block_hash:[0;32],merkle_root:[2;32],time:1,bits:1,nonce:1}}
+ }
+ fn tip(height:u64)->BitcoinChainCheckpoint{
+  BitcoinChainCheckpoint{height,block_hash:[4;32],chainwork:[5;32]}
+ }
+ #[test]
+ fn max_tip_zero_height_does_not_overflow(){
+  assert_eq!(proof(0).canonical_confirmations(&tip(u64::MAX)),None);
+ }
+ #[test]
+ fn max_tip_max_block_height_returns_one_confirmation(){
+  assert_eq!(proof(u64::MAX).canonical_confirmations(&tip(u64::MAX)),Some(1));
+ }
+ #[test]
+ fn normal_confirmation_depth_is_preserved(){
+  assert_eq!(proof(100).canonical_confirmations(&tip(105)),Some(6));
+ }
+ #[test]
+ fn block_above_tip_is_rejected(){
+  assert_eq!(proof(106).canonical_confirmations(&tip(105)),None);
+ }
+}
