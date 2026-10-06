@@ -2321,6 +2321,12 @@ fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
         mantissa >>= 8;
         exponent += 1;
     }
+    // Compact Bitcoin targets encode a 256-bit target at most. If the
+    // sign-bit normalization would move the exponent past 32 bytes, the
+    // value is not representable by target_from_bits and must be rejected.
+    if exponent > 32 {
+        return None;
+    }
     Some((exponent << 24) | (mantissa & 0x007f_ffff))
 }
 
@@ -7510,6 +7516,31 @@ mod m392_bitcoin_reorg_evidence_binding_tests {
         let e=evidence(11,[9;32]);
         let policy=BitcoinReorgPolicy{elevated_confirmations:2,critical_chainwork_margin:[1;32]};
         assert_eq!(policy.classify(&checkpoint,&e),BitcoinReorgSeverity::Normal);
+    }
+}
+
+#[cfg(test)]
+mod m394_bitcoin_compact_target_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn compact_target_rejects_exponent_beyond_256_bits() {
+        assert_eq!(bitcoin_target_to_compact(&[0xff; 32]), None);
+    }
+
+    #[test]
+    fn compact_target_accepts_highest_representable_byte() {
+        let mut target = [0u8; 32];
+        target[28] = 0xff;
+        assert_eq!(bitcoin_target_to_compact(&target), Some(0x1d00_ffff));
+    }
+
+    #[test]
+    fn compact_target_roundtrip_remains_valid_at_256_bit_boundary() {
+        let mut target = [0u8; 32];
+        target[28] = 0x7f;
+        let bits = bitcoin_target_to_compact(&target).expect("representable target");
+        assert!(BitcoinBlockHeader::target_from_bits(bits).is_some());
     }
 }
 
