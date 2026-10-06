@@ -5298,3 +5298,41 @@ mod m413_bitcoin_height_index_conversion_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod m414_bitcoin_checkpoint_index_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn checkpoint_index_rejects_unrepresentable_height_offset() {
+        let context = BitcoinChainContext {
+            profile: BitcoinNetworkProfile::MAINNET,
+            checkpoint: BitcoinNetworkCheckpoint {
+                profile: BitcoinNetworkProfile::MAINNET,
+                height: u64::MAX,
+                block_hash: BitcoinNetworkProfile::MAINNET_CHECKPOINTS[0].1,
+            },
+            start_height: u64::MAX,
+            base_start_height: 0,
+            base_headers: Vec::new(),
+            tip_height: u64::MAX,
+            tip_hash: [1; 32],
+            max_future_timestamp: u32::MAX,
+            headers: Vec::new(),
+            difficulty_windows: Vec::new(),
+        };
+
+        assert!(!context.verify_checkpoint_chain_link());
+    }
+
+    #[test]
+    fn checkpoint_index_conversion_preserves_valid_small_offset() {
+        let checkpoint_height = 227_931u64;
+        let base_start_height = 227_900u64;
+        let index = checkpoint_height
+            .checked_sub(base_start_height)
+            .and_then(|value| usize::try_from(value).ok());
+
+        assert_eq!(index, Some(31));
+    }
+}
