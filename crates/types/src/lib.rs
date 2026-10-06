@@ -2696,7 +2696,7 @@ impl BitcoinUtxoProof {
             && !self.merkle_branch.is_empty()
             && self.validate_transaction_binding()
             && self.validate_output_binding()
-            && self.merkle_index < (1u32 << self.merkle_branch.len().min(31))
+            && bitcoin_merkle_index_is_valid(&self.merkle_branch, self.merkle_index)
             && self.validate_bitcoin_chain_binding()
     }
 
@@ -2967,6 +2967,12 @@ impl BitcoinTransaction {
 
 pub fn bitcoin_parse_transaction(raw:&[u8])->Result<BitcoinTransaction,BitcoinTransactionParseError>{BitcoinTransaction::parse(raw)}
 
+pub fn bitcoin_merkle_index_is_valid(branch:&[Hash],index:u32)->bool{
+    if branch.is_empty() || branch.len()>32 { return false; }
+    if branch.len()>=32 { return true; }
+    index < (1u32 << branch.len())
+}
+
 pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
     // A u32 transaction index has at most 32 meaningful Merkle levels.
     // Reject oversized attacker-controlled branches instead of shifting a
@@ -3118,9 +3124,7 @@ pub struct BitcoinMerkleProof {
 }
 impl BitcoinMerkleProof {
     fn merkle_index_is_within_branch_depth(&self)->bool{
-        let depth=self.merkle_branch.len();
-        if depth>=32 { return true; }
-        self.merkle_index < (1u32 << depth)
+        bitcoin_merkle_index_is_valid(&self.merkle_branch,self.merkle_index)
     }
     pub fn verify(&self,required_confirmations:u64)->bool{
         self.bridge_id!=[0;32]&&self.chain_id!=0&&self.tx_hash!=[0;32]&&self.merkle_root!=[0;32]&&!self.merkle_branch.is_empty()&&self.merkle_index_is_within_branch_depth()&&self.confirmations>=required_confirmations&&self.block_header.merkle_root==self.merkle_root&&self.block_header.block_hash()!=[0;32]&&bitcoin_merkle_root(self.tx_hash,&self.merkle_branch,self.merkle_index)==self.merkle_root
@@ -7506,5 +7510,30 @@ mod m392_bitcoin_reorg_evidence_binding_tests {
         let e=evidence(11,[9;32]);
         let policy=BitcoinReorgPolicy{elevated_confirmations:2,critical_chainwork_margin:[1;32]};
         assert_eq!(policy.classify(&checkpoint,&e),BitcoinReorgSeverity::Normal);
+    }
+}
+
+#[cfg(test)]
+mod m393_bitcoin_utxo_merkle_index_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn utxo_merkle_index_rejects_bits_above_branch_depth(){
+        assert!(!bitcoin_merkle_index_is_valid(&vec![[2;32]],2));
+    }
+
+    #[test]
+    fn utxo_merkle_index_accepts_one_level_index_one(){
+        assert!(bitcoin_merkle_index_is_valid(&vec![[2;32]],1));
+    }
+
+    #[test]
+    fn utxo_merkle_index_accepts_full_u32_range_at_32_levels(){
+        assert!(bitcoin_merkle_index_is_valid(&vec![[2;32];32],u32::MAX));
+    }
+
+    #[test]
+    fn utxo_merkle_index_rejects_oversized_branch(){
+        assert!(!bitcoin_merkle_index_is_valid(&vec![[2;32];33],0));
     }
 }
