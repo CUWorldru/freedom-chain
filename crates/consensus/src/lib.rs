@@ -773,6 +773,7 @@ pub fn validate_timeout(state:&ChainState, timeout:&freedom_types::ValidatorTime
  if timeout.height!=height{return Err("timeout height mismatch".into())}
  if timeout.round!=round{return Err("timeout round mismatch".into())}
  let v=state.active_validator_set.get(&timeout.validator_id).ok_or_else(||"unknown validator".to_string())?;
+ if v.consensus_key.is_empty(){return Err("timeout validator consensus key is empty".into())}
  if timeout.signature.len()!=64{return Err("invalid timeout signature length".into())}
  let mut sig=[0u8;64];sig.copy_from_slice(&timeout.signature);
  if !freedom_crypto::verify(&v.consensus_key,&timeout.signing_bytes(),&sig){return Err("invalid timeout signature".into())}
