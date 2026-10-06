@@ -1475,7 +1475,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub(crate) fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgeWithdrawal)?;
-  block.verify_against_parent(canonical.block_hash,canonical.height+1).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  let expected_height=canonical.height.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?; block.verify_against_parent(canonical.block_hash,expected_height).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if commitment.block_height!=block.height || commitment.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
   if attestation.bitcoin_tip_height!=block.height || attestation.bitcoin_tip_hash!=commitment.block_hash{return Err(StateError::InvalidBridgeWithdrawal);}
   let block_work=freedom_types::bitcoin_header_work(&block.header).ok_or(StateError::InvalidBridgeWithdrawal)?;
