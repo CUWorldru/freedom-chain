@@ -951,6 +951,9 @@ pub fn validate_finality_certificate_for_set(
     block: &freedom_types::Block,
     cert: &freedom_types::FinalityCertificate,
 ) -> Result<(), String> {
+    if validator_set.is_empty() {
+        return Err("finality validator set is empty".into());
+    }
     let expected_hash = block_hash(block);
     if cert.block_hash != expected_hash { return Err("finality certificate block hash mismatch".into()); }
     if cert.height != block.header.height { return Err("finality certificate height mismatch".into()); }
