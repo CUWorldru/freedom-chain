@@ -2170,24 +2170,33 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
  fn release_mature_unbonding(&mut self){
   // Never partially mutate staking state from a malformed unbonding ledger.
-  // Validate the complete accounting relation before removing any entry.
-  if self.validate_unbonding_integrity().is_err() {
-   return;
-  }
+  if self.validate_unbonding_integrity().is_err() { return; }
   let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.release_height<=self.height).map(|(id,_)|*id).collect();
-  for id in ids {
-   if let Some(e)=self.unbonding.remove(&id) {
-    let v=self.validators.get_mut(&e.validator_id).expect("validated unbonding validator");
-    v.unbonding_stake=v.unbonding_stake.checked_sub(e.amount).expect("validated unbonding stake");
-    let a=self.accounts.get_mut(&e.owner);
-    if self.staking_activated {
-      let a=a.expect("validated staking account");
-      a.staked=a.staked.checked_sub(e.amount).expect("validated account staked");
-      a.balance=a.balance.checked_add(e.amount).expect("unbonding release overflow");
-    } else if let Some(a)=a {
-      a.staked=a.staked.checked_sub(e.amount).expect("validated account staked");
-      a.balance=a.balance.checked_add(e.amount).expect("unbonding release overflow");
+
+  // Preflight every matured release before mutating any validator/account/ledger entry.
+  for id in &ids {
+   let Some(e)=self.unbonding.get(id) else { return; };
+   let Some(v)=self.validators.get(&e.validator_id) else { return; };
+   if v.unbonding_stake.checked_sub(e.amount).is_none() { return; }
+   match self.accounts.get(&e.owner) {
+    Some(a) => {
+     if a.staked.checked_sub(e.amount).is_none() || a.balance.checked_add(e.amount).is_none() { return; }
     }
+    None if self.staking_activated => return,
+    None => {}
+   }
+  }
+
+  for id in ids {
+   let Some(e)=self.unbonding.remove(&id) else { return; };
+   let Some(v)=self.validators.get_mut(&e.validator_id) else { return; };
+   let Some(next_unbonding)=v.unbonding_stake.checked_sub(e.amount) else { return; };
+   v.unbonding_stake=next_unbonding;
+   if let Some(a)=self.accounts.get_mut(&e.owner) {
+    let Some(next_staked)=a.staked.checked_sub(e.amount) else { return; };
+    let Some(next_balance)=a.balance.checked_add(e.amount) else { return; };
+    a.staked=next_staked;
+    a.balance=next_balance;
    }
   }
  }
