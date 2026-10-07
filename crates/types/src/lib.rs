@@ -1159,7 +1159,7 @@ pub struct BridgePauseAuthorizationSet {
 }
 impl BridgePauseAuthorizationSet {
     pub fn authenticated_count(&self,keys:&BTreeMap<Hash,[u8;32]>)->u16{
-        self.authorizations.iter().filter_map(|a|keys.get(&a.validator_id).map(|k|(a,k))).filter(|(a,k)|a.bridge_id==self.bridge_id&&a.nonce==self.nonce&&a.verify_authenticated(k)).map(|(a,_)|a.validator_id).collect::<BTreeSet<Hash>>().len() as u16
+        self.authorizations.iter().filter_map(|a|keys.get(&a.validator_id).map(|k|(a,k))).filter(|(a,k)|a.bridge_id==self.bridge_id&&a.nonce==self.nonce&&a.verify_authenticated(k)).map(|(a,_)|a.validator_id).collect::<BTreeSet<Hash>>().len().try_into().unwrap_or(u16::MAX)
     }
 }
 
@@ -1236,7 +1236,7 @@ impl BridgeMessageApprovalSet {
             .filter(|(a, k)| a.verify_authenticated(k))
             .map(|(a, _)| a.validator_id)
             .collect::<std::collections::BTreeSet<Hash>>()
-            .len() as u16
+            .len().try_into().unwrap_or(u16::MAX)
     }
 
     pub fn quorum_reached_authenticated(
@@ -1337,7 +1337,7 @@ impl BridgeApprovalSet {
                 }
             }
         }
-        ids.len() as u16
+        ids.len().try_into().unwrap_or(u16::MAX)
     }
     pub fn quorum_reached_authenticated(&self,policy:&BridgeSecurityPolicy,bridge_id:Hash,withdrawal_id:Hash,intent_hash:Hash,validator_keys:&std::collections::BTreeMap<Hash,[u8;32]>)->bool{
         policy.quorum_reached(self.authenticated_approvals(bridge_id,withdrawal_id,intent_hash,validator_keys))
@@ -1348,7 +1348,7 @@ impl BridgeApprovalSet {
             if a.bridge_id==bridge_id&&a.withdrawal_id==withdrawal_id&&a.request_id==self.request_id
                 &&a.intent_hash==intent_hash&&a.structurally_valid(){ids.insert(a.validator_id);}
         }
-        ids.len() as u16
+        ids.len().try_into().unwrap_or(u16::MAX)
     }
     pub fn quorum_reached(&self,policy:&BridgeSecurityPolicy,bridge_id:Hash,withdrawal_id:Hash,intent_hash:Hash)->bool{
         policy.quorum_reached(self.unique_valid_approvals(bridge_id,withdrawal_id,intent_hash))
@@ -5574,5 +5574,28 @@ mod m420_bridge_quorum_bounds_tests {
         policy.validator_quorum = 3;
         policy.validator_total = 3;
         assert!(policy.quorum_matches_validator_count(3));
+    }
+}
+
+#[cfg(test)]
+mod m421_bridge_count_saturation_tests {
+    use super::*;
+
+    #[test]
+    fn oversized_unique_approvals_do_not_wrap_to_zero() {
+        let approvals = BridgeApprovalSet {
+            request_id: [1; 32],
+            approvals: (0..=u16::MAX as usize).map(|i| {
+                let mut validator_id = [0u8; 32];
+                validator_id[..8].copy_from_slice(&(i as u64).to_le_bytes());
+                BridgeApproval {
+                    bridge_id: [2; 32], request_id: [1; 32], withdrawal_id: [3; 32],
+                    validator_id, nonce: 1, amount: 1, destination_chain_id: 1,
+                    asset_id: [5; 32], intent_hash: [4; 32], signature: vec![0; 64],
+                }
+            }).collect(),
+            threshold_signatures: 1,
+        };
+        assert_eq!(approvals.unique_valid_approvals([2; 32], [3; 32], [4; 32]), u16::MAX);
     }
 }
