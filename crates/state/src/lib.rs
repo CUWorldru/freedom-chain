@@ -2561,10 +2561,11 @@ mod m330_public_chain_id_boundary_tests {
   let next_circulating=self.supply.circulating.checked_sub(cost).ok_or(StateError::ArithmeticOverflow)?;
   let next_treasury=self.supply.treasury.checked_add(cost).ok_or(StateError::ArithmeticOverflow)?;
   let next_nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance;
+  if balance<cost{return Err(StateError::InsufficientBalanceForPurchase)}
   let mut new_ids=Vec::with_capacity(p.quantity as usize);
   let start=draw.total_tickets+1;
   for n in start..=new_total { let id=freedom_primitives::hash_bytes(&[b"FREEDOM-TICKET-V1".as_slice(),&tx.sender,&p.draw_id,&n.to_le_bytes()].concat()); if self.tickets.contains_key(&id){return Err(StateError::DuplicateTicket)} new_ids.push(id); }
-  let balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance; if balance<cost{return Err(StateError::InsufficientBalanceForPurchase)}
   {let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;a.balance-=cost;a.nonce=next_nonce;}
   self.supply.circulating=next_circulating; self.supply.treasury=next_treasury;
   let d=self.draws.get_mut(&p.draw_id).ok_or(StateError::InvalidDraw)?; d.total_tickets=new_total; d.prize_pool_native_units=next_draw_prize; d.cu_fund_native_units=next_draw_fund; d.annual_reserve_native_units=next_draw_reserve;
@@ -6581,6 +6582,26 @@ mod m416_bitcoin_canonical_tip_equal_work_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m423_ticket_allocation_order_tests {
+    use super::*;
+
+    #[test]
+    fn insufficient_balance_is_rejected_before_ticket_id_allocation() {
+        let key=[9u8;32];
+        let owner=freedom_primitives::address_from_public_key(&key);
+        let validator=Validator{validator_id:freedom_primitives::hash_bytes(&key),owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+        let genesis=Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]};
+        let mut state=ChainState::genesis(&genesis);
+        state.insert_account(Account::new(key,0));
+        let draw_id=[7u8;32];
+        state.create_draw(DrawConfig{draw_id,starts_at:0,ends_at:u64::MAX,ticket_price_native_units:10_000,winner_count:1,seed_block:0}).unwrap();
+        let quantity=1_000_000_000u64;
+        let tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender:owner,nonce:0,kind:TxKind::CreateTicket,payload:CreateTicketPayload{draw_id,quantity}.encode(),fee:0,signature:vec![]};
+        assert_eq!(state.create_ticket(&tx),Err(StateError::InsufficientBalanceForPurchase));
+    }
+}
 
 #[cfg(test)]
 mod m422_evidence_decoder_bounds_tests {
