@@ -1629,8 +1629,13 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  pub fn validate_bitcoin_utxo_accumulator_proof(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoAccumulatorProof)->Result<(),StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let attestation=self.bitcoin_utxo_attestations.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if proof.accumulator.bridge_id!=bridge_id
     || proof.accumulator.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
+    || proof.accumulator.root!=attestation.accumulator_root
+    || proof.accumulator.bitcoin_tip_height!=canonical.height
+    || proof.accumulator.bitcoin_tip_hash!=canonical.block_hash
+    || proof.accumulator.bitcoin_tip_chainwork!=canonical.chainwork
     || !proof.verify_membership(canonical){return Err(StateError::InvalidBridgeWithdrawal);}
   Ok(())
  }
@@ -3544,6 +3549,64 @@ mod m211_bitcoin_merkle_proof_chain_id_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m425_bitcoin_utxo_accumulator_anchor_tests {
+    use super::*;
+    use freedom_types::{BitcoinChainCheckpoint, BitcoinUtxoAccumulator, BitcoinUtxoAccumulatorProof, BitcoinUtxoCommitmentAttestation};
+
+    #[test]
+    fn accumulator_proof_must_match_authoritative_attestation_root() {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let bridge = [7u8; 32];
+        let canonical = BitcoinChainCheckpoint { height: 100, block_hash: [8u8; 32], chainwork: [9u8; 32] };
+        state.bitcoin_canonical_tips.insert(bridge, canonical.clone());
+
+        let tx_hash = [11u8; 32];
+        let script_pubkey = vec![0u8; 1];
+        let root = BitcoinUtxoAccumulator::leaf_hash(&tx_hash, 0, 1, &script_pubkey);
+        state.bitcoin_utxo_attestations.insert(bridge, BitcoinUtxoCommitmentAttestation {
+            bridge_id: bridge,
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            bitcoin_tip_height: canonical.height,
+            bitcoin_tip_hash: canonical.block_hash,
+            previous_utxo_root: [12u8; 32],
+            accumulator_root: [13u8; 32],
+            sequence: 1,
+            validator_set_epoch: 0,
+            validator_set_hash: state.validator_set_history[&0],
+            policy_id: bridge,
+            validator_ids: vec![],
+            signatures: vec![],
+            attestation_hash: [14u8; 32],
+        });
+
+        let proof = BitcoinUtxoAccumulatorProof {
+            accumulator: BitcoinUtxoAccumulator {
+                bridge_id: bridge,
+                chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+                bitcoin_tip_height: canonical.height,
+                bitcoin_tip_hash: canonical.block_hash,
+                bitcoin_tip_chainwork: canonical.chainwork,
+                root,
+                leaf_count: 1,
+            },
+            tx_hash,
+            vout: 0,
+            amount_sat: 1,
+            script_pubkey,
+            leaf_index: 0,
+            siblings: vec![],
+            exists: true,
+        };
+
+        assert_eq!(
+            state.validate_bitcoin_utxo_accumulator_proof(bridge, &proof),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+}
 
 #[cfg(test)]
 mod m212_bitcoin_utxo_transition_chain_id_tests {
