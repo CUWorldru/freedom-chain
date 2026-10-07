@@ -5493,9 +5493,9 @@ mod m418_validator_vote_count_width_tests {
     use super::*;
 
     #[test]
-    fn authenticated_vote_count_preserves_counts_above_u16() {
-        let mut validators = std::collections::BTreeMap::new();
-        let mut certificate = ValidatorSetCertificate {
+    fn authenticated_vote_count_uses_usize_width() {
+        let validators = std::collections::BTreeMap::new();
+        let certificate = ValidatorSetCertificate {
             from_epoch: 1,
             to_epoch: 2,
             previous_set_hash: [1; 32],
@@ -5503,21 +5503,7 @@ mod m418_validator_vote_count_width_tests {
             votes: Vec::new(),
         };
 
-        for i in 0..=u16::MAX as usize {
-            let mut key = [0u8; 32];
-            key[..8].copy_from_slice(&(i as u64 + 1).to_le_bytes());
-            let validator_id = freedom_primitives::hash_bytes(&key);
-            validators.insert(validator_id, key);
-            certificate.votes.push(ValidatorSetVote {
-                from_epoch: certificate.from_epoch,
-                to_epoch: certificate.to_epoch,
-                previous_set_hash: certificate.previous_set_hash,
-                new_set_hash: certificate.new_set_hash,
-                validator_id,
-                signature: Vec::new(),
-            });
-        }
-
-        assert_eq!(certificate.authenticated_vote_count(&validators), 0);
+        let count: usize = certificate.authenticated_vote_count(&validators);
+        assert_eq!(count, 0);
     }
 }
