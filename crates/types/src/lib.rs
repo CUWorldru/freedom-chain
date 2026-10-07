@@ -3433,7 +3433,8 @@ impl TronTransactionInclusionProof {
                     return false;
                 }
                 index /= 2;
-                level_count = (level_count + 1) / 2;
+                // Equivalent to ceil(level_count / 2), without level_count + 1 overflow.
+                level_count = (level_count / 2) + (level_count % 2);
             } else {
                 return false;
             }
@@ -5464,5 +5465,24 @@ mod m415_tron_merkle_level_arithmetic_tests {
     #[test]
     fn expected_levels_handles_max_u32_transaction_count() {
         assert_eq!(TronTransactionInclusionProof::expected_levels(u32::MAX as usize), 32);
+    }
+}
+
+#[cfg(test)]
+mod m416_tron_merkle_verifier_overflow_tests {
+    use super::*;
+
+    #[test]
+    fn verify_against_root_handles_max_u32_transaction_count_without_overflow() {
+        let proof = TronTransactionInclusionProof {
+            tx_hash: [1; 32],
+            block_number: 1,
+            block_id: [2; 32],
+            transaction_index: 0,
+            transaction_count: u32::MAX,
+            siblings: vec![Some([3; 32]); 32],
+        };
+
+        assert!(!proof.verify_against_root([4; 32]));
     }
 }
