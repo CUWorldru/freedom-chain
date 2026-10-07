@@ -117,4 +117,35 @@ pub fn verify_merkle_proof(root: Hash, leaf: Hash, proof: &MerkleProof) -> bool 
     }
     root == domain_hash(STATE_ROOT_DOMAIN, &[&hash])
 }
-\n\n#[cfg(test)]\nmod m417_supply_consistency_overflow_tests {\n    use super::*;\n\n    #[test]\n    fn consistency_rejects_overflowing_component_sum_without_panicking() {\n        let supply = Supply {\n            total: u128::MAX,\n            circulating: u128::MAX,\n            locked: 1,\n            staked: 0,\n            treasury: 0,\n        };\n\n        assert!(!supply.is_consistent());\n    }\n\n    #[test]\n    fn consistency_accepts_exact_maximum_without_overflow() {\n        let supply = Supply {\n            total: u128::MAX,\n            circulating: u128::MAX,\n            locked: 0,\n            staked: 0,\n            treasury: 0,\n        };\n\n        assert!(supply.is_consistent());\n    }\n}\n
+
+
+#[cfg(test)]
+mod m417_supply_consistency_overflow_tests {
+    use super::*;
+
+    #[test]
+    fn consistency_rejects_overflowing_component_sum_without_panicking() {
+        let supply = Supply {
+            total: u128::MAX,
+            circulating: u128::MAX,
+            locked: 1,
+            staked: 0,
+            treasury: 0,
+        };
+
+        assert!(!supply.is_consistent());
+    }
+
+    #[test]
+    fn consistency_accepts_exact_maximum_without_overflow() {
+        let supply = Supply {
+            total: u128::MAX,
+            circulating: u128::MAX,
+            locked: 0,
+            staked: 0,
+            treasury: 0,
+        };
+
+        assert!(supply.is_consistent());
+    }
+}
