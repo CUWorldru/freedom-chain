@@ -8,10 +8,10 @@ fn decode_submit_evidence(b:&[u8])->Option<freedom_types::SubmitEvidencePayload>
  let mut validator_id=[0u8;32]; validator_id.copy_from_slice(b.get(i..i+32)?); i+=32;
  let n1=u32::from_le_bytes(b.get(i..i+4)?.try_into().ok()?) as usize;i+=4;
  if n1>MAX_EVIDENCE_COMPONENT_BYTES{return None;}
- let first=b.get(i..i+n1)?.to_vec();i+=n1;
+ let end1=i.checked_add(n1)?; let first=b.get(i..end1)?.to_vec(); i=end1;
  let n2=u32::from_le_bytes(b.get(i..i+4)?.try_into().ok()?) as usize;i+=4;
  if n2>MAX_EVIDENCE_COMPONENT_BYTES{return None;}
- let second=b.get(i..i+n2)?.to_vec();i+=n2;
+ let end2=i.checked_add(n2)?; let second=b.get(i..end2)?.to_vec(); i=end2;
  let mut evidence_hash=[0u8;32];evidence_hash.copy_from_slice(b.get(i..i+32)?);i+=32;
  let mut slash=[0u8;16];slash.copy_from_slice(b.get(i..i+16)?);i+=16;
  if i!=b.len(){return None;}
@@ -6578,5 +6578,23 @@ mod m416_bitcoin_canonical_tip_equal_work_tests {
         let previous = checkpoint(100, [1; 32], [9; 32]);
         let next = checkpoint(101, [2; 32], [10; 32]);
         assert!(bitcoin_canonical_tip_transition_allowed(&previous, &next));
+    }
+}
+
+
+#[cfg(test)]
+mod m422_evidence_decoder_bounds_tests {
+    use super::*;
+
+    #[test]
+    fn evidence_decoder_rejects_truncated_components_without_index_overflow() {
+        let mut payload = vec![1u8];
+        payload.extend_from_slice(&0u64.to_le_bytes());
+        payload.extend_from_slice(&0u64.to_le_bytes());
+        payload.extend_from_slice(&[7u8; 32]);
+        payload.extend_from_slice(&1u32.to_le_bytes());
+        payload.push(9);
+        payload.extend_from_slice(&u32::MAX.to_le_bytes());
+        assert!(decode_submit_evidence(&payload).is_none());
     }
 }
