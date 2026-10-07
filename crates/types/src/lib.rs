@@ -3400,7 +3400,8 @@ impl TronTransactionInclusionProof {
     fn expected_levels(mut count: usize) -> usize {
         let mut levels = 0usize;
         while count > 1 {
-            count = (count + 1) / 2;
+            // Equivalent to ceil(count / 2), without count + 1 overflow.
+            count = (count / 2) + (count % 2);
             levels += 1;
         }
         levels
@@ -5454,5 +5455,14 @@ mod m416_bitcoin_reorg_recovery_validator_identity_tests {
         let validators = std::collections::BTreeMap::from([(validator_id, public_key)]);
 
         assert_eq!(recovery.authenticated_count(&validators), 1);
+    }
+}
+#[cfg(test)]
+mod m415_tron_merkle_level_arithmetic_tests {
+    use super::*;
+
+    #[test]
+    fn expected_levels_handles_max_u32_transaction_count() {
+        assert_eq!(TronTransactionInclusionProof::expected_levels(u32::MAX as usize), 32);
     }
 }
