@@ -6549,3 +6549,34 @@ mod m392_reorg_severity_checkpoint_binding_tests {
         assert_eq!(state.bitcoin_reorg_severity(bridge,&e),Err(StateError::BitcoinReorgDetected));
     }
 }
+
+#[cfg(test)]
+mod m416_bitcoin_canonical_tip_equal_work_tests {
+    use super::*;
+    use freedom_types::BitcoinChainCheckpoint;
+
+    fn checkpoint(height: u64, hash: Hash, chainwork: [u8; 32]) -> BitcoinChainCheckpoint {
+        BitcoinChainCheckpoint { height, block_hash: hash, chainwork }
+    }
+
+    #[test]
+    fn equal_work_different_tip_is_rejected() {
+        let previous = checkpoint(100, [1; 32], [9; 32]);
+        let next = checkpoint(100, [2; 32], [9; 32]);
+        assert!(!bitcoin_canonical_tip_transition_allowed(&previous, &next));
+    }
+
+    #[test]
+    fn equal_work_same_tip_is_allowed() {
+        let previous = checkpoint(100, [1; 32], [9; 32]);
+        let next = checkpoint(100, [1; 32], [9; 32]);
+        assert!(bitcoin_canonical_tip_transition_allowed(&previous, &next));
+    }
+
+    #[test]
+    fn greater_chainwork_remains_allowed() {
+        let previous = checkpoint(100, [1; 32], [9; 32]);
+        let next = checkpoint(101, [2; 32], [10; 32]);
+        assert!(bitcoin_canonical_tip_transition_allowed(&previous, &next));
+    }
+}
