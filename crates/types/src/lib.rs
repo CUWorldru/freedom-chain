@@ -170,6 +170,12 @@ impl BridgeMintTransactionPayload {
         let approvals_bridge_id=r.hash()?;
         let approvals_message_hash=r.hash()?;
         let count=r.u16()? as usize;
+        // Each approval has three 32-byte hashes plus a u16 signature length.
+        // Reject impossible counts before allocating the approval vector.
+        const MIN_BRIDGE_APPROVAL_BYTES: usize = 32 + 32 + 32 + 2;
+        if count > r.b.len().saturating_sub(r.i) / MIN_BRIDGE_APPROVAL_BYTES {
+            return Err("bridge approval count exceeds remaining payload".into());
+        }
         let mut approval_vec=Vec::with_capacity(count);
         for _ in 0..count {
             let bridge_id=r.hash()?;
@@ -5597,5 +5603,24 @@ mod m421_bridge_count_saturation_tests {
             threshold_signatures: 1,
         };
         assert_eq!(approvals.unique_valid_approvals([2; 32], [3; 32], [4; 32]), u16::MAX);
+    }
+}
+
+#[cfg(test)]
+mod m423_bridge_decode_allocation_tests {
+    use super::*;
+
+    #[test]
+    fn decode_rejects_impossible_approval_count_before_allocation() {
+        let mut payload = vec![0u8; 0];
+        payload.extend_from_slice(b"FREEDOM-BRIDGE-MINT-TX-V1");
+        payload.push(1);
+        payload.push(BRIDGE_MESSAGE_PROTOCOL_VERSION as u8);
+        payload.extend_from_slice(&[0u8; 2 + 4 + 4 + 32 + 32 + 32 + 8 + 8 + 16 + 32 + 32]);
+        payload.extend_from_slice(&[0u8; 32 + 32 + 32 + 4 + 32 + 8 + 8 + 8 + 16 + 32 + 32 + 32]);
+        payload.extend_from_slice(&[0u8; 32 + 32 + 32 + 4 + 32 + 8 + 8 + 16 + 32 + 2 + 32]);
+        payload.extend_from_slice(&[0u8; 32 + 32]);
+        payload.extend_from_slice(&u16::MAX.to_le_bytes());
+        assert!(BridgeMintTransactionPayload::decode(&payload).is_err());
     }
 }
