@@ -1968,7 +1968,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
  pub fn validate_bitcoin_utxo_deposit(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoProof,expected_tx:Hash,expected_vout:u32,expected_amount:u64,expected_script:&[u8])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id
   || proof.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID
-  || !proof.validate_binding(expected_tx,expected_vout,expected_amount,expected_script)||!proof.validate_output_binding()||proof.merkle_branch.is_empty()||proof.computed_tx_hash()!=Some(proof.tx_hash)||bitcoin_merkle_root(proof.tx_hash,&proof.merkle_branch,proof.merkle_index)==[0;32]||proof.block_height>tip.height||proof.confirmations!=tip.height.saturating_sub(proof.block_height).saturating_add(1)||proof.confirmations<policy.min_external_confirmations{return Err(StateError::BitcoinReorgDetected);}Ok(())}
+  || !proof.validate_binding(expected_tx,expected_vout,expected_amount,expected_script)||!proof.validate_output_binding()||proof.merkle_branch.is_empty()||proof.computed_tx_hash()!=Some(proof.tx_hash)||!proof.validate_bitcoin_chain_binding()||bitcoin_merkle_root(proof.tx_hash,&proof.merkle_branch,proof.merkle_index)==[0;32]||proof.block_height>tip.height||proof.confirmations!=tip.height.saturating_sub(proof.block_height).saturating_add(1)||proof.confirmations<policy.min_external_confirmations{return Err(StateError::BitcoinReorgDetected);}Ok(())}
  pub fn validate_bitcoin_deposit_against_canonical_tip(&self,bridge_id:Hash,proof:&freedom_types::BitcoinMerkleProof,headers:&[freedom_types::BitcoinBlockHeader])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id||proof.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID||!proof.verify_against_canonical_tip(policy.min_external_confirmations,tip,headers){return Err(StateError::BitcoinReorgDetected);}Ok(())}
  pub fn bitcoin_deposit_allowed(&self,bridge_id:Hash)->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)}
  pub(crate) fn record_verified_external_lock(&mut self,asset_id:Hash,amount:u128)->Result<(),StateError>{
@@ -3485,6 +3485,66 @@ mod m210_bitcoin_adapter_chain_id_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m426_bitcoin_utxo_header_binding_tests {
+    use super::*;
+    use freedom_types::{BitcoinBlockHeader, BitcoinChainCheckpoint, BitcoinUtxoProof};
+
+    #[test]
+    fn utxo_deposit_rejects_merkle_proof_with_invalid_block_header_binding() {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let bridge = [7u8; 32];
+        state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
+            bridge_id: bridge,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000_000,
+            max_withdrawal_amount: 1_000_000,
+            daily_limit: 1_000_000,
+            emergency_paused: false,
+            nonce_floor: 0,
+        }).unwrap();
+        state.bitcoin_canonical_tips.insert(bridge, BitcoinChainCheckpoint {
+            height: 100,
+            block_hash: [8; 32],
+            chainwork: [9; 32],
+        });
+
+        let proof = BitcoinUtxoProof {
+            bridge_id: bridge,
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            tx_hash: [1; 32],
+            vout: 0,
+            amount_sat: 1,
+            block_height: 100,
+            confirmations: 1,
+            merkle_root: [2; 32],
+            merkle_branch: vec![[3; 32]],
+            merkle_index: 0,
+            script_pubkey: vec![0],
+            raw_transaction: vec![],
+            block_header: Some(BitcoinBlockHeader {
+                version: 1,
+                prev_block_hash: [0; 32],
+                merkle_root: [99; 32],
+                timestamp: 1,
+                bits: 0,
+                nonce: 0,
+            }),
+        };
+
+        assert_eq!(
+            state.validate_bitcoin_utxo_deposit(bridge, &proof, [1; 32], 0, 1, &[0]),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+}
 
 #[cfg(test)]
 mod m211_bitcoin_merkle_proof_chain_id_tests {
