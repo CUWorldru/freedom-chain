@@ -1108,11 +1108,18 @@ impl BridgeSecurityPolicy {
         o.extend_from_slice(&self.nonce_floor.to_le_bytes());
         freedom_primitives::hash_bytes(&o)
     }
-    pub fn quorum_matches_validator_count(&self, validator_count:usize)->bool {
-        validator_count > 0
-            && self.validator_total as usize == validator_count
-            && self.validator_quorum as usize <= validator_count
-            && u32::from(self.validator_quorum) * 3 > u32::try_from(validator_count).unwrap_or(u32::MAX) * 2
+    pub fn quorum_matches_validator_count(&self, validator_count: usize) -> bool {
+        if validator_count == 0 || validator_count > u16::MAX as usize {
+            return false;
+        }
+        if self.validator_total as usize != validator_count
+            || self.validator_quorum as usize > validator_count
+        {
+            return false;
+        }
+        let quorum_weight = u32::from(self.validator_quorum).checked_mul(3);
+        let total_weight = u32::from(self.validator_total).checked_mul(2);
+        matches!((quorum_weight, total_weight), (Some(quorum), Some(total)) if quorum > total)
     }
     pub fn threshold_reached(&self, signatures:u16)->bool { signatures >= self.threshold_signers }
     pub fn deposit_allowed(&self, amount:u128)->bool { !self.emergency_paused && amount > 0 && amount <= self.max_deposit_amount }
@@ -5530,5 +5537,42 @@ mod m418_validator_vote_count_width_tests {
 
         let count: usize = certificate.authenticated_vote_count(&validators);
         assert_eq!(count, 0);
+    }
+}
+
+
+#[cfg(test)]
+mod m420_bridge_quorum_bounds_tests {
+    use super::*;
+
+    fn policy() -> BridgeSecurityPolicy {
+        BridgeSecurityPolicy {
+            bridge_id: [1; 32],
+            approval_mode: BridgeApprovalMode::Quorum,
+            validator_quorum: 2,
+            validator_total: 3,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1,
+            max_withdrawal_amount: 1,
+            daily_limit: 1,
+            emergency_paused: false,
+            nonce_floor: 0,
+        }
+    }
+
+    #[test]
+    fn quorum_match_rejects_validator_counts_outside_u16_domain() {
+        let policy = policy();
+        assert!(!policy.quorum_matches_validator_count(u16::MAX as usize + 1));
+    }
+
+    #[test]
+    fn quorum_match_preserves_valid_three_of_three_domain() {
+        let mut policy = policy();
+        policy.validator_quorum = 3;
+        policy.validator_total = 3;
+        assert!(policy.quorum_matches_validator_count(3));
     }
 }
