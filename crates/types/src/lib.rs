@@ -361,7 +361,7 @@ impl ValidatorSetCertificate {
                     && v.validator_id != [0;32])
     }
 
-    pub fn authenticated_vote_count(&self, validators: &std::collections::BTreeMap<Hash,[u8;32]>) -> u16 {
+    pub fn authenticated_vote_count(&self, validators: &std::collections::BTreeMap<Hash,[u8;32]>) -> usize {
         let mut seen=std::collections::BTreeSet::new();
         for vote in &self.votes {
             if vote.from_epoch!=self.from_epoch || vote.to_epoch!=self.to_epoch
@@ -378,7 +378,7 @@ impl ValidatorSetCertificate {
                 seen.insert(vote.validator_id);
             }
         }
-        seen.len() as u16
+        seen.len()
     }
 }
 
@@ -5484,5 +5484,40 @@ mod m416_tron_merkle_verifier_overflow_tests {
         };
 
         assert!(!proof.verify_against_root([4; 32]));
+    }
+}
+
+
+#[cfg(test)]
+mod m418_validator_vote_count_width_tests {
+    use super::*;
+
+    #[test]
+    fn authenticated_vote_count_preserves_counts_above_u16() {
+        let mut validators = std::collections::BTreeMap::new();
+        let mut certificate = ValidatorSetCertificate {
+            from_epoch: 1,
+            to_epoch: 2,
+            previous_set_hash: [1; 32],
+            new_set_hash: [2; 32],
+            votes: Vec::new(),
+        };
+
+        for i in 0..=u16::MAX as usize {
+            let mut key = [0u8; 32];
+            key[..8].copy_from_slice(&(i as u64 + 1).to_le_bytes());
+            let validator_id = freedom_primitives::hash_bytes(&key);
+            validators.insert(validator_id, key);
+            certificate.votes.push(ValidatorSetVote {
+                from_epoch: certificate.from_epoch,
+                to_epoch: certificate.to_epoch,
+                previous_set_hash: certificate.previous_set_hash,
+                new_set_hash: certificate.new_set_hash,
+                validator_id,
+                signature: Vec::new(),
+            });
+        }
+
+        assert_eq!(certificate.authenticated_vote_count(&validators), 0);
     }
 }
