@@ -4865,7 +4865,6 @@ pub struct BitcoinUtxoStateEntry {
     pub script_pubkey: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub const BITCOIN_MAX_BLOCK_TXS_FOR_UTXO_TRANSITION: usize = 1_000_000;
 
 pub struct BitcoinUtxoAccumulatorTransition {
