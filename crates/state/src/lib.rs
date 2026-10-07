@@ -1615,6 +1615,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   let canonical=self.bitcoin_canonical_tips.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let expected_height=canonical.height.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if transition.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID || transition.previous_tip!=*canonical || block.height!=expected_height || transition.next_tip.height!=block.height || transition.next_tip.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
+  let attestation=self.bitcoin_utxo_attestations.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if transition.previous_root!=attestation.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}
   block.verify_against_parent(canonical.block_hash,expected_height).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   let (root,count)=freedom_types::BitcoinUtxoAccumulatorTransition::verify_block_against_header(previous,block).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if root!=transition.next_root||count!=transition.next_leaf_count{return Err(StateError::InvalidBridgeWithdrawal)}
@@ -1624,6 +1626,8 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   self.bitcoin_bridge_gate(transition.bridge_id)?;
   let canonical=self.bitcoin_canonical_tips.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if transition.chain_id!=freedom_types::BITCOIN_MAINNET_CHAIN_ID || transition.previous_tip.block_hash!=canonical.block_hash || transition.previous_tip.height!=canonical.height { return Err(StateError::InvalidBridgeWithdrawal); }
+  let attestation=self.bitcoin_utxo_attestations.get(&transition.bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  if transition.previous_root!=attestation.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}
   transition.verify_transition(previous).map_err(|_|StateError::InvalidBridgeWithdrawal)
  }
  pub fn validate_bitcoin_utxo_accumulator_proof(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoAccumulatorProof)->Result<(),StateError>{
@@ -3609,6 +3613,52 @@ mod m211_bitcoin_merkle_proof_chain_id_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m427_bitcoin_utxo_transition_anchor_tests {
+    use super::*;
+    use freedom_types::{BitcoinChainCheckpoint, BitcoinUtxoAccumulatorTransition, BitcoinUtxoCommitmentAttestation};
+
+    #[test]
+    fn accumulator_transition_rejects_unanchored_previous_root() {
+        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let mut state = ChainState::genesis(&genesis);
+        let bridge = [7u8; 32];
+        let canonical = BitcoinChainCheckpoint { height: 100, block_hash: [8u8; 32], chainwork: [9u8; 32] };
+        state.bitcoin_canonical_tips.insert(bridge, canonical.clone());
+        state.bitcoin_utxo_attestations.insert(bridge, BitcoinUtxoCommitmentAttestation {
+            bridge_id: bridge,
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            bitcoin_tip_height: canonical.height,
+            bitcoin_tip_hash: canonical.block_hash,
+            previous_utxo_root: [10; 32],
+            accumulator_root: [11; 32],
+            sequence: 1,
+            validator_set_epoch: 0,
+            validator_set_hash: state.validator_set_history[&0],
+            policy_id: bridge,
+            validator_ids: vec![],
+            signatures: vec![],
+            attestation_hash: [12; 32],
+        });
+        let transition = BitcoinUtxoAccumulatorTransition {
+            bridge_id: bridge,
+            chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
+            previous_tip: canonical.clone(),
+            next_tip: canonical,
+            previous_root: [99; 32],
+            next_root: [13; 32],
+            previous_leaf_count: 0,
+            next_leaf_count: 0,
+            spent: vec![],
+            created: vec![],
+        };
+        assert_eq!(
+            state.validate_bitcoin_utxo_transition(&transition, &[]),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+}
 
 #[cfg(test)]
 mod m425_bitcoin_utxo_accumulator_anchor_tests {
