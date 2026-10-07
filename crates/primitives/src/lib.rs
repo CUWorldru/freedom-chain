@@ -40,7 +40,11 @@ impl Supply {
     }
 
     pub fn is_consistent(&self) -> bool {
-        self.total == self.circulating + self.locked + self.staked + self.treasury
+        self.circulating
+            .checked_add(self.locked)
+            .and_then(|v| v.checked_add(self.staked))
+            .and_then(|v| v.checked_add(self.treasury))
+            == Some(self.total)
     }
 }
 
@@ -113,3 +117,4 @@ pub fn verify_merkle_proof(root: Hash, leaf: Hash, proof: &MerkleProof) -> bool 
     }
     root == domain_hash(STATE_ROOT_DOMAIN, &[&hash])
 }
+\n\n#[cfg(test)]\nmod m417_supply_consistency_overflow_tests {\n    use super::*;\n\n    #[test]\n    fn consistency_rejects_overflowing_component_sum_without_panicking() {\n        let supply = Supply {\n            total: u128::MAX,\n            circulating: u128::MAX,\n            locked: 1,\n            staked: 0,\n            treasury: 0,\n        };\n\n        assert!(!supply.is_consistent());\n    }\n\n    #[test]\n    fn consistency_accepts_exact_maximum_without_overflow() {\n        let supply = Supply {\n            total: u128::MAX,\n            circulating: u128::MAX,\n            locked: 0,\n            staked: 0,\n            treasury: 0,\n        };\n\n        assert!(supply.is_consistent());\n    }\n}\n
