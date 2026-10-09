@@ -206,8 +206,12 @@ mod tests {
 
     #[test]
     fn rejects_wrong_reserved_value_length() {
-        let block = committed_pair(vec![0; 31]);
-        assert_eq!(bitcoin_verify_witness_commitment(&block), Err(BitcoinWitnessCommitmentError::InvalidTransaction(BitcoinTransactionParseError::UnexpectedEof)));
+        let other = tx(false, Some(vec![vec![1]]), vec![vec![0x51]]);
+        let block = vec![
+            tx(true, Some(vec![vec![0; 31]]), vec![commitment_script([0; 32])]),
+            other,
+        ];
+        assert_eq!(bitcoin_verify_witness_commitment(&block), Err(BitcoinWitnessCommitmentError::InvalidWitnessReservedValue));
     }
 
     #[test]
