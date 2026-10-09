@@ -3000,6 +3000,9 @@ impl BitcoinUtxoProof {
 }
 
 
+pub mod bitcoin_witness;
+pub use bitcoin_witness::{bitcoin_verify_witness_commitment, bitcoin_witness_merkle_root, BitcoinWitnessCommitmentError};
+
 pub fn bitcoin_sha256d(data:&[u8])->Hash{use sha2::{Digest,Sha256};let first=Sha256::digest(data);let second=Sha256::digest(first);let mut out=[0u8;32];out.copy_from_slice(&second);out}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
