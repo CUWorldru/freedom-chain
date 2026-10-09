@@ -1291,23 +1291,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 continue;
                                             }
 
+                                            if let Err(e) = state.validate_finality_state_integrity() {
+                                                eprintln!("sync rejected: current state finality integrity failure: {e:?}");
+                                                continue;
+                                            }
                                             let mut working_state = state.clone();
                                             let mut accepted_blocks = Vec::new();
+                                            let mut batch_valid = true;
                                             for block in entry.1.blocks.clone() {
                                                 let expected_height = match working_state.height.checked_add(1) {
                                                     Some(height) => height,
                                                     None => {
                                                         eprintln!("sync block rejected: state height exceeds u64::MAX");
+                                                        batch_valid = false;
                                                         break;
                                                     }
                                                 };
-                                                if block.header.height != expected_height { break; }
-                                                let expected = match proposer_for_height_round(&working_state, block.header.height, block.header.round) { Some(v) => v, None => break };
-                                                if expected != block.header.proposer { break; }
-                                                if let Err(e) = freedom_network::validate_block_transition(&working_state, &block) { eprintln!("sync block rejected at {}: {e}", block.header.height); break; }
-                                                let committed = match execute_block(&mut working_state, &block) { Ok(b) => b, Err(e) => { eprintln!("sync execution rejected at {}: {e}", block.header.height); break; } };
+                                                if block.header.height != expected_height {
+                                                    eprintln!("sync block rejected: expected height {}, got {}", expected_height, block.header.height);
+                                                    batch_valid = false;
+                                                    break;
+                                                }
+                                                if block.header.previous_hash != working_state.last_block_hash {
+                                                    eprintln!("sync block rejected at {}: previous hash mismatch", block.header.height);
+                                                    batch_valid = false;
+                                                    break;
+                                                }
+                                                let expected = match proposer_for_height_round(&working_state, block.header.height, block.header.round) {
+                                                    Some(v) => v,
+                                                    None => {
+                                                        eprintln!("sync block rejected at {}: no proposer", block.header.height);
+                                                        batch_valid = false;
+                                                        break;
+                                                    }
+                                                };
+                                                if expected != block.header.proposer {
+                                                    eprintln!("sync block rejected at {}: proposer mismatch", block.header.height);
+                                                    batch_valid = false;
+                                                    break;
+                                                }
+                                                if let Err(e) = freedom_network::validate_block_transition(&working_state, &block) {
+                                                    eprintln!("sync block rejected at {}: {e}", block.header.height);
+                                                    batch_valid = false;
+                                                    break;
+                                                }
+                                                let committed = match execute_block(&mut working_state, &block) {
+                                                    Ok(b) => b,
+                                                    Err(e) => {
+                                                        eprintln!("sync execution rejected at {}: {e}", block.header.height);
+                                                        batch_valid = false;
+                                                        break;
+                                                    }
+                                                };
+                                                if block_hash(&committed) != block_hash(&block) {
+                                                    eprintln!("sync block rejected at {}: committed block hash mismatch", block.header.height);
+                                                    batch_valid = false;
+                                                    break;
+                                                }
+                                                if let Err(e) = working_state.validate_finality_state_integrity() {
+                                                    eprintln!("sync block rejected at {}: finality integrity failure: {e:?}", block.header.height);
+                                                    batch_valid = false;
+                                                    break;
+                                                }
                                                 accepted_blocks.push(committed);
                                             }
+                                            if !batch_valid || accepted_blocks.len() != entry.1.blocks.len() {
+                                                eprintln!("sync batch rejected atomically: accepted {} of {} blocks", accepted_blocks.len(), entry.1.blocks.len());
+                                                continue;
+                                            }
+                                            let accepted = accepted_blocks.len();
                                             if accepted > 0 {
                                                 if let Err(e) = store.put_blocks_atomic(&accepted_blocks) {
                                                     eprintln!("sync persistence error: {e}");
