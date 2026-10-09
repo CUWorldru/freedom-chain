@@ -1806,4 +1806,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    #[test]
+    fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
+        let validators: Vec<Validator> = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            Validator {
+                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                owner: address_from_public_key(&key),
+                consensus_key: key,
+                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            }
+        }).collect();
+        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
+        let mut state = initialize(&genesis).unwrap();
+        let before = state.clone();
+        let owner = state.active_validator_set.values().next().unwrap().owner;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let (_, first) = build_local_proposal(&state, owner, &key, 0).unwrap();
+
+        let mut after_first = state.clone();
+        execute_block(&mut after_first, &first).unwrap();
+        let next_owner = after_first.active_validator_set.values().next().unwrap().owner;
+        let next_key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let (_, mut second) = build_local_proposal(&after_first, next_owner, &next_key, 0).unwrap();
+        second.header.timestamp = second.header.timestamp.saturating_add(1);
+
+        let err = replay_persisted_blocks(&mut state, &[first, second]).unwrap_err();
+
+        assert!(err.contains("stored block hash mismatch at 2"));
+        assert_eq!(state, before, "failed replay must not publish its partially advanced working state");
+    }
+
 }
