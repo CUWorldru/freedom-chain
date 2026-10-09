@@ -971,6 +971,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut blocks: BTreeMap<Hash, freedom_types::Block> = BTreeMap::new();
 
     let db_path = std::env::var("NETWORK_321MORE_DB_PATH").or_else(|_| std::env::var("FREEDOM_DB_PATH")).unwrap_or_else(|_| "./data/321more".to_string());
+    // Recovery is a hard startup gate: do not construct the network swarm or
+    // enter consensus until persisted blocks have replayed and all tip anchors validate.
     let store = ChainStore::open(&db_path)?;
     let stored_height = store.latest_height()?;
     store.validate_tip_metadata()
@@ -1836,6 +1838,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         assert!(err.contains("stored block hash mismatch at 2"));
         assert_eq!(state, before, "failed replay must not publish its partially advanced working state");
+    }
+
+
+    #[test]
+    fn replay_hash_failure_does_not_advance_state_to_valid_prefix() {
+        let validators: Vec<Validator> = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            Validator {
+                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                owner: address_from_public_key(&key),
+                consensus_key: key,
+                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            }
+        }).collect();
+        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
+        let mut state = initialize(&genesis).unwrap();
+        let original = state.clone();
+        let owner = state.active_validator_set.values().next().unwrap().owner;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let (_, first) = build_local_proposal(&state, owner, &key, 0).unwrap();
+        let mut second_state = state.clone();
+        execute_block(&mut second_state, &first).unwrap();
+        let next_owner = second_state.active_validator_set.values().next().unwrap().owner;
+        let (_, mut second) = build_local_proposal(&second_state, next_owner, &key, 0).unwrap();
+        second.header.timestamp = second.header.timestamp.saturating_add(1);
+
+        assert!(replay_persisted_blocks(&mut state, &[first, second]).is_err());
+        assert_eq!(state, original);
+        assert_eq!(state.height, 0);
     }
 
 }
