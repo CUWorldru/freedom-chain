@@ -1565,16 +1565,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             let verified_snapshot = snapshot_entry.1.clone();
 
+                                            // Do not activate a remote checkpoint against a stale
+                                            // in-memory view of the durable local chain.
+                                            let durable_height = match store.latest_height() {
+                                                Ok(height) => height,
+                                                Err(e) => {
+                                                    eprintln!("snapshot activation storage read error: {e}");
+                                                    continue;
+                                                }
+                                            };
+                                            if durable_height != state.height {
+                                                eprintln!(
+                                                    "SNAPSHOT_REJECTED local state/storage height mismatch state={} storage={}",
+                                                    state.height, durable_height
+                                                );
+                                                continue;
+                                            }
                                             if let Err(e) = store.put_block_and_snapshot(
                                                 &verified_snapshot.checkpoint,
-                                                &snapshot_state,
+                                                &verified_snapshot.state,
                                                 verified_snapshot.certificate.clone(),
                                                 verified_snapshot.finality_validator_set.clone(),
-                                            ) {
-                                                &response.checkpoint,
-                                                &snapshot_state,
-                                                response.certificate.clone(),
-                                                response.finality_validator_set.clone(),
                                             ) {
                                                 eprintln!("snapshot activation persistence error: {e}");
                                                 continue;
