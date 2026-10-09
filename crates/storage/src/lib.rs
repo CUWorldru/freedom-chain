@@ -405,11 +405,26 @@ impl ChainStore {
         // Do not derive allocation size from attacker-controlled inclusive range arithmetic:
         // `to - from + 1` overflows for `(0, u64::MAX)` and can panic before validation.
         let mut out = Vec::new();
+        let mut expected_previous_hash = if from <= 1 {
+            [0u8; 32]
+        } else {
+            let previous = self.get_block(from - 1)?
+                .ok_or(StorageError::MissingBlock(from - 1))?;
+            block_hash(&previous)
+        };
         for height in from..=to {
-            match self.get_block(height)? {
-                Some(block) => out.push(block),
+            let block = match self.get_block(height)? {
+                Some(block) => block,
                 None => return Err(StorageError::MissingBlock(height)),
+            };
+            // Range reads are also used to serve peer synchronization. Validate
+            // links while reading so corrupt intermediate blocks are never
+            // returned as a seemingly contiguous batch.
+            if block.header.previous_hash != expected_previous_hash {
+                return Err(StorageError::InvalidMetadata);
             }
+            expected_previous_hash = block_hash(&block);
+            out.push(block);
         }
         Ok(out)
     }
@@ -839,6 +854,37 @@ mod tests {
         let err = store.load_snapshot(0).unwrap_err();
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "genesis snapshot hash linkage mismatch"));
     }
+    #[test]
+    fn range_rejects_intermediate_parent_corruption_without_mutating_tip() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let make = |height, previous_hash| Block {
+            header: BlockHeader {
+                height, round: 0, previous_hash, state_root: [height as u8;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: height, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let first = make(1, [0;32]);
+        let second = make(2, block_hash(&first));
+        let third = make(3, block_hash(&second));
+        store.put_blocks_atomic(&[first.clone(), second.clone(), third.clone()]).unwrap();
+        let tip_height = store.latest_height().unwrap();
+        let tip_hash = store.latest_hash().unwrap();
+
+        let mut corrupted_middle = second.clone();
+        corrupted_middle.header.previous_hash = [9;32];
+        store.db.put(
+            ChainStore::height_key(2),
+            serde_json::to_vec(&corrupted_middle).unwrap(),
+        ).unwrap();
+
+        assert!(matches!(store.range(1, 3), Err(StorageError::InvalidMetadata)));
+        assert_eq!(store.latest_height().unwrap(), tip_height);
+        assert_eq!(store.latest_hash().unwrap(), tip_hash);
+        assert_eq!(store.get_block(3).unwrap(), Some(third));
+    }
+
     #[test]
     fn range_with_maximum_endpoint_does_not_overflow_capacity_arithmetic() {
         let dir = tempdir().unwrap();
