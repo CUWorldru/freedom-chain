@@ -4891,6 +4891,9 @@ impl BitcoinUtxoAccumulatorTransition {
         if raw_transactions.is_empty() {
             return Err("block transaction list is empty".into());
         }
+        if raw_transactions.len() > BITCOIN_MAX_BLOCK_TXS_FOR_UTXO_TRANSITION {
+            return Err("block transaction count exceeds transition limit".into());
+        }
 
         let mut parsed = Vec::with_capacity(raw_transactions.len());
         for raw in raw_transactions {
@@ -4906,8 +4909,18 @@ impl BitcoinUtxoAccumulatorTransition {
         if !is_coinbase(&parsed[0]) {
             return Err("first block transaction must be coinbase".into());
         }
+        if !(2..=100).contains(&parsed[0].inputs[0].script_sig.len()) {
+            return Err("coinbase scriptSig length must be between 2 and 100 bytes".into());
+        }
         if parsed.iter().skip(1).any(is_coinbase) {
             return Err("coinbase transaction appears after first transaction".into());
+        }
+        // A null prevout is reserved for the single coinbase input. Treating it
+        // as an ordinary spend could let malformed transactions alter the UTXO delta.
+        if parsed.iter().skip(1).any(|tx| tx.inputs.iter().any(|input| {
+            input.previous_txid == [0; 32] && input.previous_vout == u32::MAX
+        })) {
+            return Err("non-coinbase transaction contains a null prevout".into());
         }
 
         let mut all_block_outpoints = std::collections::BTreeSet::new();
@@ -4922,12 +4935,20 @@ impl BitcoinUtxoAccumulatorTransition {
         }
 
         let mut spent = Vec::new();
+        let mut spent_seen = std::collections::BTreeSet::new();
         let mut created = Vec::new();
         let mut created_so_far = std::collections::BTreeSet::new();
         for (tx_index, tx) in parsed.iter().enumerate() {
             if tx_index != 0 {
+                let mut tx_inputs = std::collections::BTreeSet::new();
                 for input in &tx.inputs {
                     let outpoint = (input.previous_txid, input.previous_vout);
+                    if !tx_inputs.insert(outpoint) {
+                        return Err("transaction contains duplicate inputs".into());
+                    }
+                    if !spent_seen.insert(outpoint) {
+                        return Err("block spends the same outpoint more than once".into());
+                    }
                     if all_block_outpoints.contains(&outpoint) && !created_so_far.contains(&outpoint) {
                         return Err("transaction spends an output before it is created".into());
                     }
