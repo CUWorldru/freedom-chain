@@ -297,7 +297,7 @@ impl ChainState {
    return Err(StateError::InvalidBridgePauseAuthorization);
   }
   if auth_set.authorizations.iter().any(|a|a.bridge_id!=bridge_id||a.nonce!=auth_set.nonce||!keys.contains_key(&a.validator_id)){return Err(StateError::InvalidBridgePauseAuthorization);}
-  if auth_set.authenticated_count(&keys)<policy.validator_quorum{return Err(StateError::InvalidBridgePauseAuthorization);}
+  if auth_set.authenticated_count(&keys)<usize::from(policy.validator_quorum){return Err(StateError::InvalidBridgePauseAuthorization);}
   let mut next=policy.clone();next.emergency_paused=auth_set.authorizations.first().map(|a|a.paused).ok_or(StateError::InvalidBridgePauseAuthorization)?;
   if auth_set.authorizations.iter().any(|a|a.paused!=next.emergency_paused){return Err(StateError::InvalidBridgePauseAuthorization);}
   self.bridge_security_policies.insert(bridge_id,next);
@@ -352,7 +352,7 @@ impl ChainState {
   let mut ids=recovery.validator_ids.clone();ids.sort();ids.dedup();
   if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
   let validators=self.bitcoin_recovery_validator_keys();
-  if recovery.authenticated_count(&validators) < policy.validator_quorum{return Err(StateError::BitcoinReorgDetected);}
+  if recovery.authenticated_count(&validators) < usize::from(policy.validator_quorum){return Err(StateError::BitcoinReorgDetected);}
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
  }
