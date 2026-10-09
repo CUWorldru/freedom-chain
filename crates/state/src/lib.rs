@@ -667,6 +667,18 @@ impl ChainState {
   self.validate_slashed_evidence_integrity()?;
   self.validate_validator_set_certificate_integrity()?;
   self.validate_current_validator_set_history_binding()?;
+  // Persisted Bitcoin checkpoints are consensus-critical inputs. Validate both
+  // maps after deserialization and bind every entry to its bridge key.
+  for (bridge_id, checkpoint) in &self.bitcoin_checkpoints {
+   if *bridge_id == [0;32] || !checkpoint.validate() {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (bridge_id, checkpoint) in &self.bitcoin_canonical_tips {
+   if *bridge_id == [0;32] || !checkpoint.validate() {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
   for (bridge_id,attestation) in &self.bitcoin_utxo_attestations {
    if *bridge_id==[0;32] || attestation.bridge_id!=*bridge_id || !attestation.validate_structure() { return Err(StateError::InvalidBridgeWithdrawal); }
    self.validate_bitcoin_attestation_validator_set_binding(attestation)?;
@@ -679,6 +691,18 @@ impl ChainState {
   }
   for (bridge_id,commitment) in &self.bitcoin_utxo_commitments {
    if *bridge_id==[0;32] || !commitment.verify() { return Err(StateError::InvalidBridgeWithdrawal); }
+  }
+  // If both objects are persisted, they must describe the same UTXO transition.
+  // Either may be absent while a bridge transition is in progress.
+  for (bridge_id, attestation) in &self.bitcoin_utxo_attestations {
+   if let Some(commitment) = self.bitcoin_utxo_commitments.get(bridge_id) {
+    if attestation.bitcoin_tip_height != commitment.block_height
+      || attestation.bitcoin_tip_hash != commitment.block_hash
+      || attestation.previous_utxo_root != commitment.previous_root
+      || attestation.accumulator_root != commitment.next_root {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+   }
   }
   Ok(())
  }
@@ -6924,5 +6948,67 @@ mod m450_bitcoin_checkpoint_monotonicity_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
         assert_eq!(state.bitcoin_checkpoints.get(&bridge), Some(&before));
+    }
+}
+
+
+#[cfg(test)]
+mod m451_persisted_bitcoin_bridge_integrity_tests {
+    use super::*;
+
+    fn state() -> ChainState {
+        ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        })
+    }
+
+    #[test]
+    fn rejects_invalid_persisted_bitcoin_checkpoint() {
+        let mut state = state();
+        state.bitcoin_checkpoints.insert([7u8; 32], freedom_types::BitcoinChainCheckpoint {
+            height: 100, block_hash: [0u8; 32], chainwork: [9u8; 32],
+        });
+        assert_eq!(state.validate_finality_state_integrity(), Err(StateError::InvalidBridgeWithdrawal));
+    }
+
+    #[test]
+    fn rejects_invalid_persisted_canonical_tip() {
+        let mut state = state();
+        state.bitcoin_canonical_tips.insert([7u8; 32], freedom_types::BitcoinChainCheckpoint {
+            height: 100, block_hash: [8u8; 32], chainwork: [0u8; 32],
+        });
+        assert_eq!(state.validate_finality_state_integrity(), Err(StateError::InvalidBridgeWithdrawal));
+    }
+
+    #[test]
+    fn rejects_attestation_commitment_transition_mismatch() {
+        let mut state = state();
+        let bridge = [7u8; 32];
+        state.bridge_security_policies.insert(bridge, freedom_types::BridgeSecurityPolicy {
+            bridge_id: bridge, approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1, validator_total: 1, threshold_signers: 1, threshold_total: 1,
+            min_external_confirmations: 1, max_deposit_amount: 1000, max_withdrawal_amount: 1000,
+            daily_limit: 1000, emergency_paused: false, nonce_floor: 0,
+        });
+        let validator_hash = *state.validator_set_history.get(&state.epoch).unwrap();
+        state.bitcoin_utxo_attestations.insert(bridge, freedom_types::BitcoinUtxoCommitmentAttestation {
+            bridge_id: bridge, chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID, policy_id: bridge,
+            validator_set_epoch: state.epoch, validator_set_hash: validator_hash, sequence: 1,
+            bitcoin_tip_height: 101, bitcoin_tip_hash: [8u8; 32], bitcoin_tip_chainwork: [9u8; 32],
+            previous_utxo_root: [10u8; 32], accumulator_root: [11u8; 32],
+            validator_ids: vec![[1u8; 32]], signatures: vec![], attestation_hash: [12u8; 32],
+        });
+        state.bitcoin_utxo_attestation_policy_hashes.insert(
+            bridge, state.bridge_security_policies.get(&bridge).unwrap().commitment_hash(),
+        );
+        state.bitcoin_utxo_commitments.insert(bridge, freedom_types::BitcoinUtxoBlockCommitment {
+            block_height: 101, block_hash: [8u8; 32], previous_root: [10u8; 32], next_root: [13u8; 32],
+            update_proof: freedom_types::BitcoinUtxoSmtUpdateProof {
+                previous_root: [10u8; 32], next_root: [13u8; 32], steps: vec![],
+            },
+        });
+        assert_eq!(state.validate_finality_state_integrity(), Err(StateError::InvalidBridgeWithdrawal));
     }
 }
