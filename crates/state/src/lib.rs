@@ -309,7 +309,14 @@ impl ChainState {
   if bridge_id==[0;32]||!checkpoint.validate(){return Err(StateError::InvalidBridgeWithdrawal);}
   let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   if policy.bridge_id!=bridge_id||policy.min_external_confirmations==0{return Err(StateError::InvalidBridgeWithdrawal);}
-  if let Some(old)=self.bitcoin_checkpoints.get(&bridge_id){if checkpoint.height<old.height||checkpoint.height==old.height&&checkpoint.block_hash!=old.block_hash{return Err(StateError::InvalidBridgeWithdrawal);}}
+  if let Some(old)=self.bitcoin_checkpoints.get(&bridge_id){
+   if checkpoint.height<old.height
+    || checkpoint.chainwork<old.chainwork
+    || checkpoint.height==old.height&&checkpoint.block_hash!=old.block_hash
+    || checkpoint.chainwork==old.chainwork&&checkpoint.block_hash!=old.block_hash {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
   self.bitcoin_checkpoints.insert(bridge_id,checkpoint);Ok(())
  }
  pub fn validate_bitcoin_checkpoint_binding(&self,bridge_id:Hash,descriptor:&freedom_types::BridgeAdapterDescriptor)->Result<(),StateError>{
