@@ -6379,4 +6379,49 @@ mod m431_bitcoin_utxo_block_delta_tests {
         let (_, created) = BitcoinUtxoAccumulatorTransition::derive_block_delta(&[coinbase]).unwrap();
         assert!(created.is_empty());
     }
+
+    #[test]
+    fn block_delta_rejects_coinbase_with_invalid_script_sig_length() {
+        let coinbase = raw_tx([0; 32], u32::MAX, &[1], &[0x51], 50);
+        assert!(BitcoinUtxoAccumulatorTransition::derive_block_delta(&[coinbase]).is_err());
+    }
+
+    #[test]
+    fn block_delta_rejects_null_prevout_in_non_coinbase_transaction() {
+        let coinbase = raw_tx([0; 32], u32::MAX, &[1, 1], &[0x51], 50);
+        let malformed = raw_tx([0; 32], u32::MAX, &[1, 2], &[0x51], 10);
+        assert!(BitcoinUtxoAccumulatorTransition::derive_block_delta(&[coinbase, malformed]).is_err());
+    }
+
+    #[test]
+    fn block_delta_rejects_double_spend_across_transactions() {
+        let coinbase = raw_tx([0; 32], u32::MAX, &[1, 1], &[0x51], 50);
+        let first_spend = raw_tx([9; 32], 3, &[], &[0x51], 40);
+        let second_spend = raw_tx([9; 32], 3, &[], &[0x51], 30);
+        assert!(BitcoinUtxoAccumulatorTransition::derive_block_delta(
+            &[coinbase, first_spend, second_spend]
+        ).is_err());
+    }
+
+    #[test]
+    fn block_delta_rejects_duplicate_inputs_within_one_transaction() {
+        let coinbase = raw_tx([0; 32], u32::MAX, &[1, 1], &[0x51], 50);
+        let mut duplicate_input_tx = Vec::new();
+        duplicate_input_tx.extend_from_slice(&1i32.to_le_bytes());
+        duplicate_input_tx.push(2);
+        for _ in 0..2 {
+            duplicate_input_tx.extend_from_slice(&[9; 32]);
+            duplicate_input_tx.extend_from_slice(&3u32.to_le_bytes());
+            duplicate_input_tx.push(0);
+            duplicate_input_tx.extend_from_slice(&u32::MAX.to_le_bytes());
+        }
+        duplicate_input_tx.push(1);
+        duplicate_input_tx.extend_from_slice(&40u64.to_le_bytes());
+        duplicate_input_tx.push(1);
+        duplicate_input_tx.push(0x51);
+        duplicate_input_tx.extend_from_slice(&0u32.to_le_bytes());
+        assert!(BitcoinUtxoAccumulatorTransition::derive_block_delta(
+            &[coinbase, duplicate_input_tx]
+        ).is_err());
+    }
 }
