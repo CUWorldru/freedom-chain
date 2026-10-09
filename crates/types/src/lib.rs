@@ -4910,12 +4910,28 @@ impl BitcoinUtxoAccumulatorTransition {
             return Err("coinbase transaction appears after first transaction".into());
         }
 
+        let mut all_block_outpoints = std::collections::BTreeSet::new();
+        for tx in &parsed {
+            for (index, _) in tx.outputs.iter().enumerate() {
+                let vout = u32::try_from(index)
+                    .map_err(|_| "transaction output index exceeds u32".to_string())?;
+                if !all_block_outpoints.insert((tx.txid, vout)) {
+                    return Err("duplicate transaction output outpoint in block".into());
+                }
+            }
+        }
+
         let mut spent = Vec::new();
         let mut created = Vec::new();
+        let mut created_so_far = std::collections::BTreeSet::new();
         for (tx_index, tx) in parsed.iter().enumerate() {
             if tx_index != 0 {
                 for input in &tx.inputs {
-                    spent.push((input.previous_txid, input.previous_vout));
+                    let outpoint = (input.previous_txid, input.previous_vout);
+                    if all_block_outpoints.contains(&outpoint) && !created_so_far.contains(&outpoint) {
+                        return Err("transaction spends an output before it is created".into());
+                    }
+                    spent.push(outpoint);
                 }
             }
             for (index, output) in tx.outputs.iter().enumerate() {
@@ -4924,6 +4940,10 @@ impl BitcoinUtxoAccumulatorTransition {
                 // OP_RETURN outputs are provably unspendable and never enter the UTXO set.
                 if output.script_pubkey.first() == Some(&0x6a) {
                     continue;
+                }
+                let outpoint = (tx.txid, vout);
+                if !created_so_far.insert(outpoint) {
+                    return Err("duplicate transaction output outpoint in block".into());
                 }
                 created.push(BitcoinUtxoStateEntry {
                     tx_hash: tx.txid,
@@ -6321,6 +6341,15 @@ mod m431_bitcoin_utxo_block_delta_tests {
         let coinbase = raw_tx([0; 32], u32::MAX, &[1, 1], &[0x51], 50);
         let second_coinbase = raw_tx([0; 32], u32::MAX, &[1, 2], &[0x51], 50);
         assert!(BitcoinUtxoAccumulatorTransition::derive_block_delta(&[coinbase, second_coinbase]).is_err());
+    }
+
+    #[test]
+    fn block_delta_rejects_spending_an_output_before_its_transaction() {
+        let coinbase = raw_tx([0; 32], u32::MAX, &[1, 1], &[0x51], 50);
+        let future = raw_tx([7; 32], 0, &[], &[0x51], 90);
+        let future_txid = BitcoinTransaction::parse(&future).unwrap().txid;
+        let spender = raw_tx(future_txid, 0, &[], &[0x51], 80);
+        assert!(BitcoinUtxoAccumulatorTransition::derive_block_delta(&[coinbase, spender, future]).is_err());
     }
 
     #[test]
