@@ -6538,3 +6538,74 @@ mod m431_bitcoin_utxo_block_delta_tests {
         ).is_err());
     }
 }
+
+
+#[cfg(test)]
+mod m437_bitcoin_value_tests {
+    use super::*;
+
+    fn tx_raw(prev_txid: Hash, prev_vout: u32, script_sig: &[u8], value: u64) -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&1i32.to_le_bytes());
+        raw.push(1); // one input
+        raw.extend_from_slice(&prev_txid);
+        raw.extend_from_slice(&prev_vout.to_le_bytes());
+        raw.push(script_sig.len() as u8);
+        raw.extend_from_slice(script_sig);
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.push(1); // one output
+        raw.extend_from_slice(&value.to_le_bytes());
+        raw.push(1); // script length
+        raw.push(0x51);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw
+    }
+
+    fn coinbase(value: u64) -> Vec<u8> {
+        tx_raw([0; 32], u32::MAX, &[1, 1], value)
+    }
+
+    #[test]
+    fn m437_accepts_fees_and_coinbase_at_subsidy_plus_fees() {
+        let previous = vec![BitcoinUtxoStateEntry {
+            tx_hash: [7; 32],
+            vout: 0,
+            amount_sat: 10_000,
+            script_pubkey: vec![0x51],
+        }];
+        let regular = tx_raw([7; 32], 0, &[], 9_000);
+        let block = vec![coinbase(5_000_001_000), regular];
+        assert_eq!(
+            BitcoinUtxoAccumulatorTransition::validate_block_value_conservation(&block, &previous, 1),
+            Ok(1_000)
+        );
+    }
+
+    #[test]
+    fn m437_rejects_coinbase_overclaim() {
+        let block = vec![coinbase(5_000_000_001)];
+        assert!(BitcoinUtxoAccumulatorTransition::validate_block_value_conservation(&block, &[], 1)
+            .unwrap_err().contains("coinbase reward exceeds"));
+    }
+
+    #[test]
+    fn m437_rejects_transaction_output_value_above_inputs() {
+        let previous = vec![BitcoinUtxoStateEntry {
+            tx_hash: [8; 32],
+            vout: 0,
+            amount_sat: 10_000,
+            script_pubkey: vec![0x51],
+        }];
+        let regular = tx_raw([8; 32], 0, &[], 10_001);
+        let block = vec![coinbase(5_000_000_000), regular];
+        assert!(BitcoinUtxoAccumulatorTransition::validate_block_value_conservation(&block, &previous, 1)
+            .unwrap_err().contains("creates more value"));
+    }
+
+    #[test]
+    fn m437_rejects_missing_input_utxo() {
+        let block = vec![coinbase(5_000_000_000), tx_raw([9; 32], 0, &[], 1)];
+        assert!(BitcoinUtxoAccumulatorTransition::validate_block_value_conservation(&block, &[], 1)
+            .unwrap_err().contains("missing or already-spent UTXO"));
+    }
+}
