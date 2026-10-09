@@ -68,16 +68,9 @@ impl ChainStore {
     }
 
     pub fn put_block(&self, block: &Block) -> Result<(), StorageError> {
-        if block.header.height == 0 {
-            return Err(StorageError::InvalidMetadata);
-        }
-        let bytes = serde_json::to_vec(block).map_err(|e| StorageError::Codec(e.to_string()))?;
-        let mut batch = WriteBatch::default();
-        batch.put(Self::height_key(block.header.height), bytes);
-        batch.put(META_HEIGHT, block.header.height.to_be_bytes());
-        batch.put(META_HASH, block_hash(block));
-        self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))?;
-        Ok(())
+        // Keep single-block commits subject to the exact same canonical-chain
+        // continuity and metadata checks as multi-block synchronization.
+        self.put_blocks_atomic(std::slice::from_ref(block))
     }
 
     pub fn put_blocks_atomic(&self, blocks: &[Block]) -> Result<(), StorageError> {
@@ -468,6 +461,36 @@ mod tests {
         assert!(store.get_block(1).unwrap().is_none());
         assert!(store.get_block(3).unwrap().is_none());
         assert_eq!(store.latest_height().unwrap(), 0);
+    }
+
+    #[test]
+    fn single_block_write_rejects_overwrite_and_wrong_parent() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let make = |height, previous_hash| Block {
+            header: BlockHeader {
+                height, round: 0, previous_hash, state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: height, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+
+        let first = make(1, [0;32]);
+        let first_hash = block_hash(&first);
+        store.put_block(&first).unwrap();
+
+        assert!(matches!(
+            store.put_block(&make(1, [0;32])),
+            Err(StorageError::InvalidMetadata)
+        ));
+        assert!(matches!(
+            store.put_block(&make(2, [9;32])),
+            Err(StorageError::InvalidMetadata)
+        ));
+        assert_eq!(store.get_block(1).unwrap(), Some(first));
+        assert!(store.get_block(2).unwrap().is_none());
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), first_hash);
     }
 
     #[test]
