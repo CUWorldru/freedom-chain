@@ -1327,6 +1327,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 Ok(s) => s,
                                                 Err(e) => { eprintln!("SNAPSHOT_REJECTED invalid state encoding: {e}"); continue; }
                                             };
+                                            if let Err(e) = snapshot_state.validate_finality_state_integrity() {
+                                                eprintln!("SNAPSHOT_REJECTED persisted finality state integrity failure: {e:?}");
+                                                continue;
+                                            }
+
                                             let expected_finality_set_hash = if let Some(cert) = &response.checkpoint.header.epoch_transition_certificate {
                                                 cert.previous_set_hash
                                             } else {
