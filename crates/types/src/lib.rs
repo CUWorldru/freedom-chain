@@ -5003,6 +5003,15 @@ impl BitcoinUtxoCompactTransitionProof {
 pub const BITCOIN_UTXO_SMT_DOMAIN: &[u8] = b"FREEDOM-BITCOIN-UTXO-SMT-V2";
 pub const BITCOIN_UTXO_SMT_DEPTH: usize = 256;
 
+fn bitcoin_utxo_smt_key_order(a: &Hash, b: &Hash) -> std::cmp::Ordering {
+    for bit in 0..BITCOIN_UTXO_SMT_DEPTH {
+        let av = (a[bit / 8] >> (bit % 8)) & 1;
+        let bv = (b[bit / 8] >> (bit % 8)) & 1;
+        match av.cmp(&bv) { std::cmp::Ordering::Equal => {}, order => return order }
+    }
+    std::cmp::Ordering::Equal
+}
+
 pub fn bitcoin_utxo_smt_key(txid: &Hash, vout: u32) -> Hash {
     let mut b=Vec::new();
     b.extend_from_slice(BITCOIN_UTXO_SMT_DOMAIN);
@@ -5197,6 +5206,7 @@ impl BitcoinUtxoSmtUpdateProof {
             });
         }
         if steps.is_empty(){return Err("SMT snapshots are identical".into());}
+        steps.sort_by(|a,b| bitcoin_utxo_smt_key_order(&a.key,&b.key));
         Ok(Self{previous_root,next_root,steps})
     }
 }
@@ -5214,8 +5224,9 @@ impl BitcoinUtxoSmtUpdateProof {
         next_root: Hash,
         previous: &[BitcoinUtxoStateEntry],
         raw_transactions: &[Vec<u8>],
-        witness_steps: Vec<BitcoinUtxoSmtUpdateStep>,
+        mut witness_steps: Vec<BitcoinUtxoSmtUpdateStep>,
     ) -> Result<Self, String> {
+        witness_steps.sort_by(|a,b| bitcoin_utxo_smt_key_order(&a.key,&b.key));
         let (spent,created)=BitcoinUtxoAccumulatorTransition::derive_block_delta(raw_transactions)?;
         let mut expected=std::collections::BTreeMap::<(Hash,u32),Option<BitcoinUtxoStateEntry>>::new();
         for e in previous {
@@ -5255,7 +5266,7 @@ impl BitcoinUtxoSmtUpdateProof {
     pub fn verify(&self) -> bool {
         if self.steps.is_empty()
             || self.steps.len() > 1_000_000
-            || self.steps.windows(2).any(|w| w[0].key >= w[1].key)
+            || self.steps.windows(2).any(|w| bitcoin_utxo_smt_key_order(&w[0].key, &w[1].key) != std::cmp::Ordering::Less)
             || self.steps.iter().any(|s| s.old_entry == s.new_entry)
             || self.steps.iter().any(|s| {
                 s.siblings.len() != BITCOIN_UTXO_SMT_DEPTH
