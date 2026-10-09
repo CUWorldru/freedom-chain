@@ -1694,7 +1694,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if ready {
                                         if let Some(block) = blocks.get(&hash).cloned() {
                                             let finality_validator_set = state.active_validator_set.clone();
-                                            let committed = protocol.finalize_if_quorum(&mut state, &block, round)?;
+                                            // Finalize on a candidate state. Do not expose the new state in
+                                            // memory until the canonical block has been durably persisted.
+                                            let mut candidate_state = state.clone();
+                                            let committed = protocol.finalize_if_quorum(&mut candidate_state, &block, round)?;
+                                            if committed.header.height != state.height.checked_add(1).ok_or_else(|| "block height exceeds u64::MAX".to_string())? {
+                                                return Err("finalized block height does not extend current state".into());
+                                            }
+                                            if committed.header.previous_hash != state.last_block_hash {
+                                                return Err("finalized block does not extend current state hash".into());
+                                            }
+                                            if let Err(e) = candidate_state.validate_finality_state_integrity() {
+                                                return Err(format!("finalized candidate state failed finality integrity: {e:?}").into());
+                                            }
+                                            if committed.header.state_root != candidate_state.state_root()
+                                                || committed.header.height != candidate_state.height
+                                                || committed.header.previous_hash != state.last_block_hash
+                                            {
+                                                return Err("finalized block and candidate state commitments mismatch".into());
+                                            }
                                             store.put_block(&committed)?;
                                             if committed.header.height % snapshot_interval == 0 {
                                                 let certificate = freedom_types::FinalityCertificate {
@@ -1704,12 +1722,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     precommits: protocol.precommits.values().cloned().collect(),
                                                 };
                                                 store.save_snapshot_with_certificate_and_validator_set(
-                                                    &state,
+                                                    &candidate_state,
                                                     freedom_consensus::block_hash(&committed),
                                                     certificate,
                                                     finality_validator_set,
                                                 )?;
                                             }
+                                            state = candidate_state;
                                             println!("FINALIZED height={} round={} hash={}", committed.header.height, round, hex::encode(block_hash(&committed)));
                                             protocol.reset_height();
                                             blocks.clear();
