@@ -1498,9 +1498,14 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     let expected_sequence = old.sequence.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
     if attestation.sequence != expected_sequence { return Err(StateError::InvalidBridgeWithdrawal); }
   }
-  let next=freedom_types::BitcoinChainCheckpoint{height:block.height,block_hash:block.header.block_hash(),chainwork:attestation.bitcoin_tip_chainwork};  self.bitcoin_canonical_tips.insert(bridge_id,next);
+  // Resolve every fallible dependency before mutating canonical state. A missing
+  // policy must not leave the tip or attestation partially advanced.
+  let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let policy_hash=policy.commitment_hash();
+  let next=freedom_types::BitcoinChainCheckpoint{height:block.height,block_hash:block.header.block_hash(),chainwork:attestation.bitcoin_tip_chainwork};
+  self.bitcoin_canonical_tips.insert(bridge_id,next);
   self.bitcoin_utxo_attestations.insert(bridge_id,attestation.clone());
-  let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;  self.bitcoin_utxo_attestation_policy_hashes.insert(bridge_id,policy.commitment_hash());
+  self.bitcoin_utxo_attestation_policy_hashes.insert(bridge_id,policy_hash);
   Ok(())
  }
 
