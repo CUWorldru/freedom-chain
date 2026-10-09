@@ -1713,7 +1713,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             {
                                                 return Err("finalized block and candidate state commitments mismatch".into());
                                             }
-                                            store.put_block(&committed)?;
                                             if committed.header.height % snapshot_interval == 0 {
                                                 let certificate = freedom_types::FinalityCertificate {
                                                     block_hash: freedom_consensus::block_hash(&committed),
@@ -1721,12 +1720,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     round,
                                                     precommits: protocol.precommits.values().cloned().collect(),
                                                 };
-                                                store.save_snapshot_with_certificate_and_validator_set(
+                                                // Persist checkpoint block, tip metadata, and snapshot in one
+                                                // RocksDB WriteBatch so failure cannot split their durable state.
+                                                store.put_block_and_snapshot(
+                                                    &committed,
                                                     &candidate_state,
-                                                    freedom_consensus::block_hash(&committed),
                                                     certificate,
                                                     finality_validator_set,
                                                 )?;
+                                            } else {
+                                                store.put_block(&committed)?;
                                             }
                                             state = candidate_state;
                                             println!("FINALIZED height={} round={} hash={}", committed.header.height, round, hex::encode(block_hash(&committed)));
