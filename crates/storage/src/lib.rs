@@ -304,7 +304,18 @@ impl ChainStore {
         certificate: freedom_types::FinalityCertificate,
         finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
     ) -> Result<(), StorageError> {
-        if checkpoint.header.height == 0 || checkpoint.header.height != state.height {
+        // The atomic checkpoint path must enforce the same append-only rule as
+        // put_block(s)_atomic; otherwise a snapshot write could overwrite history.
+        self.validate_tip_metadata()?;
+        let current_height = self.latest_height()?;
+        let expected_height = current_height
+            .checked_add(1)
+            .ok_or(StorageError::InvalidMetadata)?;
+        let current_hash = self.latest_hash()?;
+        if checkpoint.header.height != expected_height
+            || checkpoint.header.previous_hash != current_hash
+            || checkpoint.header.height != state.height
+        {
             return Err(StorageError::InvalidMetadata);
         }
         let checkpoint_hash = freedom_consensus::block_hash(checkpoint);
@@ -809,6 +820,59 @@ mod tests {
         assert_eq!(store.latest_hash().unwrap(), canonical_hash);
         // Reading the damaged history fails closed; it is never silently replaced.
         assert!(matches!(store.get_block(1), Err(StorageError::Codec(_))));
+    }
+
+
+    #[test]
+    fn atomic_checkpoint_snapshot_rejects_overwrite_and_wrong_parent() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let make = |height, previous_hash| Block {
+            header: BlockHeader {
+                height, round: 0, previous_hash, state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: height, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let first = make(1, [0;32]);
+        store.put_block(&first).unwrap();
+        let original_hash = store.latest_hash().unwrap();
+        let mut candidate = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![]
+        });
+        candidate.height = 1;
+        candidate.last_block_hash = block_hash(&first);
+
+        let invalid = store.put_block_and_snapshot(
+            &first,
+            &candidate,
+            freedom_types::FinalityCertificate {
+                block_hash: block_hash(&first), height: 1, round: 0, precommits: Vec::new()
+            },
+            std::collections::BTreeMap::new(),
+        );
+        assert!(matches!(invalid, Err(StorageError::InvalidMetadata)));
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), original_hash);
+        assert_eq!(store.get_block(1).unwrap(), Some(first));
+        assert!(store.load_snapshot(1).unwrap().is_none());
+
+        let wrong_parent = make(2, [9;32]);
+        let mut next_state = candidate.clone();
+        next_state.height = 2;
+        next_state.last_block_hash = block_hash(&wrong_parent);
+        let invalid = store.put_block_and_snapshot(
+            &wrong_parent,
+            &next_state,
+            freedom_types::FinalityCertificate {
+                block_hash: block_hash(&wrong_parent), height: 2, round: 0, precommits: Vec::new()
+            },
+            std::collections::BTreeMap::new(),
+        );
+        assert!(matches!(invalid, Err(StorageError::InvalidMetadata)));
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), original_hash);
+        assert!(store.get_block(2).unwrap().is_none());
     }
 
 }
