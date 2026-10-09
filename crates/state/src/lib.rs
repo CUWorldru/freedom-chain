@@ -6841,3 +6841,88 @@ mod m422_evidence_decoder_bounds_tests {
         assert!(decode_submit_evidence(&payload).is_none());
     }
 }
+
+
+#[cfg(test)]
+mod m450_bitcoin_checkpoint_monotonicity_tests {
+    use super::*;
+    use freedom_types::BitcoinChainCheckpoint;
+
+    fn state_with_checkpoint() -> (ChainState, Hash) {
+        let bridge = [7u8; 32];
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
+            bridge_id: bridge,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000_000,
+            max_withdrawal_amount: 1_000_000,
+            daily_limit: 1_000_000,
+            emergency_paused: false,
+            nonce_floor: 0,
+        }).unwrap();
+        let checkpoint = BitcoinChainCheckpoint {
+            height: 100,
+            block_hash: [8u8; 32],
+            chainwork: [9u8; 32],
+        };
+        state.register_bitcoin_checkpoint(bridge, checkpoint).unwrap();
+        (state, bridge)
+    }
+
+    #[test]
+    fn rejects_chainwork_regression_without_mutating_checkpoint() {
+        let (mut state, bridge) = state_with_checkpoint();
+        let before = state.bitcoin_checkpoints.get(&bridge).cloned().unwrap();
+        let candidate = BitcoinChainCheckpoint {
+            height: 101,
+            block_hash: [10u8; 32],
+            chainwork: [8u8; 32],
+        };
+        assert_eq!(
+            state.register_bitcoin_checkpoint(bridge, candidate),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+        assert_eq!(state.bitcoin_checkpoints.get(&bridge), Some(&before));
+    }
+
+    #[test]
+    fn rejects_hash_replacement_at_same_height_without_mutation() {
+        let (mut state, bridge) = state_with_checkpoint();
+        let before = state.bitcoin_checkpoints.get(&bridge).cloned().unwrap();
+        let candidate = BitcoinChainCheckpoint {
+            height: before.height,
+            block_hash: [10u8; 32],
+            chainwork: before.chainwork,
+        };
+        assert_eq!(
+            state.register_bitcoin_checkpoint(bridge, candidate),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+        assert_eq!(state.bitcoin_checkpoints.get(&bridge), Some(&before));
+    }
+
+    #[test]
+    fn rejects_hash_replacement_at_equal_chainwork_without_mutation() {
+        let (mut state, bridge) = state_with_checkpoint();
+        let before = state.bitcoin_checkpoints.get(&bridge).cloned().unwrap();
+        let candidate = BitcoinChainCheckpoint {
+            height: before.height + 1,
+            block_hash: [10u8; 32],
+            chainwork: before.chainwork,
+        };
+        assert_eq!(
+            state.register_bitcoin_checkpoint(bridge, candidate),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+        assert_eq!(state.bitcoin_checkpoints.get(&bridge), Some(&before));
+    }
+}
