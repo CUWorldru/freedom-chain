@@ -4996,6 +4996,92 @@ impl BitcoinUtxoAccumulatorTransition {
         Ok((spent, created))
     }
 
+    /// Execute Bitcoin Script for every non-coinbase input in a candidate block.
+    ///
+    /// `flags` must be selected by the caller for the relevant Bitcoin network
+    /// and block-height activation rules. Previous UTXOs must be the authenticated
+    /// state immediately before this block. Outputs created earlier in this block
+    /// are tracked so same-block spends are also script-checked. Coinbase outputs
+    /// are deliberately not made spendable within their creation block.
+    pub fn validate_block_scripts(
+        raw_transactions: &[Vec<u8>],
+        previous_utxos: &[BitcoinUtxoStateEntry],
+        flags: u32,
+    ) -> Result<(), String> {
+        if raw_transactions.is_empty() {
+            return Err("block transaction list is empty".into());
+        }
+        if raw_transactions.len() > BITCOIN_MAX_BLOCK_TXS_FOR_UTXO_TRANSITION {
+            return Err("block transaction count exceeds transition limit".into());
+        }
+
+        let mut available = std::collections::BTreeMap::<(Hash, u32), (u64, Vec<u8>)>::new();
+        for entry in previous_utxos {
+            if available.insert(
+                (entry.tx_hash, entry.vout),
+                (entry.amount_sat, entry.script_pubkey.clone()),
+            ).is_some() {
+                return Err("previous UTXO set contains duplicate outpoints".into());
+            }
+        }
+
+        let mut parsed = Vec::with_capacity(raw_transactions.len());
+        for raw in raw_transactions {
+            parsed.push(BitcoinTransaction::parse(raw)
+                .map_err(|_| "invalid serialized Bitcoin transaction".to_string())?);
+        }
+        let is_coinbase = |tx: &BitcoinTransaction| {
+            tx.inputs.len() == 1
+                && tx.inputs[0].previous_txid == [0; 32]
+                && tx.inputs[0].previous_vout == u32::MAX
+        };
+        if !is_coinbase(&parsed[0]) || parsed.iter().skip(1).any(is_coinbase) {
+            return Err("invalid coinbase placement".into());
+        }
+
+        for (tx_index, tx) in parsed.iter().enumerate() {
+            if tx_index != 0 {
+                let raw = &raw_transactions[tx_index];
+                let mut tx_inputs = std::collections::BTreeSet::new();
+                for (input_index, input) in tx.inputs.iter().enumerate() {
+                    let outpoint = (input.previous_txid, input.previous_vout);
+                    if !tx_inputs.insert(outpoint) {
+                        return Err("transaction contains duplicate inputs".into());
+                    }
+                    let (amount, script_pubkey) = available.get(&outpoint)
+                        .cloned()
+                        .ok_or_else(|| "transaction input references a missing or already-spent UTXO".to_string())?;
+                    freedom_bitcoin_script::verify_input(
+                        &script_pubkey,
+                        amount,
+                        raw,
+                        input_index,
+                        flags,
+                    ).map_err(|_| format!("Bitcoin Script verification failed for input {}", input_index))?;
+                    available.remove(&outpoint);
+                }
+            }
+
+            // Bitcoin coinbase outputs cannot be spent in the same block.
+            if tx_index != 0 {
+                for (vout, output) in tx.outputs.iter().enumerate() {
+                    if output.script_pubkey.first() == Some(&0x6a) {
+                        continue;
+                    }
+                    let vout = u32::try_from(vout)
+                        .map_err(|_| "transaction output index exceeds u32".to_string())?;
+                    if available.insert(
+                        (tx.txid, vout),
+                        (output.amount_sat, output.script_pubkey.clone()),
+                    ).is_some() {
+                        return Err("duplicate UTXO outpoint while validating scripts".into());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Validate Bitcoin transaction value conservation for a candidate block.
     ///
     /// This checks input/output amounts, total fees and the coinbase reward cap.
@@ -5628,6 +5714,22 @@ pub struct BitcoinUtxoBlockCommitment {
 }
 
 impl BitcoinUtxoBlockCommitment {
+    /// Build a UTXO commitment only after executing every input script.
+    /// The caller is responsible for selecting consensus flags active at this
+    /// block height; use this entry point in consensus validation paths.
+    pub fn build_with_script_flags(
+        previous: &BitcoinUtxoSmtSnapshot,
+        block: &BitcoinSpendScanBlock,
+        script_flags: u32,
+    ) -> Result<Self, String> {
+        BitcoinUtxoAccumulatorTransition::validate_block_scripts(
+            &block.raw_transactions,
+            &previous.entries,
+            script_flags,
+        )?;
+        Self::build(previous, block)
+    }
+
     pub fn build(
         previous: &BitcoinUtxoSmtSnapshot,
         block: &BitcoinSpendScanBlock,
