@@ -32,11 +32,11 @@ pub fn verify_input(
     input_index: usize,
     flags: u32,
 ) -> Result<(), BitcoinScriptVerificationError> {
-    // libbitcoinconsensus uses an unsigned 32-bit input index.
+    // Bound the index to a stable, conservative API range before FFI.
     let input_index = u32::try_from(input_index)
         .map_err(|_| BitcoinScriptVerificationError::InputIndexOutOfRange)?;
 
-    bitcoinconsensus::verify(
+    bitcoinconsensus::verify_with_flags(
         previous_output_script_pubkey,
         previous_output_value_sats,
         raw_transaction,
@@ -46,9 +46,10 @@ pub fn verify_input(
     .map_err(|_| BitcoinScriptVerificationError::ScriptRejected)
 }
 
-/// Verify one input using the consensus crate's full supported flag set.
+/// Verify one input using Bitcoin Core's full flag set exposed by this crate.
 /// The caller must supply authenticated prevout data and select the correct
-/// network-specific policy for consensus activation.
+/// network-specific activation rules. VERIFY_TAPROOT is included explicitly
+/// because the crate exposes pre-Taproot and Taproot flags separately.
 pub fn verify_input_all_flags(
     previous_output_script_pubkey: &[u8],
     previous_output_value_sats: u64,
@@ -60,7 +61,7 @@ pub fn verify_input_all_flags(
         previous_output_value_sats,
         raw_transaction,
         input_index,
-        bitcoinconsensus::VERIFY_ALL,
+        bitcoinconsensus::VERIFY_ALL_PRE_TAPROOT | bitcoinconsensus::VERIFY_TAPROOT,
     )
 }
 
