@@ -978,7 +978,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let snapshot_interval = std::env::var("NETWORK_321MORE_SNAPSHOT_INTERVAL").or_else(|_| std::env::var("FREEDOM_SNAPSHOT_INTERVAL")).ok()
         .and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
         .unwrap_or(DEFAULT_SNAPSHOT_INTERVAL);
-    let replay_from = if let Some(snapshot) = store.latest_snapshot()? {
+    // Never select a checkpoint above the durable canonical tip: stale/orphaned snapshots
+    // must be ignored so startup can replay from the newest usable checkpoint.
+    let replay_from = if let Some(snapshot) = store.latest_snapshot_at_or_below(stored_height)? {
         if snapshot.height > stored_height {
             return Err(format!(
                 "snapshot height {} is ahead of stored chain height {}",
