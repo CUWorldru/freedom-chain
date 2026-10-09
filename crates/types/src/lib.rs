@@ -3032,6 +3032,7 @@ pub enum BitcoinTransactionParseError {
     InvalidVarInt,
     NonCanonicalVarInt,
     InvalidSegwitMarker,
+    SuperfluousWitnessRecord,
     MissingInputs,
     MissingOutputs,
     TrailingBytes,
@@ -3114,6 +3115,12 @@ impl BitcoinTransaction {
                 let n=usize::try_from(n_u64).map_err(|_| BitcoinTransactionParseError::LengthOverflow)?;let mut witness=Vec::with_capacity(n);
                 for _ in 0..n{let len_u64=read_varint(raw,&mut p)?;let len=usize::try_from(len_u64).map_err(|_| BitcoinTransactionParseError::LengthOverflow)?;witness.push(read_bytes(raw,&mut p,len)?);}
                 i.witness=witness;
+            }
+            // BIP144 requires the witness marker/flag only when at least one
+            // input carries a non-empty witness stack. Accepting an all-empty
+            // witness record creates a non-canonical encoding of a legacy tx.
+            if inputs.iter().all(|input| input.witness.is_empty()) {
+                return Err(BitcoinTransactionParseError::SuperfluousWitnessRecord);
             }
         }
         let lock_time=read_u32(raw,&mut p)?;if p!=raw.len(){return Err(BitcoinTransactionParseError::TrailingBytes);}
@@ -4445,6 +4452,28 @@ mod m119_bitcoin_raw_transaction_tests {
         no_witness.extend_from_slice(&[0x00,0x14]);
         no_witness.extend_from_slice(&0u32.to_le_bytes());
         assert_eq!(tx.txid,bitcoin_sha256d(&no_witness));
+    }
+
+    #[test]
+    fn parser_rejects_superfluous_empty_witness_record() {
+        let mut raw=Vec::new();
+        raw.extend_from_slice(&2i32.to_le_bytes());
+        raw.extend_from_slice(&[0,1]); // SegWit marker and flag.
+        raw.push(1); // One input.
+        raw.extend_from_slice(&[0x22;32]);
+        raw.extend_from_slice(&1u32.to_le_bytes());
+        raw.push(0); // Empty scriptSig.
+        raw.extend_from_slice(&0xffff_fffeu32.to_le_bytes());
+        raw.push(1); // One output.
+        raw.extend_from_slice(&75_000u64.to_le_bytes());
+        raw.push(1);
+        raw.push(0x51);
+        raw.push(0); // Zero witness items: superfluous witness record.
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            BitcoinTransaction::parse(&raw),
+            Err(BitcoinTransactionParseError::SuperfluousWitnessRecord)
+        );
     }
 
     #[test]
