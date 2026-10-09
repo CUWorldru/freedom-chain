@@ -4881,6 +4881,61 @@ pub struct BitcoinUtxoAccumulatorTransition {
 }
 
 impl BitcoinUtxoAccumulatorTransition {
+    /// Derive the net candidate UTXO delta from serialized Bitcoin transactions.
+    /// This validates transaction encoding and coinbase placement; full block
+    /// consensus checks (Merkle inclusion, PoW, scripts and subsidy) remain the
+    /// responsibility of the canonical-header/deposit validation path.
+    pub fn derive_block_delta(
+        raw_transactions: &[Vec<u8>],
+    ) -> Result<(Vec<(Hash, u32)>, Vec<BitcoinUtxoStateEntry>), String> {
+        if raw_transactions.is_empty() {
+            return Err("block transaction list is empty".into());
+        }
+
+        let mut parsed = Vec::with_capacity(raw_transactions.len());
+        for raw in raw_transactions {
+            parsed.push(BitcoinTransaction::parse(raw)
+                .map_err(|_| "invalid serialized Bitcoin transaction".to_string())?);
+        }
+
+        let is_coinbase = |tx: &BitcoinTransaction| {
+            tx.inputs.len() == 1
+                && tx.inputs[0].previous_txid == [0; 32]
+                && tx.inputs[0].previous_vout == u32::MAX
+        };
+        if !is_coinbase(&parsed[0]) {
+            return Err("first block transaction must be coinbase".into());
+        }
+        if parsed.iter().skip(1).any(is_coinbase) {
+            return Err("coinbase transaction appears after first transaction".into());
+        }
+
+        let mut spent = Vec::new();
+        let mut created = Vec::new();
+        for (tx_index, tx) in parsed.iter().enumerate() {
+            if tx_index != 0 {
+                for input in &tx.inputs {
+                    spent.push((input.previous_txid, input.previous_vout));
+                }
+            }
+            for (index, output) in tx.outputs.iter().enumerate() {
+                let vout = u32::try_from(index)
+                    .map_err(|_| "transaction output index exceeds u32".to_string())?;
+                // OP_RETURN outputs are provably unspendable and never enter the UTXO set.
+                if output.script_pubkey.first() == Some(&0x6a) {
+                    continue;
+                }
+                created.push(BitcoinUtxoStateEntry {
+                    tx_hash: tx.txid,
+                    vout,
+                    amount_sat: output.amount_sat,
+                    script_pubkey: output.script_pubkey.clone(),
+                });
+            }
+        }
+        Ok((spent, created))
+    }
+
     pub fn compute_next(
         previous: &[BitcoinUtxoStateEntry],
         spent: &[(Hash,u32)],
@@ -6193,5 +6248,85 @@ mod m429_bitcoin_utxo_smt_regression_tests {
         let mut reordered = proof;
         reordered.steps.reverse();
         assert!(!reordered.verify());
+    }
+}
+
+
+#[cfg(test)]
+mod m431_bitcoin_utxo_block_delta_tests {
+    use super::*;
+
+    fn raw_tx(input_txid: Hash, input_vout: u32, script_sig: &[u8], output_script: &[u8], amount: u64) -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&1i32.to_le_bytes());
+        raw.push(1); // one input
+        raw.extend_from_slice(&input_txid);
+        raw.extend_from_slice(&input_vout.to_le_bytes());
+        raw.push(script_sig.len() as u8);
+        raw.extend_from_slice(script_sig);
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.push(1); // one output
+        raw.extend_from_slice(&amount.to_le_bytes());
+        raw.push(output_script.len() as u8);
+        raw.extend_from_slice(output_script);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw
+    }
+
+    fn entry(tx: u8, vout: u32, amount: u64) -> BitcoinUtxoStateEntry {
+        BitcoinUtxoStateEntry {
+            tx_hash: [tx; 32],
+            vout,
+            amount_sat: amount,
+            script_pubkey: vec![0x51],
+        }
+    }
+
+    #[test]
+    fn block_delta_builds_a_proof_for_spend_and_new_outputs() {
+        let previous = BitcoinUtxoSmtSnapshot {
+            entries: vec![entry(1, 0, 100), entry(2, 0, 200)],
+        };
+        let coinbase = raw_tx([0; 32], u32::MAX, &[1, 1], &[0x51], 50);
+        let spend = raw_tx([1; 32], 0, &[], &[0x51], 90);
+        let coinbase_txid = BitcoinTransaction::parse(&coinbase).unwrap().txid;
+        let spend_txid = BitcoinTransaction::parse(&spend).unwrap().txid;
+        let next = BitcoinUtxoSmtSnapshot {
+            entries: vec![entry(2, 0, 200), entry(coinbase_txid[0], 0, 50), entry(spend_txid[0], 0, 90)],
+        };
+        // Keep the full transaction IDs in the expected entries.
+        let mut next = next;
+        next.entries[1].tx_hash = coinbase_txid;
+        next.entries[2].tx_hash = spend_txid;
+        let built = BitcoinUtxoSmtUpdateProof::build(&previous, &next).unwrap();
+        let proof = BitcoinUtxoSmtUpdateProof::from_block_delta(
+            previous.root().unwrap(),
+            next.root().unwrap(),
+            &previous.entries,
+            &[coinbase, spend],
+            built.steps,
+        ).unwrap();
+        assert!(proof.verify());
+        assert_eq!(proof.steps.len(), 3);
+    }
+
+    #[test]
+    fn block_delta_rejects_missing_coinbase() {
+        let spend = raw_tx([1; 32], 0, &[], &[0x51], 90);
+        assert!(BitcoinUtxoAccumulatorTransition::derive_block_delta(&[spend]).is_err());
+    }
+
+    #[test]
+    fn block_delta_rejects_coinbase_after_first_transaction() {
+        let coinbase = raw_tx([0; 32], u32::MAX, &[1, 1], &[0x51], 50);
+        let second_coinbase = raw_tx([0; 32], u32::MAX, &[1, 2], &[0x51], 50);
+        assert!(BitcoinUtxoAccumulatorTransition::derive_block_delta(&[coinbase, second_coinbase]).is_err());
+    }
+
+    #[test]
+    fn block_delta_excludes_unspendable_op_return_outputs() {
+        let coinbase = raw_tx([0; 32], u32::MAX, &[1, 1], &[0x6a, 0x01, 0x01], 50);
+        let (_, created) = BitcoinUtxoAccumulatorTransition::derive_block_delta(&[coinbase]).unwrap();
+        assert!(created.is_empty());
     }
 }
