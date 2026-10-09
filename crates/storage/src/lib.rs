@@ -596,10 +596,15 @@ mod tests {
             chain_id: 1, initial_supply: 0, validators: vec![]
         });
         store.save_snapshot(&genesis, [0;32]).unwrap();
+        // A snapshot may survive above the canonical tip after legacy/non-atomic
+        // writes. Startup lookup bounded by the tip must ignore it entirely.
+        store.db.put(ChainStore::snapshot_key(10), b"{corrupt snapshot").unwrap();
         assert_eq!(
             store.latest_snapshot_at_or_below(0).unwrap().unwrap().height,
             0
         );
+        // Unbounded lookup must still skip the corrupt newer entry and recover
+        // the valid genesis checkpoint rather than failing closed unnecessarily.
         assert_eq!(
             store.latest_snapshot_at_or_below(10).unwrap().unwrap().height,
             0
