@@ -84,19 +84,26 @@ impl ChainStore {
         if blocks.is_empty() {
             return Ok(());
         }
-        let mut expected_height = blocks[0].header.height;
-        if expected_height == 0 {
-            return Err(StorageError::InvalidMetadata);
-        }
+        // Never allow a batch to overwrite history, skip heights, or attach to a
+        // metadata tip that does not match the persisted canonical block.
+        self.validate_tip_metadata()?;
+        let current_height = self.latest_height()?;
+        let mut expected_height = current_height
+            .checked_add(1)
+            .ok_or(StorageError::InvalidMetadata)?;
+        let mut expected_previous_hash = self.latest_hash()?;
 
         let mut batch = WriteBatch::default();
         for block in blocks {
-            if block.header.height != expected_height {
+            if block.header.height != expected_height
+                || block.header.previous_hash != expected_previous_hash
+            {
                 return Err(StorageError::InvalidMetadata);
             }
             let bytes = serde_json::to_vec(block)
                 .map_err(|e| StorageError::Codec(e.to_string()))?;
             batch.put(Self::height_key(block.header.height), bytes);
+            expected_previous_hash = block_hash(block);
             expected_height = expected_height
                 .checked_add(1)
                 .ok_or(StorageError::InvalidMetadata)?;
@@ -461,6 +468,36 @@ mod tests {
         assert!(store.get_block(1).unwrap().is_none());
         assert!(store.get_block(3).unwrap().is_none());
         assert_eq!(store.latest_height().unwrap(), 0);
+    }
+
+    #[test]
+    fn atomic_block_batch_rejects_disconnected_or_overwriting_history() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let make = |height, previous_hash| Block {
+            header: BlockHeader {
+                height, round: 0, previous_hash, state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: height, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+
+        let first = make(1, [0;32]);
+        let first_hash = block_hash(&first);
+        store.put_blocks_atomic(&[first.clone()]).unwrap();
+
+        assert!(matches!(
+            store.put_blocks_atomic(&[make(1, [0;32])]),
+            Err(StorageError::InvalidMetadata)
+        ));
+        assert!(matches!(
+            store.put_blocks_atomic(&[make(2, [9;32])]),
+            Err(StorageError::InvalidMetadata)
+        ));
+        assert_eq!(store.get_block(1).unwrap(), Some(first));
+        assert!(store.get_block(2).unwrap().is_none());
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), first_hash);
     }
 
     #[test]
