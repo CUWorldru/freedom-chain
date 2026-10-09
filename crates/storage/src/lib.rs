@@ -187,6 +187,9 @@ impl ChainStore {
             return Err(StorageError::InvalidSnapshot("state root mismatch".into()));
         }
 
+        snapshot.state.validate_finality_state_integrity()
+            .map_err(|e| StorageError::InvalidSnapshot(format!("persisted finality state integrity failure: {e:?}")))?;
+
         if snapshot.height == 0 {
             if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
                 return Err(StorageError::InvalidSnapshot("genesis snapshot hash linkage mismatch".into()));
