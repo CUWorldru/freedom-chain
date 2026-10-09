@@ -1916,7 +1916,6 @@ pub struct BridgeAccounting {
 
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitcoinBlockHeader {
     pub version: i32,
     pub previous_block_hash: Hash,
