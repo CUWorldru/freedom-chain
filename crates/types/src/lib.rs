@@ -4964,6 +4964,132 @@ impl BitcoinUtxoAccumulatorTransition {
         Ok((spent, created))
     }
 
+    /// Validate Bitcoin transaction value conservation for a candidate block.
+    ///
+    /// This checks input/output amounts, total fees and the coinbase reward cap.
+    /// It does not execute Bitcoin Script, validate witness commitments, enforce
+    /// coinbase maturity, or establish canonical-chain membership; those remain
+    /// separate consensus-validation responsibilities.
+    pub fn validate_block_value_conservation(
+        raw_transactions: &[Vec<u8>],
+        previous_utxos: &[BitcoinUtxoStateEntry],
+        height: u64,
+    ) -> Result<u64, String> {
+        const MAX_MONEY: u64 = 2_100_000_000_000_000;
+        const COIN: u64 = 100_000_000;
+        const HALVING_INTERVAL: u64 = 210_000;
+
+        if height == 0 {
+            return Err("Bitcoin block height must be positive".into());
+        }
+        if raw_transactions.is_empty() {
+            return Err("block transaction list is empty".into());
+        }
+        if raw_transactions.len() > BITCOIN_MAX_BLOCK_TXS_FOR_UTXO_TRANSITION {
+            return Err("block transaction count exceeds transition limit".into());
+        }
+
+        let mut utxos = std::collections::BTreeMap::<(Hash, u32), u64>::new();
+        for entry in previous_utxos {
+            if entry.amount_sat > MAX_MONEY
+                || utxos.insert((entry.tx_hash, entry.vout), entry.amount_sat).is_some()
+            {
+                return Err("previous UTXO set contains an invalid amount or duplicate outpoint".into());
+            }
+        }
+
+        let mut parsed = Vec::with_capacity(raw_transactions.len());
+        for raw in raw_transactions {
+            parsed.push(BitcoinTransaction::parse(raw)
+                .map_err(|_| "invalid serialized Bitcoin transaction".to_string())?);
+        }
+        let is_coinbase = |tx: &BitcoinTransaction| {
+            tx.inputs.len() == 1
+                && tx.inputs[0].previous_txid == [0; 32]
+                && tx.inputs[0].previous_vout == u32::MAX
+        };
+        if !is_coinbase(&parsed[0]) {
+            return Err("first block transaction must be coinbase".into());
+        }
+        if !(2..=100).contains(&parsed[0].inputs[0].script_sig.len()) {
+            return Err("coinbase scriptSig length must be between 2 and 100 bytes".into());
+        }
+        if parsed.iter().skip(1).any(is_coinbase) {
+            return Err("coinbase transaction appears after first transaction".into());
+        }
+
+        let mut spent = std::collections::BTreeSet::<(Hash, u32)>::new();
+        let mut in_block_outputs = std::collections::BTreeMap::<(Hash, u32), u64>::new();
+        let mut total_fees = 0u64;
+        let mut coinbase_value = 0u64;
+
+        for (tx_index, tx) in parsed.iter().enumerate() {
+            let mut output_total = 0u64;
+            for output in &tx.outputs {
+                if output.amount_sat > MAX_MONEY {
+                    return Err("transaction output exceeds Bitcoin MAX_MONEY".into());
+                }
+                output_total = output_total.checked_add(output.amount_sat)
+                    .filter(|v| *v <= MAX_MONEY)
+                    .ok_or_else(|| "transaction output total exceeds Bitcoin MAX_MONEY".to_string())?;
+            }
+
+            if tx_index == 0 {
+                coinbase_value = output_total;
+            } else {
+                let mut input_total = 0u64;
+                for input in &tx.inputs {
+                    let outpoint = (input.previous_txid, input.previous_vout);
+                    if input.previous_txid == [0; 32] && input.previous_vout == u32::MAX {
+                        return Err("non-coinbase transaction contains a null prevout".into());
+                    }
+                    if !spent.insert(outpoint) {
+                        return Err("block spends the same outpoint more than once".into());
+                    }
+                    let amount = if let Some(amount) = in_block_outputs.remove(&outpoint) {
+                        amount
+                    } else {
+                        utxos.remove(&outpoint)
+                            .ok_or_else(|| "transaction input references a missing or already-spent UTXO".to_string())?
+                    };
+                    input_total = input_total.checked_add(amount)
+                        .filter(|v| *v <= MAX_MONEY)
+                        .ok_or_else(|| "transaction input total exceeds Bitcoin MAX_MONEY".to_string())?;
+                }
+                if output_total > input_total {
+                    return Err("transaction creates more value than its inputs".into());
+                }
+                total_fees = total_fees.checked_add(input_total - output_total)
+                    .ok_or_else(|| "block transaction fees overflow".to_string())?;
+            }
+
+            // Outputs from non-coinbase transactions can be spent later in the
+            // same block. Coinbase outputs are excluded because they are immature.
+            if tx_index != 0 {
+                for (vout, output) in tx.outputs.iter().enumerate() {
+                    if output.script_pubkey.first() == Some(&0x6a) {
+                        continue;
+                    }
+                    let vout = u32::try_from(vout)
+                        .map_err(|_| "transaction output index exceeds u32".to_string())?;
+                    let outpoint = (tx.txid, vout);
+                    if utxos.contains_key(&outpoint) || in_block_outputs.insert(outpoint, output.amount_sat).is_some() {
+                        return Err("duplicate transaction output outpoint".into());
+                    }
+                }
+            }
+        }
+
+        let halvings = height / HALVING_INTERVAL;
+        let subsidy = if halvings >= 64 { 0 } else { (50 * COIN) >> halvings };
+        let allowed_coinbase = subsidy.checked_add(total_fees)
+            .ok_or_else(|| "coinbase reward limit overflow".to_string())?;
+        if coinbase_value > allowed_coinbase {
+            return Err("coinbase reward exceeds block subsidy plus transaction fees".into());
+        }
+        Ok(total_fees)
+    }
+
     pub fn compute_next(
         previous: &[BitcoinUtxoStateEntry],
         spent: &[(Hash,u32)],
