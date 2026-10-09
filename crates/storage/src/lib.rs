@@ -319,6 +319,11 @@ impl ChainStore {
         // put_block(s)_atomic; otherwise a snapshot write could overwrite history.
         self.validate_tip_metadata()?;
         let current_height = self.latest_height()?;
+        // A matching tip does not prove the older canonical prefix is intact.
+        // Before extending local history with a checkpoint, validate every
+        // parent link from genesis so a remote snapshot cannot cement a fork
+        // above an already-corrupted ancestor.
+        self.validate_chain_through(current_height)?;
         let expected_height = current_height
             .checked_add(1)
             .ok_or(StorageError::InvalidMetadata)?;
@@ -969,6 +974,52 @@ mod tests {
         assert!(matches!(store.get_block(1), Err(StorageError::Codec(_))));
     }
 
+
+    #[test]
+    fn atomic_checkpoint_snapshot_rejects_corrupt_local_ancestor() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let make = |height, previous_hash| Block {
+            header: BlockHeader {
+                height, round: 0, previous_hash, state_root: [height as u8;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: height, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let first = make(1, [0;32]);
+        let second = make(2, block_hash(&first));
+        let checkpoint = make(3, block_hash(&second));
+        store.put_blocks_atomic(&[first.clone(), second.clone()]).unwrap();
+        let original_height = store.latest_height().unwrap();
+        let original_hash = store.latest_hash().unwrap();
+
+        let mut corrupted_ancestor = first;
+        corrupted_ancestor.header.previous_hash = [9;32];
+        store.db.put(
+            ChainStore::height_key(1),
+            serde_json::to_vec(&corrupted_ancestor).unwrap(),
+        ).unwrap();
+
+        let mut candidate = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![]
+        });
+        candidate.height = 3;
+        candidate.last_block_hash = block_hash(&checkpoint);
+        let result = store.put_block_and_snapshot(
+            &checkpoint,
+            &candidate,
+            freedom_types::FinalityCertificate {
+                block_hash: block_hash(&checkpoint), height: 3, round: 0, precommits: Vec::new()
+            },
+            std::collections::BTreeMap::new(),
+        );
+
+        assert!(matches!(result, Err(StorageError::InvalidMetadata)));
+        assert_eq!(store.latest_height().unwrap(), original_height);
+        assert_eq!(store.latest_hash().unwrap(), original_hash);
+        assert!(store.get_block(3).unwrap().is_none());
+        assert!(store.load_snapshot(3).unwrap().is_none());
+    }
 
     #[test]
     fn atomic_checkpoint_snapshot_rejects_overwrite_and_wrong_parent() {
