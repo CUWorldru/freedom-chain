@@ -1229,6 +1229,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         SyncWireRequest::Snapshot(req) => {
                                             if freedom_network::validate_snapshot_request(&req).is_err() { eprintln!("SNAPSHOT_REQUEST_REJECTED height={}", req.height); continue; }
                                             if let Ok(Some(snapshot)) = store.latest_snapshot_at_or_below(req.height) {
+                                                // A valid checkpoint is not enough if an ancestor has
+                                                // been corrupted after startup. Only serve snapshots
+                                                // whose entire canonical prefix still links to genesis.
+                                                if store.validate_chain_through(snapshot.height).is_err() {
+                                                    eprintln!("SNAPSHOT_SERVE_REJECTED chain_prefix_invalid height={}", snapshot.height);
+                                                    continue;
+                                                }
                                                 if let (Some(certificate), Ok(Some(checkpoint))) = (snapshot.certificate.clone(), store.get_block(snapshot.height)) {
                                                     if let Ok(state_json) = serde_json::to_vec(&snapshot.state) {
                                                         let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse {
