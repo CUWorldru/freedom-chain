@@ -345,16 +345,34 @@ impl ChainStore {
     }
 
     pub fn latest_snapshot_at_or_below(&self, target_height: u64) -> Result<Option<StateSnapshot>, StorageError> {
-        let mut best = None;
+        let mut candidates = Vec::new();
         for item in self.db.iterator(rocksdb::IteratorMode::Start) {
             let (key, _) = item.map_err(|e| StorageError::Rocks(e.to_string()))?;
             if key.starts_with(SNAPSHOT_PREFIX) && key.len() == SNAPSHOT_PREFIX.len() + 8 {
                 let mut h=[0u8;8]; h.copy_from_slice(&key[SNAPSHOT_PREFIX.len()..]);
                 let height=u64::from_be_bytes(h);
-                if height <= target_height && best.map(|b| height>b).unwrap_or(true) { best=Some(height); }
+                if height <= target_height {
+                    candidates.push(height);
+                }
             }
         }
-        match best { Some(h)=>self.load_snapshot(h), None=>Ok(None) }
+
+        // A corrupt newest snapshot must not prevent recovery from an older
+        // valid checkpoint. Block replay from that checkpoint will reconstruct
+        // and validate the remaining canonical history.
+        candidates.sort_unstable_by(|a, b| b.cmp(a));
+        for height in candidates {
+            match self.load_snapshot(height) {
+                Ok(Some(snapshot)) => return Ok(Some(snapshot)),
+                Ok(None) => continue,
+                Err(StorageError::InvalidSnapshot(_)
+                    | StorageError::Codec(_)
+                    | StorageError::MissingBlock(_)
+                    | StorageError::InvalidMetadata) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(None)
     }
 
     pub fn latest_snapshot(&self) -> Result<Option<StateSnapshot>, StorageError> {
@@ -549,6 +567,25 @@ mod tests {
         assert!(store.get_block(1).unwrap().is_none());
         assert_eq!(store.latest_height().unwrap(), 0);
         assert_eq!(store.latest_hash().unwrap(), [0; 32]);
+    }
+
+    #[test]
+    fn snapshot_lookup_falls_back_when_newest_snapshot_is_corrupt() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![]
+        });
+        store.save_snapshot(&genesis, [0;32]).unwrap();
+
+        // Simulate a torn/corrupt latest snapshot while retaining an older
+        // valid checkpoint and its block history.
+        store.db.put(ChainStore::snapshot_key(1), b"{not valid json").unwrap();
+
+        let snapshot = store.latest_snapshot_at_or_below(1).unwrap().unwrap();
+        assert_eq!(snapshot.height, 0);
+        assert_eq!(snapshot.block_hash, [0;32]);
+        assert_eq!(snapshot.state.height, 0);
     }
 
     #[test]
