@@ -5003,6 +5003,30 @@ impl BitcoinUtxoCompactTransitionProof {
 pub const BITCOIN_UTXO_SMT_DOMAIN: &[u8] = b"FREEDOM-BITCOIN-UTXO-SMT-V2";
 pub const BITCOIN_UTXO_SMT_DEPTH: usize = 256;
 
+fn bitcoin_utxo_smt_subtree_root(
+    map: &std::collections::BTreeMap<Hash, BitcoinUtxoStateEntry>,
+    depth: usize,
+    empty: &[Hash],
+) -> Hash {
+    if depth == BITCOIN_UTXO_SMT_DEPTH {
+        return map.values().next().map(|e| bitcoin_utxo_smt_leaf(Some(e))).unwrap_or(empty[0]);
+    }
+    if map.is_empty() { return empty[BITCOIN_UTXO_SMT_DEPTH - depth]; }
+    let mut left = std::collections::BTreeMap::new();
+    let mut right = std::collections::BTreeMap::new();
+    for (key, entry) in map {
+        if ((key[depth / 8] >> (depth % 8)) & 1) == 0 {
+            left.insert(*key, entry.clone());
+        } else {
+            right.insert(*key, entry.clone());
+        }
+    }
+    bitcoin_utxo_smt_node(
+        bitcoin_utxo_smt_subtree_root(&left, depth + 1, empty),
+        bitcoin_utxo_smt_subtree_root(&right, depth + 1, empty),
+    )
+}
+
 fn bitcoin_utxo_smt_key_order(a: &Hash, b: &Hash) -> std::cmp::Ordering {
     for bit in 0..BITCOIN_UTXO_SMT_DEPTH {
         let av = (a[bit / 8] >> (bit % 8)) & 1;
@@ -5105,7 +5129,7 @@ impl BitcoinUtxoSmtSnapshot {
             siblings.push(if sibling_map.is_empty() {
                 empty[BITCOIN_UTXO_SMT_DEPTH-depth-1]
             } else {
-                BitcoinUtxoSmtSnapshot{entries:sibling_map.into_values().collect()}.root()?
+                bitcoin_utxo_smt_subtree_root(&sibling_map, depth + 1, &empty)
             });
             current=next;
         }
