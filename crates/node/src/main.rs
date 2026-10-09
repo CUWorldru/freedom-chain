@@ -804,6 +804,37 @@ mod m31_tests {
     }
 
     #[test]
+    fn replay_is_atomic_when_later_block_is_invalid() {
+        let validators: Vec<Validator> = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            Validator {
+                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                owner: address_from_public_key(&key),
+                consensus_key: key,
+                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            }
+        }).collect();
+        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
+        let mut state = initialize(&genesis).unwrap();
+        let before = state.clone();
+        let owner = state.active_validator_set.values().next().unwrap().owner;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let (_, first) = build_local_proposal(&state, owner, &key, 0).unwrap();
+
+        let mut after_first = state.clone();
+        execute_block(&mut after_first, &first).unwrap();
+        let next_owner = after_first.active_validator_set.values().next().unwrap().owner;
+        let next_key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let (_, mut second) = build_local_proposal(&after_first, next_owner, &next_key, 0).unwrap();
+        second.header.previous_hash = [9u8; 32];
+
+        let err = replay_persisted_blocks(&mut state, &[first, second]).unwrap_err();
+
+        assert!(err.contains("previous hash mismatch"));
+        assert_eq!(state, before);
+    }
+
+    #[test]
     fn replay_rejects_previous_hash_corruption_without_mutating_state() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
@@ -883,28 +914,36 @@ fn replay_persisted_blocks(
     state: &mut freedom_state::ChainState,
     blocks: &[freedom_types::Block],
 ) -> Result<(), String> {
+    // Replay against a working copy so a later invalid block cannot leave the
+    // caller with a partially advanced state.
+    state.validate_finality_state_integrity()
+        .map_err(|e| format!("stored state finality integrity failure before replay: {e:?}"))?;
+    let mut working = state.clone();
     for block in blocks {
-        let expected_height = state
+        let expected_height = working
             .height
             .checked_add(1)
             .ok_or_else(|| "stored chain height exceeds u64::MAX".to_string())?;
         if block.header.height != expected_height {
             return Err(format!("stored chain height gap at {}", block.header.height));
         }
-        if block.header.previous_hash != state.last_block_hash {
+        if block.header.previous_hash != working.last_block_hash {
             return Err(format!("stored chain previous hash mismatch at {}", block.header.height));
         }
-        let expected = proposer_for_height_round(state, block.header.height, block.header.round)
+        let expected = proposer_for_height_round(&working, block.header.height, block.header.round)
             .ok_or_else(|| "no proposer for stored block".to_string())?;
         if expected != block.header.proposer {
             return Err(format!("stored block proposer mismatch at {}", block.header.height));
         }
-        let committed = execute_block(state, block)
+        let committed = execute_block(&mut working, block)
             .map_err(|e| format!("stored block execution rejected at {}: {e}", block.header.height))?;
         if block_hash(&committed) != block_hash(block) {
             return Err(format!("stored block hash mismatch at {}", block.header.height));
         }
+        working.validate_finality_state_integrity()
+            .map_err(|e| format!("stored state finality integrity failure at {}: {e:?}", block.header.height))?;
     }
+    *state = working;
     Ok(())
 }
 
