@@ -1583,7 +1583,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             if let Err(e) = store.put_block_and_snapshot(
                                                 &verified_snapshot.checkpoint,
-                                                &verified_snapshot.state,
+                                                &snapshot_state,
                                                 verified_snapshot.certificate.clone(),
                                                 verified_snapshot.finality_validator_set.clone(),
                                             ) {
