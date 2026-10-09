@@ -1585,6 +1585,10 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
  }
  pub fn bitcoin_utxo_block_commitment(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoBlockCommitment>{self.bitcoin_utxo_commitments.get(&bridge_id)}
 
+ /// Compatibility builder for non-consensus preview use only.
+ /// Consensus callers must use `build_bitcoin_block_utxo_commitment_with_script_flags`
+ /// with activation-correct Bitcoin Script flags.
+ #[deprecated(note = "consensus validation must use build_bitcoin_block_utxo_commitment_with_script_flags")]
  pub fn build_bitcoin_block_utxo_commitment(&self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,previous:&freedom_types::BitcoinUtxoSmtSnapshot)->Result<freedom_types::BitcoinUtxoBlockCommitment,StateError>{
   self.bitcoin_bridge_gate(bridge_id)?;
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
@@ -1592,6 +1596,39 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   block.verify_against_parent(canonical.block_hash,expected_height).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   let commitment=freedom_types::BitcoinUtxoBlockCommitment::build(previous,block).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
   if commitment.block_hash!=block.header.block_hash(){return Err(StateError::InvalidBridgeWithdrawal);}
+  if let Some(prior)=self.bitcoin_utxo_commitments.get(&bridge_id) {
+   if commitment.previous_root!=prior.next_root || commitment.block_height<=prior.block_height {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  Ok(commitment)
+ }
+
+ /// Build a Bitcoin UTXO commitment only after witness commitment and every
+ /// non-coinbase input Script have been validated with activation-correct flags.
+ /// The caller remains responsible for selecting flags for this network and height.
+ pub fn build_bitcoin_block_utxo_commitment_with_script_flags(
+  &self,
+  bridge_id:Hash,
+  block:&freedom_types::BitcoinSpendScanBlock,
+  previous:&freedom_types::BitcoinUtxoSmtSnapshot,
+  script_flags:u32,
+ )->Result<freedom_types::BitcoinUtxoBlockCommitment,StateError>{
+  self.bitcoin_bridge_gate(bridge_id)?;
+  let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let expected_height=canonical.height.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
+  block.verify_against_parent(canonical.block_hash,expected_height).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  if let Some(prior)=self.bitcoin_utxo_commitments.get(&bridge_id) {
+   if prior.block_height>=block.height || previous.root().map_err(|_|StateError::InvalidBridgeWithdrawal)?!=prior.next_root {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  let commitment=freedom_types::BitcoinUtxoBlockCommitment::build_with_script_flags(previous,block,script_flags)
+   .map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  if commitment.block_hash!=block.header.block_hash()
+   || commitment.block_height!=block.height {
+   return Err(StateError::InvalidBridgeWithdrawal);
+  }
   Ok(commitment)
  }
  pub fn validate_bitcoin_block_utxo_commitment(&self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment)->Result<(),StateError>{
