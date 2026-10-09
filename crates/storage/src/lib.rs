@@ -400,30 +400,39 @@ impl ChainStore {
     pub fn latest_snapshot(&self) -> Result<Option<StateSnapshot>, StorageError> {
         self.latest_snapshot_at_or_below(u64::MAX)
     }
-    pub fn range(&self, from: u64, to: u64) -> Result<Vec<Block>, StorageError> {
-        if from > to { return Ok(Vec::new()); }
-        // Do not derive allocation size from attacker-controlled inclusive range arithmetic:
-        // `to - from + 1` overflows for `(0, u64::MAX)` and can panic before validation.
-        let mut out = Vec::new();
-        let mut expected_previous_hash = if from <= 1 {
-            [0u8; 32]
-        } else {
-            let previous = self.get_block(from - 1)?
-                .ok_or(StorageError::MissingBlock(from - 1))?;
-            block_hash(&previous)
-        };
-        for height in from..=to {
-            let block = match self.get_block(height)? {
-                Some(block) => block,
-                None => return Err(StorageError::MissingBlock(height)),
-            };
-            // Range reads are also used to serve peer synchronization. Validate
-            // links while reading so corrupt intermediate blocks are never
-            // returned as a seemingly contiguous batch.
+    /// Verify the complete canonical parent-link chain from genesis through
+    /// `height` without materializing the whole history in memory.
+    pub fn validate_chain_through(&self, height: u64) -> Result<(), StorageError> {
+        if height == 0 {
+            return Ok(());
+        }
+        let mut expected_previous_hash = [0u8; 32];
+        for current_height in 1..=height {
+            let block = self.get_block(current_height)?
+                .ok_or(StorageError::MissingBlock(current_height))?;
             if block.header.previous_hash != expected_previous_hash {
                 return Err(StorageError::InvalidMetadata);
             }
             expected_previous_hash = block_hash(&block);
+        }
+        Ok(())
+    }
+
+    pub fn range(&self, from: u64, to: u64) -> Result<Vec<Block>, StorageError> {
+        if from > to { return Ok(Vec::new()); }
+        // Preserve the missing-genesis behavior and avoid attacker-controlled
+        // inclusive range arithmetic such as `to - from + 1`.
+        if from == 0 {
+            return Err(StorageError::MissingBlock(0));
+        }
+        // Validate the prefix as well as the requested segment. Otherwise a
+        // request starting after a corrupted ancestor could still serve a
+        // superficially contiguous suffix to a peer.
+        self.validate_chain_through(to)?;
+        let mut out = Vec::new();
+        for height in from..=to {
+            let block = self.get_block(height)?
+                .ok_or(StorageError::MissingBlock(height))?;
             out.push(block);
         }
         Ok(out)
@@ -854,6 +863,33 @@ mod tests {
         let err = store.load_snapshot(0).unwrap_err();
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "genesis snapshot hash linkage mismatch"));
     }
+    #[test]
+    fn range_rejects_corrupted_ancestor_before_requested_suffix() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let make = |height, previous_hash| Block {
+            header: BlockHeader {
+                height, round: 0, previous_hash, state_root: [height as u8;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: height, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let first = make(1, [0;32]);
+        let second = make(2, block_hash(&first));
+        let third = make(3, block_hash(&second));
+        store.put_blocks_atomic(&[first.clone(), second.clone(), third]).unwrap();
+
+        let mut corrupted_ancestor = first.clone();
+        corrupted_ancestor.header.previous_hash = [9;32];
+        store.db.put(
+            ChainStore::height_key(1),
+            serde_json::to_vec(&corrupted_ancestor).unwrap(),
+        ).unwrap();
+
+        assert!(matches!(store.range(3, 3), Err(StorageError::InvalidMetadata)));
+        assert!(matches!(store.validate_chain_through(2), Err(StorageError::InvalidMetadata)));
+    }
+
     #[test]
     fn range_rejects_intermediate_parent_corruption_without_mutating_tip() {
         let dir = tempdir().unwrap();
