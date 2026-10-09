@@ -3148,23 +3148,11 @@ pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
     }
     current
 }
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BitcoinBlockHeader {
-    pub version: u32,
-    pub prev_block_hash: Hash,
-    pub merkle_root: Hash,
-    pub time: u32,
-    pub bits: u32,
-    pub nonce: u32,
-}
-impl BitcoinBlockHeader {
- pub fn serialize(&self)->[u8;80]{let mut o=[0u8;80];o[0..4].copy_from_slice(&self.version.to_le_bytes());o[4..36].copy_from_slice(&self.prev_block_hash);o[36..68].copy_from_slice(&self.merkle_root);o[68..72].copy_from_slice(&self.time.to_le_bytes());o[72..76].copy_from_slice(&self.bits.to_le_bytes());o[76..80].copy_from_slice(&self.nonce.to_le_bytes());o}
- pub fn block_hash(&self)->Hash{bitcoin_sha256d(&self.serialize())}
-}
+
 fn bitcoin_target_from_bits_raw(bits:u32)->Option<[u8;32]>{let exponent=(bits>>24) as usize;let mantissa=bits&0x007f_ffff;if mantissa==0||exponent<3||exponent>32||(bits&0x0080_0000)!=0{return None;}if exponent>3&&(mantissa&0x00ff_0000)==0{return None;}let mut out=[0u8;32];let bytes=mantissa.to_be_bytes();let m=[bytes[1],bytes[2],bytes[3]];let start=32usize.checked_sub(exponent)?;out[start..start+3].copy_from_slice(&m);Some(out)}
 pub fn bitcoin_target_from_bits(bits:u32)->Option<[u8;32]>{let target=bitcoin_target_from_bits_raw(bits)?;let pow_limit=bitcoin_target_from_bits_raw(0x1d00_ffff)?;if target.iter().rev().cmp(pow_limit.iter().rev())==std::cmp::Ordering::Greater{return None;}Some(target)}
-pub fn bitcoin_hash_leq_target(hash:Hash,target:[u8;32])->bool{hash.iter().rev().cmp(target.iter().rev())!=std::cmp::Ordering::Greater}
-pub fn bitcoin_pow_valid(header:&BitcoinBlockHeader)->bool{bitcoin_target_from_bits(header.bits).map(|t|bitcoin_hash_leq_target(header.block_hash(),t)).unwrap_or(false)}
+pub fn bitcoin_hash_leq_target_v2(hash:Hash,target:[u8;32])->bool{hash.iter().rev().cmp(target.iter().rev())!=std::cmp::Ordering::Greater}
+pub fn bitcoin_pow_valid(header:&BitcoinBlockHeader)->bool{header.validate_pow()}
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub enum BitcoinHeaderChainError{Empty,InvalidPow,InvalidLinkage,InvalidHeight}
 pub fn bitcoin_header_work(header:&BitcoinBlockHeader)->Option<[u8;32]>{
@@ -4574,7 +4562,7 @@ impl BitcoinSpendScanBlock {
         if self.height != expected_height {
             return Err("bitcoin block height mismatch".into());
         }
-        if self.header.prev_block_hash != parent_hash {
+        if self.header.previous_block_hash != parent_hash {
             return Err("bitcoin block parent hash mismatch".into());
         }
         Ok(())
@@ -4647,7 +4635,7 @@ impl BitcoinUtxoSpendStateProof {
         let mut previous_hash = self.inclusion_header.block_hash();
         let mut expected_height = self.utxo.block_height.checked_add(1).ok_or_else(|| "bitcoin spend-scan height overflow".to_string())?;
         for block in &self.post_inclusion_blocks {
-            if block.height != expected_height || block.header.prev_block_hash != previous_hash {
+            if block.height != expected_height || block.header.previous_block_hash != previous_hash {
                 return Err("bitcoin spend-scan header linkage mismatch".into());
             }
             block.verify_structure()?;
@@ -4696,9 +4684,9 @@ mod m120_bitcoin_utxo_tests {
             height: 2,
             header: BitcoinBlockHeader {
                 version: 1,
-                prev_block_hash: [0;32],
+                previous_block_hash: [0;32],
                 merkle_root: [0;32],
-                time: 0,
+                timestamp: 0,
                 bits: 0,
                 nonce: 0,
             },
@@ -4717,9 +4705,9 @@ mod m120_bitcoin_utxo_tests {
             height: 2,
             header: BitcoinBlockHeader {
                 version: 1,
-                prev_block_hash: [0;32],
+                previous_block_hash: [0;32],
                 merkle_root: tx.txid,
-                time: 0,
+                timestamp: 0,
                 bits: 0,
                 nonce: 0,
             },
@@ -5689,9 +5677,9 @@ mod m410_bitcoin_difficulty_window_canonical_binding_tests {
     fn dummy_header() -> BitcoinBlockHeader {
         BitcoinBlockHeader {
             version: 1,
-            prev_block_hash: [1; 32],
+            previous_block_hash: [1; 32],
             merkle_root: [2; 32],
-            time: 1,
+            timestamp: 1,
             bits: 0x1d00_ffff,
             nonce: 0,
         }
@@ -5901,9 +5889,9 @@ mod m413_bitcoin_height_index_conversion_tests {
             base_start_height: 0,
             base_headers: vec![BitcoinBlockHeader {
                 version: 1,
-                prev_block_hash: [0; 32],
+                previous_block_hash: [0; 32],
                 merkle_root: [0; 32],
-                time: 1,
+                timestamp: 1,
                 bits: 0x1d00_ffff,
                 nonce: 0,
             }],
@@ -5929,9 +5917,9 @@ mod m413_bitcoin_height_index_conversion_tests {
             base_start_height: 0,
             base_headers: vec![BitcoinBlockHeader {
                 version: 1,
-                prev_block_hash: [0; 32],
+                previous_block_hash: [0; 32],
                 merkle_root: [0; 32],
-                time: 1,
+                timestamp: 1,
                 bits: 0x1d00_ffff,
                 nonce: 0,
             }],
