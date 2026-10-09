@@ -5722,12 +5722,20 @@ impl BitcoinUtxoBlockCommitment {
         block: &BitcoinSpendScanBlock,
         script_flags: u32,
     ) -> Result<Self, String> {
+        Self::validate_block_witness_commitment(&block.raw_transactions)?;
         BitcoinUtxoAccumulatorTransition::validate_block_scripts(
             &block.raw_transactions,
             &previous.entries,
             script_flags,
         )?;
         Self::build(previous, block)
+    }
+
+    /// Validate the BIP141 witness commitment before accepting a candidate block.
+    /// This does not replace Script, UTXO, value, header-chain, or reorg validation.
+    pub fn validate_block_witness_commitment(raw_transactions: &[Vec<u8>]) -> Result<(), String> {
+        bitcoin_verify_witness_commitment(raw_transactions)
+            .map_err(|error| format!("Bitcoin witness commitment verification failed: {:?}", error))
     }
 
     pub fn build(
