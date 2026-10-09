@@ -131,7 +131,15 @@ impl ChainStore {
 
     pub fn get_block(&self, height: u64) -> Result<Option<Block>, StorageError> {
         let Some(bytes) = self.db.get(Self::height_key(height)).map_err(|e| StorageError::Rocks(e.to_string()))? else { return Ok(None); };
-        serde_json::from_slice(&bytes).map(Some).map_err(|e| StorageError::Codec(e.to_string()))
+        let block: Block = serde_json::from_slice(&bytes)
+            .map_err(|e| StorageError::Codec(e.to_string()))?;
+        // A block's database key is part of its canonical identity. Reject a
+        // record whose serialized header claims a different height, including
+        // reads used by replay and peer sync serving.
+        if block.header.height != height {
+            return Err(StorageError::InvalidMetadata);
+        }
+        Ok(Some(block))
     }
 
     pub fn latest_height(&self) -> Result<u64, StorageError> {
@@ -473,6 +481,25 @@ mod tests {
         store.validate_tip_metadata().unwrap();
         store.db.put(META_HASH, [9u8;32]).unwrap();
         assert!(matches!(store.validate_tip_metadata(), Err(StorageError::InvalidMetadata)));
+    }
+
+    #[test]
+    fn get_block_rejects_header_height_that_disagrees_with_storage_key() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        store.put_block(&block).unwrap();
+        block.header.height = 0;
+        store.db.put(ChainStore::height_key(1), serde_json::to_vec(&block).unwrap()).unwrap();
+
+        assert!(matches!(store.get_block(1), Err(StorageError::InvalidMetadata)));
+        assert!(matches!(store.range(1, 1), Err(StorageError::InvalidMetadata)));
     }
 
     #[test]
