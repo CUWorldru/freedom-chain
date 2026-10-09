@@ -5743,6 +5743,9 @@ impl BitcoinUtxoBlockCommitment {
         block: &BitcoinSpendScanBlock,
     ) -> Result<Self,String> {
         block.verify_structure()?;
+        // Every commitment-building path must verify BIP141, even when callers
+        // use the compatibility builder without Script flags.
+        Self::validate_block_witness_commitment(&block.raw_transactions)?;
 
         // Enforce Bitcoin monetary consensus before deriving the next UTXO root:
         // transaction outputs may not exceed inputs, and coinbase may claim only
