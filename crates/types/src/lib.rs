@@ -5601,37 +5601,64 @@ impl BitcoinUtxoBlockCommitment {
         block: &BitcoinSpendScanBlock,
     ) -> Result<Self,String> {
         block.verify_structure()?;
-        let mut entries=previous.entries.clone();
-        let mut map=std::collections::BTreeMap::<(Hash,u32),BitcoinUtxoStateEntry>::new();
-        for e in entries.drain(..) {
-            if map.insert((e.tx_hash,e.vout),e).is_some(){return Err("duplicate previous outpoint".into());}
-        }
-        for raw in &block.raw_transactions {
-            let tx=BitcoinTransaction::parse(raw).map_err(|_|"invalid Bitcoin transaction".to_string())?;
-            let coinbase=tx.inputs.len()==1 && tx.inputs[0].previous_txid==[0;32];
-            if !coinbase {
-                for input in &tx.inputs {
-                    if map.remove(&(input.previous_txid,input.previous_vout)).is_none(){
-                        return Err("block spends unavailable UTXO".into());
-                    }
-                }
-            }
-            for (vout,out) in tx.outputs.iter().enumerate() {
-                let e=BitcoinUtxoStateEntry{
-                    tx_hash:tx.txid,vout:vout as u32,amount_sat:out.value,script_pubkey:out.script_pubkey.clone()
-                };
-                if map.insert((e.tx_hash,e.vout),e).is_some(){return Err("output collision".into());}
+
+        // Enforce Bitcoin monetary consensus before deriving the next UTXO root:
+        // transaction outputs may not exceed inputs, and coinbase may claim only
+        // subsidy plus fees. This still does not replace Script/witness validation.
+        BitcoinUtxoAccumulatorTransition::validate_block_value_conservation(
+            &block.raw_transactions,
+            &previous.entries,
+            block.height,
+        )?;
+
+        let (spent, created) =
+            BitcoinUtxoAccumulatorTransition::derive_block_delta(&block.raw_transactions)?;
+
+        let mut map = std::collections::BTreeMap::<(Hash, u32), BitcoinUtxoStateEntry>::new();
+        for entry in &previous.entries {
+            if map.insert((entry.tx_hash, entry.vout), entry.clone()).is_some() {
+                return Err("duplicate previous outpoint".into());
             }
         }
-        if map.is_empty(){return Err("resulting UTXO set is empty".into());}
-        let next=BitcoinUtxoSmtSnapshot{entries:map.into_values().collect()};
-        let proof=BitcoinUtxoSmtUpdateProof::build(previous,&next)?;
-        Ok(Self{
-            block_height:block.height,
-            block_hash:block.header.block_hash(),
-            previous_root:proof.previous_root,
-            next_root:proof.next_root,
-            update_proof:proof,
+
+        let mut created_map =
+            std::collections::BTreeMap::<(Hash, u32), BitcoinUtxoStateEntry>::new();
+        for entry in created {
+            let outpoint = (entry.tx_hash, entry.vout);
+            if map.contains_key(&outpoint)
+                || created_map.insert(outpoint, entry).is_some()
+            {
+                return Err("created outpoint collides with existing UTXO".into());
+            }
+        }
+
+        let spent_set: std::collections::BTreeSet<(Hash, u32)> = spent.into_iter().collect();
+        for outpoint in &spent_set {
+            if map.remove(outpoint).is_none() && !created_map.contains_key(outpoint) {
+                return Err("block spends unavailable UTXO".into());
+            }
+        }
+
+        // Outputs created and spent within the same block are net no-ops.
+        for (outpoint, entry) in created_map {
+            if !spent_set.contains(&outpoint) {
+                map.insert(outpoint, entry);
+            }
+        }
+        if map.is_empty() {
+            return Err("resulting UTXO set is empty".into());
+        }
+
+        let next = BitcoinUtxoSmtSnapshot {
+            entries: map.into_values().collect(),
+        };
+        let proof = BitcoinUtxoSmtUpdateProof::build(previous, &next)?;
+        Ok(Self {
+            block_height: block.height,
+            block_hash: block.header.block_hash(),
+            previous_root: proof.previous_root,
+            next_root: proof.next_root,
+            update_proof: proof,
         })
     }
 
