@@ -5250,41 +5250,95 @@ impl BitcoinUtxoSmtUpdateProof {
         raw_transactions: &[Vec<u8>],
         mut witness_steps: Vec<BitcoinUtxoSmtUpdateStep>,
     ) -> Result<Self, String> {
-        witness_steps.sort_by(|a,b| bitcoin_utxo_smt_key_order(&a.key,&b.key));
-        let (spent,created)=BitcoinUtxoAccumulatorTransition::derive_block_delta(raw_transactions)?;
-        let mut expected=std::collections::BTreeMap::<(Hash,u32),Option<BitcoinUtxoStateEntry>>::new();
-        for e in previous {
-            if expected.insert((e.tx_hash,e.vout),Some(e.clone())).is_some() {
+        let (spent, created) =
+            BitcoinUtxoAccumulatorTransition::derive_block_delta(raw_transactions)?;
+
+        let mut previous_map =
+            std::collections::BTreeMap::<(Hash, u32), BitcoinUtxoStateEntry>::new();
+        for entry in previous {
+            if previous_map
+                .insert((entry.tx_hash, entry.vout), entry.clone())
+                .is_some()
+            {
                 return Err("duplicate previous outpoint".into());
             }
         }
-        for outpoint in spent {
-            if !expected.contains_key(&outpoint) {
+
+        let mut spent_set = std::collections::BTreeSet::new();
+        for outpoint in &spent {
+            if !spent_set.insert(*outpoint) {
+                return Err("duplicate spent outpoint in block".into());
+            }
+        }
+
+        let mut created_map =
+            std::collections::BTreeMap::<(Hash, u32), BitcoinUtxoStateEntry>::new();
+        for entry in created {
+            let outpoint = (entry.tx_hash, entry.vout);
+            if created_map.insert(outpoint, entry).is_some() {
+                return Err("duplicate created outpoint".into());
+            }
+        }
+
+        // Only net changes belong in the SMT update proof. Outputs created and
+        // spent within the same block never enter the end-of-block UTXO set.
+        let mut expected = std::collections::BTreeMap::<
+            Hash,
+            (Option<BitcoinUtxoStateEntry>, Option<BitcoinUtxoStateEntry>),
+        >::new();
+
+        for outpoint in &spent_set {
+            if let Some(old_entry) = previous_map.get(outpoint) {
+                let key = bitcoin_utxo_smt_key(&old_entry.tx_hash, old_entry.vout);
+                expected.insert(key, (Some(old_entry.clone()), None));
+            } else if !created_map.contains_key(outpoint) {
                 return Err("block spends unavailable UTXO".into());
             }
-            expected.insert(outpoint,None);
         }
-        for e in created {
-            let key=(e.tx_hash,e.vout);
-            if expected.insert(key,Some(e)).is_some() {
-                return Err("created output collision".into());
+
+        for (outpoint, entry) in &created_map {
+            if spent_set.contains(outpoint) {
+                // A same-block output that is also spent is a net no-op.
+                if previous_map.contains_key(outpoint) {
+                    return Err("created outpoint collides with previous UTXO".into());
+                }
+                continue;
+            }
+            if previous_map.contains_key(outpoint) {
+                return Err("created outpoint collides with previous UTXO".into());
+            }
+            let key = bitcoin_utxo_smt_key(&entry.tx_hash, entry.vout);
+            if expected.insert(key, (None, Some(entry.clone()))).is_some() {
+                return Err("duplicate expected SMT key".into());
             }
         }
-        if witness_steps.len()!=expected.len() {
+
+        witness_steps.sort_by(|a, b| bitcoin_utxo_smt_key_order(&a.key, &b.key));
+        if witness_steps.len() != expected.len() {
             return Err("witness step count does not match block delta".into());
         }
+
         for step in &witness_steps {
-            let key=match &step.new_entry {
-                Some(e)=>(e.tx_hash,e.vout),
-                None=>{
-                    let Some(Some(old))=expected.get_key_value(&(step.old_entry.as_ref().ok_or("missing deletion entry")?.tx_hash,step.old_entry.as_ref().unwrap().vout)).map(|(_,v)|v) else { return Err("invalid deletion".into()); };
-                    (old.tx_hash,old.vout)
-                }
+            let Some((expected_old, expected_new)) = expected.get(&step.key) else {
+                return Err("unexpected witness key".into());
             };
-            if !expected.contains_key(&key) { return Err("unexpected witness key".into()); }
-            if step.old_entry != expected.get(&key).cloned().unwrap_or(None) { return Err("old entry mismatch".into()); }
+            if step.old_entry != *expected_old || step.new_entry != *expected_new {
+                return Err("witness entry does not match block delta".into());
+            }
+            if step.old_entry.as_ref().is_some_and(|e| {
+                bitcoin_utxo_smt_key(&e.tx_hash, e.vout) != step.key
+            }) || step.new_entry.as_ref().is_some_and(|e| {
+                bitcoin_utxo_smt_key(&e.tx_hash, e.vout) != step.key
+            }) {
+                return Err("witness entry key mismatch".into());
+            }
         }
-        Ok(Self{previous_root,next_root,steps:witness_steps})
+
+        Ok(Self {
+            previous_root,
+            next_root,
+            steps: witness_steps,
+        })
     }
 
     pub fn verify(&self) -> bool {
