@@ -6770,3 +6770,80 @@ mod m437_bitcoin_value_tests {
             .unwrap_err().contains("missing or already-spent UTXO"));
     }
 }
+
+
+#[cfg(test)]
+mod m443_bitcoin_script_integration_tests {
+    use super::*;
+
+    fn coinbase_raw() -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&1i32.to_le_bytes());
+        raw.push(1);
+        raw.extend_from_slice(&[0u8; 32]);
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.push(2);
+        raw.extend_from_slice(&[1u8, 1u8]);
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.push(1);
+        raw.extend_from_slice(&0u64.to_le_bytes());
+        raw.push(1);
+        raw.push(0x51);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw
+    }
+
+    fn spend_raw(previous_txid: Hash) -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&1i32.to_le_bytes());
+        raw.push(1);
+        raw.extend_from_slice(&previous_txid);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.push(0); // empty scriptSig
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.push(1);
+        raw.extend_from_slice(&1u64.to_le_bytes());
+        raw.push(1);
+        raw.push(0x51); // OP_TRUE output
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw
+    }
+
+    #[test]
+    fn m443_accepts_spend_when_prevout_script_succeeds() {
+        let previous_txid = [7u8; 32];
+        let previous = vec![BitcoinUtxoStateEntry {
+            tx_hash: previous_txid,
+            vout: 0,
+            amount_sat: 2,
+            script_pubkey: vec![0x51], // OP_TRUE
+        }];
+        let raw = vec![coinbase_raw(), spend_raw(previous_txid)];
+        assert!(BitcoinUtxoAccumulatorTransition::validate_block_scripts(
+            &raw, &previous, 0
+        ).is_ok());
+    }
+
+    #[test]
+    fn m443_rejects_spend_when_prevout_script_fails() {
+        let previous_txid = [8u8; 32];
+        let previous = vec![BitcoinUtxoStateEntry {
+            tx_hash: previous_txid,
+            vout: 0,
+            amount_sat: 2,
+            script_pubkey: vec![0x00], // OP_FALSE
+        }];
+        let raw = vec![coinbase_raw(), spend_raw(previous_txid)];
+        assert!(BitcoinUtxoAccumulatorTransition::validate_block_scripts(
+            &raw, &previous, 0
+        ).is_err());
+    }
+
+    #[test]
+    fn m443_rejects_missing_prevout_before_script_execution() {
+        let raw = vec![coinbase_raw(), spend_raw([9u8; 32])];
+        assert!(BitcoinUtxoAccumulatorTransition::validate_block_scripts(
+            &raw, &[], 0
+        ).is_err());
+    }
+}
