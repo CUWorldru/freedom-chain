@@ -785,4 +785,30 @@ mod tests {
     }
 
 
+
+
+    #[test]
+    fn corrupted_replay_block_fails_without_mutating_canonical_tip_metadata() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let canonical_hash = block_hash(&block);
+        store.put_block(&block).unwrap();
+
+        // Simulate on-disk corruption after the canonical tip was committed.
+        store.db.put(ChainStore::height_key(1), b"{corrupt block json").unwrap();
+
+        assert!(matches!(store.range(1, 1), Err(StorageError::Codec(_))));
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), canonical_hash);
+        // Reading the damaged history fails closed; it is never silently replaced.
+        assert!(matches!(store.get_block(1), Err(StorageError::Codec(_))));
+    }
+
 }
