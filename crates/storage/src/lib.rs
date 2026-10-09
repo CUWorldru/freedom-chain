@@ -120,7 +120,10 @@ impl ChainStore {
         }
         let block = self.get_block(height)?
             .ok_or(StorageError::MissingBlock(height))?;
-        if block_hash(&block) != hash {
+        // The key and metadata hash alone are insufficient: corrupted storage
+        // could place a differently-heighted block at the tip key and make its
+        // hash agree with META_HASH. Never accept that as a canonical tip.
+        if block.header.height != height || block_hash(&block) != hash {
             return Err(StorageError::InvalidMetadata);
         }
         Ok(())
@@ -470,6 +473,41 @@ mod tests {
         store.validate_tip_metadata().unwrap();
         store.db.put(META_HASH, [9u8;32]).unwrap();
         assert!(matches!(store.validate_tip_metadata(), Err(StorageError::InvalidMetadata)));
+    }
+
+    #[test]
+    fn tip_metadata_rejects_block_whose_header_height_disagrees_with_key() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 1, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        store.put_block(&block).unwrap();
+
+        // Model internally consistent hash metadata around a block stored under
+        // height 1 whose own header claims height 0.
+        block.header.height = 0;
+        let corrupted_hash = block_hash(&block);
+        store.db.put(ChainStore::height_key(1), serde_json::to_vec(&block).unwrap()).unwrap();
+        store.db.put(META_HASH, corrupted_hash).unwrap();
+
+        assert!(matches!(store.validate_tip_metadata(), Err(StorageError::InvalidMetadata)));
+        // Any append must fail before it can extend this malformed history.
+        let next = Block {
+            header: BlockHeader {
+                height: 2, round: 0, previous_hash: corrupted_hash, state_root: [1;32], tx_root: [2;32],
+                receipts_root: [3;32], timestamp: 2, epoch: 0, proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        assert!(matches!(store.put_block(&next), Err(StorageError::InvalidMetadata)));
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), corrupted_hash);
+        assert!(store.get_block(2).unwrap().is_none());
     }
 
     #[test]
