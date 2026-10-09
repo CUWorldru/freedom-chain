@@ -1009,11 +1009,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if stored_height >= replay_from {
         let replay_blocks = store.range(replay_from, stored_height)?;
         replay_persisted_blocks(&mut state, &replay_blocks).map_err(|e| e.into())?;
-        if state.last_block_hash != store.latest_hash()? {
-            return Err("stored latest hash metadata mismatch".into());
-        }
-        println!("restored height={} hash={}", state.height, hex::encode(state.last_block_hash));
     }
+
+    // Validate the reconstructed state against all three persisted tip anchors:
+    // metadata height/hash, the canonical tip block, and the executed state root.
+    if state.height != stored_height {
+        return Err(format!(
+            "restored state height mismatch: state={}, stored={}",
+            state.height, stored_height
+        ).into());
+    }
+    if state.last_block_hash != store.latest_hash()? {
+        return Err("stored latest hash metadata mismatch".into());
+    }
+    state.validate_finality_state_integrity()
+        .map_err(|e| format!("restored state finality integrity failure: {e:?}"))?;
+    if stored_height > 0 {
+        let tip = store.get_block(stored_height)?
+            .ok_or_else(|| format!("stored tip block {} is missing", stored_height))?;
+        if block_hash(&tip) != state.last_block_hash {
+            return Err("restored state does not match canonical tip block hash".into());
+        }
+        if tip.header.state_root != state.state_root() {
+            return Err("restored state root does not match canonical tip block".into());
+        }
+    }
+    println!("restored height={} hash={}", state.height, hex::encode(state.last_block_hash));
 
     let mut swarm = build_swarm()?;
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse::<Multiaddr>()?)?;
