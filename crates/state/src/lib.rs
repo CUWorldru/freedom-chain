@@ -1636,7 +1636,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
   let canonical=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::InvalidBridgeWithdrawal)?;
   let expected_height=canonical.height.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
   block.verify_against_parent(canonical.block_hash,expected_height).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
-  if commitment.block_height!=block.height||commitment.block_hash!=block.header.block_hash()||!commitment.verify(){return Err(StateError::InvalidBridgeWithdrawal);} if let Some(attestation)=self.bitcoin_utxo_attestations.get(&bridge_id){if commitment.previous_root!=attestation.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}}
+  if commitment.block_height!=block.height||commitment.block_hash!=block.header.block_hash()||!commitment.verify(){return Err(StateError::InvalidBridgeWithdrawal);} if let Some(attestation)=self.bitcoin_utxo_attestations.get(&bridge_id){if commitment.previous_root!=attestation.accumulator_root{return Err(StateError::InvalidBridgeWithdrawal);}} if let Some(previous)=self.bitcoin_utxo_commitments.get(&bridge_id){if commitment.block_height<=previous.block_height||commitment.previous_root!=previous.next_root{return Err(StateError::InvalidBridgeWithdrawal);}}
   Ok(())
  }
  pub fn validate_bitcoin_compact_utxo_transition(&self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,proof:&freedom_types::BitcoinUtxoSmtUpdateProof)->Result<(),StateError>{
