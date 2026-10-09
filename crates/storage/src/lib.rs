@@ -625,6 +625,21 @@ mod tests {
     }
 
     #[test]
+    fn rejects_snapshot_with_invalid_persisted_bitcoin_bridge_state() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: 1, initial_supply: 0, validators: vec![]
+        });
+        state.bitcoin_canonical_tips.insert([7u8; 32], freedom_types::BitcoinChainCheckpoint {
+            height: 10, block_hash: [8u8; 32], chainwork: [0u8; 32],
+        });
+        let err = store.save_snapshot(&state, [0; 32]).unwrap_err();
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message.contains("persisted finality state integrity failure")));
+        assert!(store.load_snapshot(0).unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_corrupted_genesis_snapshot_hash_linkage() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
