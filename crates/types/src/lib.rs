@@ -5000,6 +5000,455 @@ impl BitcoinUtxoCompactTransitionProof {
     }
 }
 
+pub const BITCOIN_UTXO_SMT_DOMAIN: &[u8] = b"FREEDOM-BITCOIN-UTXO-SMT-V2";
+pub const BITCOIN_UTXO_SMT_DEPTH: usize = 256;
+
+pub fn bitcoin_utxo_smt_key(txid: &Hash, vout: u32) -> Hash {
+    let mut b=Vec::new();
+    b.extend_from_slice(BITCOIN_UTXO_SMT_DOMAIN);
+    b.extend_from_slice(b"KEY");
+    b.extend_from_slice(txid);
+    b.extend_from_slice(&vout.to_le_bytes());
+    freedom_primitives::hash_bytes(&b)
+}
+
+pub fn bitcoin_utxo_smt_leaf(entry: Option<&BitcoinUtxoStateEntry>) -> Hash {
+    let mut b=Vec::new();
+    b.extend_from_slice(BITCOIN_UTXO_SMT_DOMAIN);
+    if let Some(e)=entry {
+        b.extend_from_slice(b"LEAF");
+        b.extend_from_slice(&bitcoin_utxo_smt_key(&e.tx_hash,e.vout));
+        b.extend_from_slice(&e.amount_sat.to_le_bytes());
+        b.extend_from_slice(&(e.script_pubkey.len() as u64).to_le_bytes());
+        b.extend_from_slice(&e.script_pubkey);
+    } else {
+        b.extend_from_slice(b"EMPTY");
+    }
+    freedom_primitives::hash_bytes(&b)
+}
+
+pub fn bitcoin_utxo_smt_node(left: Hash, right: Hash) -> Hash {
+    freedom_primitives::hash_bytes(&[
+        BITCOIN_UTXO_SMT_DOMAIN,b"NODE",left.as_slice(),right.as_slice()
+    ].concat())
+}
+
+pub fn bitcoin_utxo_smt_empty_hashes() -> Vec<Hash> {
+    let mut h=Vec::with_capacity(BITCOIN_UTXO_SMT_DEPTH+1);
+    h.push(bitcoin_utxo_smt_leaf(None));
+    for _ in 0..BITCOIN_UTXO_SMT_DEPTH {
+        let x=*h.last().unwrap();
+        h.push(bitcoin_utxo_smt_node(x,x));
+    }
+    h
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSmtSnapshot {
+    pub entries: Vec<BitcoinUtxoStateEntry>,
+}
+
+impl BitcoinUtxoSmtSnapshot {
+    pub fn root(&self) -> Result<Hash,String> {
+        let mut map=std::collections::BTreeMap::<Hash,BitcoinUtxoStateEntry>::new();
+        for e in &self.entries {
+            let key=bitcoin_utxo_smt_key(&e.tx_hash,e.vout);
+            if map.insert(key,e.clone()).is_some() { return Err("duplicate SMT key".into()); }
+        }
+        let empty=bitcoin_utxo_smt_empty_hashes();
+        fn build(
+            map:&std::collections::BTreeMap<Hash,BitcoinUtxoStateEntry>,
+            depth:usize,
+            prefix:u16,
+            empty:&[Hash],
+        )->Hash {
+            if depth==BITCOIN_UTXO_SMT_DEPTH { return map.values().next().map(|e|bitcoin_utxo_smt_leaf(Some(e))).unwrap_or(empty[0]); }
+            if map.is_empty() { return empty[BITCOIN_UTXO_SMT_DEPTH-depth]; }
+            let bitpos=depth;
+            let mut left=std::collections::BTreeMap::new();
+            let mut right=std::collections::BTreeMap::new();
+            for (k,e) in map {
+                if ((k[bitpos/8]>>(bitpos%8))&1)==0 { left.insert(*k,e.clone()); } else { right.insert(*k,e.clone()); }
+            }
+            bitcoin_utxo_smt_node(build(&left,depth+1,prefix<<1,empty),build(&right,depth+1,(prefix<<1)|1,empty))
+        }
+        Ok(build(&map,0,0,&empty))
+    }
+
+    pub fn proof_for(&self,key:Hash)->Result<BitcoinUtxoSmtProof,String>{
+        let mut map=std::collections::BTreeMap::<Hash,BitcoinUtxoStateEntry>::new();
+        for e in &self.entries {
+            let k=bitcoin_utxo_smt_key(&e.tx_hash,e.vout);
+            if map.insert(k,e.clone()).is_some(){return Err("duplicate SMT key".into());}
+        }
+        let entry=map.get(&key).cloned();
+        let empty=bitcoin_utxo_smt_empty_hashes();
+        let mut siblings=Vec::with_capacity(BITCOIN_UTXO_SMT_DEPTH);
+        let mut current=map;
+        for depth in 0..BITCOIN_UTXO_SMT_DEPTH {
+            let bit=((key[depth/8]>>(depth%8))&1)!=0;
+            let mut sibling_map=std::collections::BTreeMap::new();
+            let mut next=std::collections::BTreeMap::new();
+            for (k,e) in current {
+                let b=((k[depth/8]>>(depth%8))&1)!=0;
+                if b==bit { next.insert(k,e); } else { sibling_map.insert(k,e); }
+            }
+            siblings.push(if sibling_map.is_empty() {
+                empty[BITCOIN_UTXO_SMT_DEPTH-depth-1]
+            } else {
+                BitcoinUtxoSmtSnapshot{entries:sibling_map.into_values().collect()}.root()?
+            });
+            current=next;
+        }
+        siblings.reverse();
+        Ok(BitcoinUtxoSmtProof{key,entry,siblings})
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSmtProof {
+    pub key: Hash,
+    pub entry: Option<BitcoinUtxoStateEntry>,
+    pub siblings: Vec<Hash>,
+}
+
+impl BitcoinUtxoSmtProof {
+    pub fn verify(&self, root: Hash) -> bool {
+        if self.siblings.len() != BITCOIN_UTXO_SMT_DEPTH { return false; }
+        if let Some(e)=&self.entry {
+            if bitcoin_utxo_smt_key(&e.tx_hash,e.vout) != self.key { return false; }
+        }
+        let mut current=bitcoin_utxo_smt_leaf(self.entry.as_ref());
+        for level in 0..BITCOIN_UTXO_SMT_DEPTH {
+            let bit=BITCOIN_UTXO_SMT_DEPTH-1-level;
+            let right=((self.key[bit/8]>>(bit%8))&1)==1;
+            let sibling=&self.siblings[level];
+            current=if right {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",sibling.as_slice(),current.as_slice()].concat())
+            } else {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",current.as_slice(),sibling.as_slice()].concat())
+            };
+        }
+        current==root
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSmtUpdateStep {
+    pub key: Hash,
+    pub old_entry: Option<BitcoinUtxoStateEntry>,
+    pub new_entry: Option<BitcoinUtxoStateEntry>,
+    pub siblings: Vec<Hash>,
+}
+
+impl BitcoinUtxoSmtUpdateStep {
+    fn root_for(&self, entry: Option<&BitcoinUtxoStateEntry>) -> Option<Hash> {
+        if self.siblings.len()!=BITCOIN_UTXO_SMT_DEPTH { return None; }
+        if let Some(e)=entry {
+            if bitcoin_utxo_smt_key(&e.tx_hash,e.vout)!=self.key { return None; }
+        }
+        let mut current=bitcoin_utxo_smt_leaf(entry);
+        for level in 0..BITCOIN_UTXO_SMT_DEPTH {
+            let bit=BITCOIN_UTXO_SMT_DEPTH-1-level;
+            let right=((self.key[bit/8]>>(bit%8))&1)==1;
+            let sibling=&self.siblings[level];
+            current=if right {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",sibling.as_slice(),current.as_slice()].concat())
+            } else {
+                freedom_primitives::hash_bytes(&[BITCOIN_UTXO_SMT_DOMAIN,b"NODE",current.as_slice(),sibling.as_slice()].concat())
+            };
+        }
+        Some(current)
+    }
+
+    pub fn verify(&self, current_root: Hash) -> Option<Hash> {
+        if self.root_for(self.old_entry.as_ref())? != current_root { return None; }
+        self.root_for(self.new_entry.as_ref())
+    }
+}
+
+impl BitcoinUtxoSmtUpdateProof {
+    pub fn build(
+        previous: &BitcoinUtxoSmtSnapshot,
+        next: &BitcoinUtxoSmtSnapshot,
+    ) -> Result<Self,String> {
+        let mut old=std::collections::BTreeMap::<Hash,BitcoinUtxoStateEntry>::new();
+        let mut new=std::collections::BTreeMap::<Hash,BitcoinUtxoStateEntry>::new();
+        for e in &previous.entries {
+            if old.insert(bitcoin_utxo_smt_key(&e.tx_hash,e.vout),e.clone()).is_some(){return Err("duplicate previous SMT key".into());}
+        }
+        for e in &next.entries {
+            if new.insert(bitcoin_utxo_smt_key(&e.tx_hash,e.vout),e.clone()).is_some(){return Err("duplicate next SMT key".into());}
+        }
+        let mut keys=std::collections::BTreeSet::new();
+        keys.extend(old.keys().copied());
+        keys.extend(new.keys().copied());
+        let previous_root=previous.root()?;
+        let next_root=next.root()?;
+        let mut steps=Vec::new();
+        for key in keys {
+            if old.get(&key)==new.get(&key){continue;}
+            let old_proof=previous.proof_for(key)?;
+            steps.push(BitcoinUtxoSmtUpdateStep{
+                key,
+                old_entry:old.get(&key).cloned(),
+                new_entry:new.get(&key).cloned(),
+                siblings:old_proof.siblings,
+            });
+        }
+        if steps.is_empty(){return Err("SMT snapshots are identical".into());}
+        Ok(Self{previous_root,next_root,steps})
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoSmtUpdateProof {
+    pub previous_root: Hash,
+    pub next_root: Hash,
+    pub steps: Vec<BitcoinUtxoSmtUpdateStep>,
+}
+
+impl BitcoinUtxoSmtUpdateProof {
+    pub fn from_block_delta(
+        previous_root: Hash,
+        next_root: Hash,
+        previous: &[BitcoinUtxoStateEntry],
+        raw_transactions: &[Vec<u8>],
+        witness_steps: Vec<BitcoinUtxoSmtUpdateStep>,
+    ) -> Result<Self, String> {
+        let (spent,created)=BitcoinUtxoAccumulatorTransition::derive_block_delta(raw_transactions)?;
+        let mut expected=std::collections::BTreeMap::<(Hash,u32),Option<BitcoinUtxoStateEntry>>::new();
+        for e in previous {
+            if expected.insert((e.tx_hash,e.vout),Some(e.clone())).is_some() {
+                return Err("duplicate previous outpoint".into());
+            }
+        }
+        for outpoint in spent {
+            if !expected.contains_key(&outpoint) {
+                return Err("block spends unavailable UTXO".into());
+            }
+            expected.insert(outpoint,None);
+        }
+        for e in created {
+            let key=(e.tx_hash,e.vout);
+            if expected.insert(key,Some(e)).is_some() {
+                return Err("created output collision".into());
+            }
+        }
+        if witness_steps.len()!=expected.len() {
+            return Err("witness step count does not match block delta".into());
+        }
+        for step in &witness_steps {
+            let key=match &step.new_entry {
+                Some(e)=>(e.tx_hash,e.vout),
+                None=>{
+                    let Some(Some(old))=expected.get_key_value(&(step.old_entry.as_ref().ok_or("missing deletion entry")?.tx_hash,step.old_entry.as_ref().unwrap().vout)).map(|(_,v)|v) else { return Err("invalid deletion".into()); };
+                    (old.tx_hash,old.vout)
+                }
+            };
+            if !expected.contains_key(&key) { return Err("unexpected witness key".into()); }
+            if step.old_entry != expected.get(&key).cloned().unwrap_or(None) { return Err("old entry mismatch".into()); }
+        }
+        Ok(Self{previous_root,next_root,steps:witness_steps})
+    }
+
+    pub fn verify(&self) -> bool {
+        if self.steps.is_empty()
+            || self.steps.len() > 1_000_000
+            || self.steps.windows(2).any(|w| w[0].key >= w[1].key)
+            || self.steps.iter().any(|s| s.old_entry == s.new_entry)
+            || self.steps.iter().any(|s| {
+                s.siblings.len() != BITCOIN_UTXO_SMT_DEPTH
+                    || s.old_entry.as_ref().is_some_and(|e| bitcoin_utxo_smt_key(&e.tx_hash, e.vout) != s.key)
+                    || s.new_entry.as_ref().is_some_and(|e| bitcoin_utxo_smt_key(&e.tx_hash, e.vout) != s.key)
+                    || s.root_for(s.old_entry.as_ref()) != Some(self.previous_root)
+            })
+        { return false; }
+        fn updated_subtree(steps: &[BitcoinUtxoSmtUpdateStep], depth: usize) -> Option<Hash> {
+            if steps.is_empty() { return None; }
+            if depth == BITCOIN_UTXO_SMT_DEPTH {
+                if steps.len() != 1 { return None; }
+                return Some(bitcoin_utxo_smt_leaf(steps[0].new_entry.as_ref()));
+            }
+            let bit = depth;
+            let split = steps.partition_point(|s| ((s.key[bit / 8] >> (bit % 8)) & 1) == 1);
+            let (left_steps, right_steps) = steps.split_at(split);
+            let left = if left_steps.is_empty() {
+                right_steps.first()?.siblings[BITCOIN_UTXO_SMT_DEPTH - depth - 1]
+            } else { updated_subtree(left_steps, depth + 1)? };
+            let right = if right_steps.is_empty() {
+                left_steps.first()?.siblings[BITCOIN_UTXO_SMT_DEPTH - depth - 1]
+            } else { updated_subtree(right_steps, depth + 1)? };
+            Some(bitcoin_utxo_smt_node(left, right))
+        }
+        updated_subtree(&self.steps, 0) == Some(self.next_root)
+    }
+
+
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoBlockCommitment {
+    pub block_height: u64,
+    pub block_hash: Hash,
+    pub previous_root: Hash,
+    pub next_root: Hash,
+    pub update_proof: BitcoinUtxoSmtUpdateProof,
+}
+
+impl BitcoinUtxoBlockCommitment {
+    pub fn build(
+        previous: &BitcoinUtxoSmtSnapshot,
+        block: &BitcoinSpendScanBlock,
+    ) -> Result<Self,String> {
+        block.verify_structure()?;
+        let mut entries=previous.entries.clone();
+        let mut map=std::collections::BTreeMap::<(Hash,u32),BitcoinUtxoStateEntry>::new();
+        for e in entries.drain(..) {
+            if map.insert((e.tx_hash,e.vout),e).is_some(){return Err("duplicate previous outpoint".into());}
+        }
+        for raw in &block.raw_transactions {
+            let tx=BitcoinTransaction::parse(raw).map_err(|_|"invalid Bitcoin transaction".to_string())?;
+            let coinbase=tx.inputs.len()==1 && tx.inputs[0].previous_txid==[0;32];
+            if !coinbase {
+                for input in &tx.inputs {
+                    if map.remove(&(input.previous_txid,input.previous_vout)).is_none(){
+                        return Err("block spends unavailable UTXO".into());
+                    }
+                }
+            }
+            for (vout,out) in tx.outputs.iter().enumerate() {
+                let e=BitcoinUtxoStateEntry{
+                    tx_hash:tx.txid,vout:vout as u32,amount_sat:out.value,script_pubkey:out.script_pubkey.clone()
+                };
+                if map.insert((e.tx_hash,e.vout),e).is_some(){return Err("output collision".into());}
+            }
+        }
+        if map.is_empty(){return Err("resulting UTXO set is empty".into());}
+        let next=BitcoinUtxoSmtSnapshot{entries:map.into_values().collect()};
+        let proof=BitcoinUtxoSmtUpdateProof::build(previous,&next)?;
+        Ok(Self{
+            block_height:block.height,
+            block_hash:block.header.block_hash(),
+            previous_root:proof.previous_root,
+            next_root:proof.next_root,
+            update_proof:proof,
+        })
+    }
+
+    pub fn verify(&self)->bool {
+        self.block_height>0
+            && self.block_hash != [0;32]
+            && self.previous_root != [0;32]
+            && self.next_root != [0;32]
+            && self.update_proof.previous_root==self.previous_root
+            && self.update_proof.next_root==self.next_root
+            && self.update_proof.verify()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BitcoinUtxoCommitmentAttestation {
+    pub bridge_id: Hash,
+    pub chain_id: u32,
+    pub policy_id: Hash,
+    #[serde(default)]
+    pub validator_set_epoch: u64,
+    #[serde(default)]
+    pub validator_set_hash: Hash,
+    pub sequence: u64,
+    pub bitcoin_tip_height: u64,
+    pub bitcoin_tip_hash: Hash,
+    pub bitcoin_tip_chainwork: [u8; 32],
+    pub previous_utxo_root: Hash,
+    pub accumulator_root: Hash,
+    pub validator_ids: Vec<Hash>,
+    pub signatures: Vec<BitcoinReorgRecoverySignature>,
+    pub attestation_hash: Hash,
+}
+
+impl BitcoinUtxoCommitmentAttestation {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut o=Vec::new();
+        o.extend_from_slice(b"FREEDOM-BITCOIN-UTXO-ATTESTATION-V1");
+        o.extend_from_slice(&self.bridge_id);
+        o.extend_from_slice(&self.chain_id.to_le_bytes());
+        o.extend_from_slice(&self.policy_id);
+        o.extend_from_slice(&self.validator_set_epoch.to_le_bytes());
+        o.extend_from_slice(&self.validator_set_hash);
+        o.extend_from_slice(&self.sequence.to_le_bytes());
+        o.extend_from_slice(&self.bitcoin_tip_height.to_le_bytes());
+        o.extend_from_slice(&self.bitcoin_tip_hash);
+        o.extend_from_slice(&self.bitcoin_tip_chainwork);
+        o.extend_from_slice(&self.previous_utxo_root);
+        o.extend_from_slice(&self.accumulator_root);
+        for id in &self.validator_ids { o.extend_from_slice(id); }
+        o
+    }
+
+    pub fn compute_hash(&self) -> Hash {
+        freedom_primitives::hash_bytes(&self.signing_bytes())
+    }
+
+    pub fn validate_structure(&self) -> bool {
+        self.bridge_id != [0;32]
+            && self.chain_id != 0
+            && self.policy_id != [0;32]
+            && self.validator_set_hash != [0;32]
+            && self.sequence > 0
+            && self.bitcoin_tip_height > 0
+            && self.bitcoin_tip_hash != [0;32]
+            && self.bitcoin_tip_chainwork != [0;32]
+            && self.previous_utxo_root != [0;32]
+            && self.accumulator_root != [0;32]
+            && !self.validator_ids.is_empty()
+            && self.validator_ids.len() == self.signatures.len()
+            && self.validator_ids.windows(2).all(|pair| pair[0] < pair[1])
+            && self.validator_ids.iter().zip(self.signatures.iter())
+                .all(|(id,sig)| *id == sig.validator_id && *id != [0;32] && sig.signature.len() == 64)
+            && self.attestation_hash == self.compute_hash()
+    }
+
+    pub fn authenticated_count(&self, validators: &std::collections::BTreeMap<Hash,[u8;32]>) -> usize {
+        if !self.validate_structure() {
+            return 0;
+        }
+        let mut authenticated=std::collections::BTreeSet::new();
+        for (validator_id,sig) in self.validator_ids.iter().zip(self.signatures.iter()) {
+            let Some(key)=validators.get(validator_id) else { continue };
+            if freedom_primitives::hash_bytes(key) != *validator_id {
+                continue;
+            }
+            let Ok(signature)=sig.signature.as_slice().try_into() else { continue };
+            if freedom_crypto::verify(key,&self.signing_bytes(),signature) {
+                authenticated.insert(*validator_id);
+            }
+        }
+        authenticated.len()
+    }
+
+    pub fn verify_signatures(
+        &self,
+        validators: &std::collections::BTreeMap<Hash,[u8;32]>,
+        quorum: u16,
+    ) -> bool {
+        self.validate_structure() && quorum > 0 && self.authenticated_count(validators) >= quorum
+    }
+
+    pub fn verify(
+        &self,
+        canonical_tip: &BitcoinChainCheckpoint,
+        validators: &std::collections::BTreeMap<Hash,[u8;32]>,
+        quorum: u16,
+    ) -> bool {
+        self.verify_signatures(validators,quorum)
+            && self.bitcoin_tip_height == canonical_tip.height
+            && self.bitcoin_tip_hash == canonical_tip.block_hash
+            && self.bitcoin_tip_chainwork == canonical_tip.chainwork
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinUtxoMerkleMultiproof {
     pub leaf_count: u64,
@@ -5621,5 +6070,39 @@ mod m423_bridge_decode_allocation_tests {
         payload.extend_from_slice(&[0u8; 32 + 32]);
         payload.extend_from_slice(&u16::MAX.to_le_bytes());
         assert!(BridgeMintTransactionPayload::decode(&payload).is_err());
+    }
+}
+
+#[cfg(test)]
+mod m429_bitcoin_utxo_smt_regression_tests {
+    use super::*;
+    fn entry(tx: u8, vout: u32, amount: u64) -> BitcoinUtxoStateEntry {
+        BitcoinUtxoStateEntry { tx_hash: [tx; 32], vout, amount_sat: amount, script_pubkey: vec![0x51] }
+    }
+    #[test]
+    fn membership_and_non_membership_proofs_verify_in_root_order() {
+        let snapshot = BitcoinUtxoSmtSnapshot { entries: vec![entry(1, 0, 100), entry(2, 1, 200)] };
+        let root = snapshot.root().unwrap();
+        for e in &snapshot.entries {
+            let key = bitcoin_utxo_smt_key(&e.tx_hash, e.vout);
+            assert!(snapshot.proof_for(key).unwrap().verify(root));
+        }
+        assert!(snapshot.proof_for([99; 32]).unwrap().verify(root));
+        let mut forged = snapshot.proof_for([99; 32]).unwrap();
+        forged.siblings[0][0] ^= 1;
+        assert!(!forged.verify(root));
+    }
+    #[test]
+    fn multi_key_update_proof_recomputes_the_next_root() {
+        let previous = BitcoinUtxoSmtSnapshot { entries: vec![entry(1, 0, 100), entry(2, 1, 200), entry(3, 0, 300)] };
+        let next = BitcoinUtxoSmtSnapshot { entries: vec![entry(1, 0, 101), entry(4, 0, 400)] };
+        let proof = BitcoinUtxoSmtUpdateProof::build(&previous, &next).unwrap();
+        assert!(proof.verify());
+        let mut forged = proof.clone();
+        forged.next_root[0] ^= 1;
+        assert!(!forged.verify());
+        let mut reordered = proof;
+        reordered.steps.reverse();
+        assert!(!reordered.verify());
     }
 }
