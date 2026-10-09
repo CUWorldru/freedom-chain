@@ -5444,7 +5444,7 @@ impl BitcoinUtxoCommitmentAttestation {
         validators: &std::collections::BTreeMap<Hash,[u8;32]>,
         quorum: u16,
     ) -> bool {
-        self.validate_structure() && quorum > 0 && self.authenticated_count(validators) >= quorum
+        self.validate_structure() && quorum > 0 && self.authenticated_count(validators) >= usize::from(quorum)
     }
 
     pub fn verify(
