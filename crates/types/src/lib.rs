@@ -6855,3 +6855,63 @@ mod m443_bitcoin_script_integration_tests {
         ).is_err());
     }
 }
+
+
+#[cfg(test)]
+mod m444_bitcoin_witness_commitment_integration_tests {
+    use super::*;
+
+    fn legacy_coinbase() -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&1i32.to_le_bytes());
+        raw.push(1);
+        raw.extend_from_slice(&[0u8; 32]);
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.push(2);
+        raw.extend_from_slice(&[1u8, 1u8]);
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.push(1);
+        raw.extend_from_slice(&0u64.to_le_bytes());
+        raw.push(1);
+        raw.push(0x51);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw
+    }
+
+    fn segwit_spend_without_commitment() -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&2i32.to_le_bytes());
+        raw.extend_from_slice(&[0, 1]); // SegWit marker and flag
+        raw.push(1); // one input
+        raw.extend_from_slice(&[7u8; 32]);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.push(0); // empty scriptSig
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.push(1); // one output
+        raw.extend_from_slice(&1u64.to_le_bytes());
+        raw.push(1);
+        raw.push(0x51);
+        raw.push(1); // witness stack with one item
+        raw.push(1);
+        raw.push(0x01);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw
+    }
+
+    #[test]
+    fn m444_rejects_witness_block_without_coinbase_commitment() {
+        let block = vec![legacy_coinbase(), segwit_spend_without_commitment()];
+        assert!(BitcoinUtxoBlockCommitment::validate_block_witness_commitment(&block)
+            .unwrap_err()
+            .contains("MissingWitnessCommitment"));
+    }
+
+    #[test]
+    fn m444_accepts_legacy_block_without_witness_or_commitment() {
+        let block = vec![legacy_coinbase()];
+        assert_eq!(
+            BitcoinUtxoBlockCommitment::validate_block_witness_commitment(&block),
+            Ok(())
+        );
+    }
+}
