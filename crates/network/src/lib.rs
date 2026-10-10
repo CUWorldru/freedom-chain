@@ -148,6 +148,22 @@ pub fn validate_snapshot_ancestry(
     Ok(())
 }
 
+/// Anchor the peer-supplied finality validator set to a set already trusted by
+/// the local pre-checkpoint state. A snapshot's own state must not be used to
+/// authenticate the certificate that is supposed to authenticate that snapshot.
+pub fn validate_snapshot_validator_set_anchor(
+    trusted_set_hash: freedom_primitives::Hash,
+    supplied_set: &std::collections::BTreeMap<freedom_primitives::Hash, freedom_types::ValidatorSetEntry>,
+) -> Result<(), String> {
+    if supplied_set.is_empty() {
+        return Err("snapshot finality validator set is empty".into());
+    }
+    if freedom_consensus::validator_set_hash(supplied_set) != trusted_set_hash {
+        return Err("snapshot finality validator set is not anchored to trusted local state".into());
+    }
+    Ok(())
+}
+
 pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(), String> { if response.chain_id != freedom_primitives::CHAIN_ID { return Err("snapshot chain id mismatch".into()); } if response.height == 0 { return Err("snapshot response cannot target genesis".into()); } if response.state_json.len() > MAX_SNAPSHOT_STATE_BYTES { return Err("snapshot state exceeds maximum encoded size".into()); } if response.checkpoint.header.height != response.height { return Err("snapshot checkpoint height mismatch".into()); } if freedom_consensus::block_hash(&response.checkpoint) != response.block_hash { return Err("snapshot checkpoint hash mismatch".into()); } if response.checkpoint.header.state_root != response.state_root { return Err("snapshot checkpoint state root mismatch".into()); } if response.certificate.height != response.height || response.certificate.block_hash != response.block_hash { return Err("snapshot certificate identity mismatch".into()); } if response.certificate.round != response.checkpoint.header.round { return Err("snapshot certificate round mismatch".into()); } if response.finality_validator_set.is_empty() { return Err("snapshot finality validator set is empty".into()); } if let Some(checkpoint_cert) = &response.checkpoint.header.epoch_transition_certificate { if freedom_consensus::validator_set_hash(&response.finality_validator_set) != checkpoint_cert.previous_set_hash { return Err("snapshot finality validator set hash mismatch".into()); } } else if freedom_consensus::validator_set_hash(&response.finality_validator_set) == [0u8;32] { return Err("snapshot finality validator set hash invalid".into()); } freedom_consensus::validate_finality_certificate_for_set(&response.finality_validator_set, &response.checkpoint, &response.certificate).map_err(|e| format!("snapshot finality certificate invalid: {e}"))?; if response.certificate.height != response.checkpoint.header.height { return Err("snapshot finality height mismatch".into()); } if let Some(checkpoint_cert) = &response.checkpoint.header.epoch_transition_certificate { let supplied_cert = response.epoch_transition_certificate.as_ref().ok_or_else(|| "snapshot checkpoint transition certificate missing".to_string())?; if supplied_cert.hash() != checkpoint_cert.hash() { return Err("snapshot epoch transition certificate mismatch".into()); } } else if response.epoch_transition_certificate.is_some() { return Err("snapshot supplied unexpected epoch transition certificate".into()); } Ok(()) }
 
 #[derive(NetworkBehaviour)]
@@ -625,6 +641,42 @@ mod tests {
             transactions: vec![], receipts: vec![],
         };
         assert!(validate_snapshot_extension(u64::MAX, [7;32], &checkpoint).is_err());
+    }
+
+    #[test]
+    fn snapshot_validator_set_anchor_accepts_exact_trusted_set() {
+        let mut set = std::collections::BTreeMap::new();
+        let id = hash_bytes(b"m471-validator");
+        set.insert(id, freedom_types::ValidatorSetEntry {
+            validator_id: id,
+            owner: [1; 32],
+            consensus_key: [2; 32],
+            stake: 10,
+        });
+        let trusted_hash = freedom_consensus::validator_set_hash(&set);
+        assert!(validate_snapshot_validator_set_anchor(trusted_hash, &set).is_ok());
+    }
+
+    #[test]
+    fn snapshot_validator_set_anchor_rejects_peer_selected_set() {
+        let mut trusted = std::collections::BTreeMap::new();
+        let id = hash_bytes(b"m471-trusted-validator");
+        trusted.insert(id, freedom_types::ValidatorSetEntry {
+            validator_id: id, owner: [1; 32], consensus_key: [2; 32], stake: 10,
+        });
+        let mut supplied = trusted.clone();
+        supplied.get_mut(&id).unwrap().stake = 11;
+        let error = validate_snapshot_validator_set_anchor(
+            freedom_consensus::validator_set_hash(&trusted), &supplied,
+        ).unwrap_err();
+        assert!(error.contains("not anchored"));
+    }
+
+    #[test]
+    fn snapshot_validator_set_anchor_rejects_empty_set() {
+        let empty = std::collections::BTreeMap::new();
+        assert!(validate_snapshot_validator_set_anchor([0; 32], &empty)
+            .unwrap_err().contains("empty"));
     }
 
     #[test]
