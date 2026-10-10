@@ -107,6 +107,47 @@ pub fn validate_snapshot_extension(
     Ok(())
 }
 
+/// Validate a bounded block ancestry from a locally trusted canonical tip to a
+/// remote checkpoint. The ancestry slice contains intermediate blocks only;
+/// the checkpoint is supplied separately and is checked as the final link.
+/// This proves hash/height continuity, not finality-set trust or state execution.
+pub fn validate_snapshot_ancestry(
+    local_height: u64,
+    local_hash: freedom_primitives::Hash,
+    ancestry: &[freedom_types::Block],
+    checkpoint: &freedom_types::Block,
+) -> Result<(), String> {
+    if ancestry.len() > MAX_SYNC_BLOCKS as usize {
+        return Err("snapshot ancestry exceeds maximum block count".into());
+    }
+
+    let mut expected_height = local_height
+        .checked_add(1)
+        .ok_or_else(|| "local height exceeds u64::MAX".to_string())?;
+    let mut expected_parent = local_hash;
+
+    for block in ancestry {
+        if block.header.height != expected_height {
+            return Err("snapshot ancestry contains non-contiguous heights".into());
+        }
+        if block.header.previous_hash != expected_parent {
+            return Err("snapshot ancestry parent hash mismatch".into());
+        }
+        expected_parent = freedom_consensus::block_hash(block);
+        expected_height = expected_height
+            .checked_add(1)
+            .ok_or_else(|| "snapshot ancestry height exceeds u64::MAX".to_string())?;
+    }
+
+    if checkpoint.header.height != expected_height {
+        return Err("checkpoint height does not follow supplied ancestry".into());
+    }
+    if checkpoint.header.previous_hash != expected_parent {
+        return Err("checkpoint parent hash does not match supplied ancestry".into());
+    }
+    Ok(())
+}
+
 pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(), String> { if response.chain_id != freedom_primitives::CHAIN_ID { return Err("snapshot chain id mismatch".into()); } if response.height == 0 { return Err("snapshot response cannot target genesis".into()); } if response.state_json.len() > MAX_SNAPSHOT_STATE_BYTES { return Err("snapshot state exceeds maximum encoded size".into()); } if response.checkpoint.header.height != response.height { return Err("snapshot checkpoint height mismatch".into()); } if freedom_consensus::block_hash(&response.checkpoint) != response.block_hash { return Err("snapshot checkpoint hash mismatch".into()); } if response.checkpoint.header.state_root != response.state_root { return Err("snapshot checkpoint state root mismatch".into()); } if response.certificate.height != response.height || response.certificate.block_hash != response.block_hash { return Err("snapshot certificate identity mismatch".into()); } if response.certificate.round != response.checkpoint.header.round { return Err("snapshot certificate round mismatch".into()); } if response.finality_validator_set.is_empty() { return Err("snapshot finality validator set is empty".into()); } if let Some(checkpoint_cert) = &response.checkpoint.header.epoch_transition_certificate { if freedom_consensus::validator_set_hash(&response.finality_validator_set) != checkpoint_cert.previous_set_hash { return Err("snapshot finality validator set hash mismatch".into()); } } else if freedom_consensus::validator_set_hash(&response.finality_validator_set) == [0u8;32] { return Err("snapshot finality validator set hash invalid".into()); } freedom_consensus::validate_finality_certificate_for_set(&response.finality_validator_set, &response.checkpoint, &response.certificate).map_err(|e| format!("snapshot finality certificate invalid: {e}"))?; if response.certificate.height != response.checkpoint.header.height { return Err("snapshot finality height mismatch".into()); } if let Some(checkpoint_cert) = &response.checkpoint.header.epoch_transition_certificate { let supplied_cert = response.epoch_transition_certificate.as_ref().ok_or_else(|| "snapshot checkpoint transition certificate missing".to_string())?; if supplied_cert.hash() != checkpoint_cert.hash() { return Err("snapshot epoch transition certificate mismatch".into()); } } else if response.epoch_transition_certificate.is_some() { return Err("snapshot supplied unexpected epoch transition certificate".into()); } Ok(()) }
 
 #[derive(NetworkBehaviour)]
@@ -480,6 +521,58 @@ pub fn send_sync_request(swarm: &mut Swarm<FreedomBehaviour>, peer: PeerId, requ
 mod tests {
     use super::*;
     use freedom_primitives::hash_bytes;
+
+    fn ancestry_block(height: u64, previous_hash: freedom_primitives::Hash) -> freedom_types::Block {
+        freedom_types::Block {
+            header: freedom_types::BlockHeader {
+                height, round: 0, previous_hash, state_root: [height as u8;32],
+                tx_root: [2;32], receipts_root: [3;32], timestamp: height, epoch: 0,
+                proposer: [4;32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        }
+    }
+
+    #[test]
+    fn snapshot_ancestry_accepts_contiguous_path_from_trusted_tip() {
+        let first = ancestry_block(8, [7;32]);
+        let first_hash = freedom_consensus::block_hash(&first);
+        let second = ancestry_block(9, first_hash);
+        let second_hash = freedom_consensus::block_hash(&second);
+        let checkpoint = ancestry_block(10, second_hash);
+        assert!(validate_snapshot_ancestry(7, [7;32], &[first, second], &checkpoint).is_ok());
+    }
+
+    #[test]
+    fn snapshot_ancestry_rejects_missing_intermediate_block() {
+        let first = ancestry_block(8, [7;32]);
+        let checkpoint = ancestry_block(10, freedom_consensus::block_hash(&first));
+        let error = validate_snapshot_ancestry(7, [7;32], &[first], &checkpoint).unwrap_err();
+        assert!(error.contains("height"));
+    }
+
+    #[test]
+    fn snapshot_ancestry_rejects_wrong_parent_link() {
+        let first = ancestry_block(8, [7;32]);
+        let second = ancestry_block(9, [99;32]);
+        let checkpoint = ancestry_block(10, freedom_consensus::block_hash(&second));
+        let error = validate_snapshot_ancestry(7, [7;32], &[first, second], &checkpoint).unwrap_err();
+        assert!(error.contains("parent hash"));
+    }
+
+    #[test]
+    fn snapshot_ancestry_rejects_oversized_proof() {
+        let ancestry = vec![ancestry_block(0, [0;32]); MAX_SYNC_BLOCKS as usize + 1];
+        let checkpoint = ancestry_block(1, [0;32]);
+        let error = validate_snapshot_ancestry(0, [0;32], &ancestry, &checkpoint).unwrap_err();
+        assert!(error.contains("maximum block count"));
+    }
+
+    #[test]
+    fn snapshot_ancestry_rejects_height_overflow() {
+        let error = validate_snapshot_ancestry(u64::MAX, [7;32], &[], &ancestry_block(u64::MAX, [7;32])).unwrap_err();
+        assert!(error.contains("exceeds u64::MAX"));
+    }
 
     #[test]
     fn snapshot_extension_accepts_only_next_height_with_matching_parent() {
