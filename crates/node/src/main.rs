@@ -20,6 +20,66 @@ fn request_id(validator_id: Hash, from_height: u64) -> Hash {
     hash_bytes(&[b"FREEDOM-SYNC-V1", &validator_id, &from_height.to_le_bytes()].concat())
 }
 
+/// Build a peer response's validator-set transition history from canonical
+/// block headers and the snapshot's historical set entries. The snapshot is
+/// only a source of candidate set data: every set is bound to the certificate
+/// committed in its canonical transition block and re-verified by the receiver.
+fn build_snapshot_validator_set_transitions(
+    store: &ChainStore,
+    snapshot: &freedom_storage::StateSnapshot,
+    target_epoch: u64,
+) -> Result<Vec<freedom_network::SnapshotValidatorSetTransition>, String> {
+    if target_epoch > snapshot.state.epoch {
+        return Err("target validator epoch exceeds snapshot state epoch".into());
+    }
+    if snapshot.height == 0 {
+        return Err("genesis has no remote validator transition history".into());
+    }
+
+    let mut transitions = Vec::new();
+    for height in 1..=snapshot.height {
+        let block = store
+            .get_block(height)
+            .map_err(|e| format!("cannot read transition history block {height}: {e}"))?
+            .ok_or_else(|| format!("transition history block {height} is missing"))?;
+        let Some(certificate) = block.header.epoch_transition_certificate else {
+            continue;
+        };
+        if certificate.to_epoch > target_epoch {
+            continue;
+        }
+        let expected_to = certificate.from_epoch
+            .checked_add(1)
+            .ok_or_else(|| "transition epoch overflows".to_string())?;
+        if certificate.to_epoch != expected_to {
+            return Err(format!("non-consecutive transition certificate at block {height}"));
+        }
+        let new_validator_set = snapshot
+            .state
+            .validator_set_history_entries
+            .get(&certificate.to_epoch)
+            .cloned()
+            .or_else(|| {
+                (certificate.to_epoch == snapshot.state.epoch)
+                    .then(|| snapshot.state.active_validator_set.clone())
+            })
+            .ok_or_else(|| format!("snapshot lacks validator set for epoch {}", certificate.to_epoch))?;
+        if new_validator_set.is_empty()
+            || freedom_consensus::validator_set_hash(&new_validator_set) != certificate.new_set_hash
+        {
+            return Err(format!("validator set does not match transition certificate for epoch {}", certificate.to_epoch));
+        }
+        transitions.push(freedom_network::SnapshotValidatorSetTransition {
+            certificate,
+            new_validator_set,
+        });
+        if transitions.len() > 4096 {
+            return Err("validator-set transition history exceeds maximum count".into());
+        }
+    }
+    Ok(transitions)
+}
+
 fn select_sync_peer(peers: &[libp2p::PeerId], cursor: &mut usize) -> Option<libp2p::PeerId> {
     if peers.is_empty() {
         *cursor = 0;
@@ -1277,6 +1337,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     continue;
                                                 }
                                                 if let (Some(certificate), Ok(Some(checkpoint))) = (snapshot.certificate.clone(), store.get_block(snapshot.height)) {
+                                                    let finality_set_epoch = checkpoint.header.epoch_transition_certificate
+                                                        .as_ref()
+                                                        .map(|cert| cert.from_epoch)
+                                                        .unwrap_or(checkpoint.header.epoch);
+                                                    let validator_set_transitions = match build_snapshot_validator_set_transitions(
+                                                        &store,
+                                                        &snapshot,
+                                                        finality_set_epoch,
+                                                    ) {
+                                                        Ok(history) => history,
+                                                        Err(reason) => {
+                                                            eprintln!("SNAPSHOT_SERVE_REJECTED validator_history_invalid height={} reason={}", snapshot.height, reason);
+                                                            continue;
+                                                        }
+                                                    };
                                                     if let Ok(state_json) = serde_json::to_vec(&snapshot.state) {
                                                         let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse {
                                                             request_id: req.request_id,
@@ -1287,9 +1362,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             certificate,
                                                             finality_validator_set: snapshot.finality_validator_set.clone(),
                                                             epoch_transition_certificate: snapshot.epoch_transition_certificate.clone(),
-                                                            // The storage schema currently persists only the latest transition
-                                                            // certificate; never fabricate missing intermediate history.
-                                                            validator_set_transitions: Vec::new(),
+                                                            validator_set_transitions,
                                                             chain_id: freedom_primitives::CHAIN_ID,
                                                             state_json,
                                                         });
@@ -1506,9 +1579,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             } else {
                                                 response.checkpoint.header.epoch
                                             };
+                                            // Peers may send the complete history from genesis. Ignore only
+                                            // the prefix before our trusted epoch; the verifier anchors the
+                                            // first remaining certificate to our local active set and rejects gaps.
+                                            let trusted_history_suffix = response
+                                                .validator_set_transitions
+                                                .iter()
+                                                .filter(|transition| transition.certificate.from_epoch >= state.epoch)
+                                                .cloned()
+                                                .collect::<Vec<_>>();
                                             if let Err(reason) = freedom_network::validate_snapshot_validator_set_history(
                                                 &state,
-                                                &response.validator_set_transitions,
+                                                &trusted_history_suffix,
                                                 finality_set_epoch,
                                                 &response.finality_validator_set,
                                             ) {
@@ -1609,6 +1691,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     &response.block_hash,
                                                     &response.state_root,
                                                     &hash_bytes(&serde_json::to_vec(&response.certificate)?),
+                                                    &hash_bytes(&serde_json::to_vec(&response.validator_set_transitions)?),
                                                     &freedom_consensus::validator_set_hash(&response.finality_validator_set),
                                                     &response.epoch_transition_certificate.as_ref().map(|c| c.hash()).unwrap_or([0; 32]),
                                                 ].concat(),
