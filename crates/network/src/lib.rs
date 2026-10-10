@@ -838,7 +838,7 @@ mod tests {
             block_hash: freedom_consensus::block_hash(&checkpoint), state_root: [1;32], checkpoint,
             certificate: freedom_types::FinalityCertificate { block_hash: [0;32], height: 7, round: 2, precommits: Vec::new() },
             finality_validator_set: std::collections::BTreeMap::new(),
-            epoch_transition_certificate: None, state_json: Vec::new(),
+            epoch_transition_certificate: None, validator_set_transitions: Vec::new(), state_json: Vec::new(),
         };
         assert!(validate_snapshot_response(&response).is_err());
     }
@@ -858,7 +858,7 @@ mod tests {
             block_hash: [9;32], state_root: [1;32], checkpoint,
             certificate: freedom_types::FinalityCertificate { block_hash: [9;32], height: 7, round: 2, precommits: Vec::new() },
             finality_validator_set: std::collections::BTreeMap::new(),
-            epoch_transition_certificate: None, state_json: Vec::new(),
+            epoch_transition_certificate: None, validator_set_transitions: Vec::new(), state_json: Vec::new(),
         };
         assert!(validate_snapshot_response(&response).is_err());
     }
