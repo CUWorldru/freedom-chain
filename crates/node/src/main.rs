@@ -1287,6 +1287,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             certificate,
                                                             finality_validator_set: snapshot.finality_validator_set.clone(),
                                                             epoch_transition_certificate: snapshot.epoch_transition_certificate.clone(),
+                                                            // The storage schema currently persists only the latest transition
+                                                            // certificate; never fabricate missing intermediate history.
+                                                            validator_set_transitions: Vec::new(),
                                                             chain_id: freedom_primitives::CHAIN_ID,
                                                             state_json,
                                                         });
@@ -1495,15 +1498,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 continue;
                                             }
 
-                                            // The checkpoint certificate must be verified against a validator set
-                                            // already trusted locally, not one authenticated only by the snapshot itself.
-                                            let trusted_local_set_hash =
-                                                freedom_consensus::validator_set_hash(&state.active_validator_set);
-                                            if let Err(reason) = freedom_network::validate_snapshot_validator_set_anchor(
-                                                trusted_local_set_hash,
+                                            // Authenticate every intervening validator-set transition from
+                                            // locally trusted state. The peer-supplied snapshot is never its own
+                                            // trust anchor. Missing history is a hard rejection, not a fast-sync shortcut.
+                                            let finality_set_epoch = if let Some(cert) = &response.checkpoint.header.epoch_transition_certificate {
+                                                cert.from_epoch
+                                            } else {
+                                                response.checkpoint.header.epoch
+                                            };
+                                            if let Err(reason) = freedom_network::validate_snapshot_validator_set_history(
+                                                &state,
+                                                &response.validator_set_transitions,
+                                                finality_set_epoch,
                                                 &response.finality_validator_set,
                                             ) {
-                                                eprintln!("SNAPSHOT_REJECTED untrusted finality validator set: {reason}");
+                                                eprintln!("SNAPSHOT_REJECTED untrusted validator-set history: {reason}");
+                                                continue;
+                                            }
+                                            let trusted_local_set_hash =
+                                                freedom_consensus::validator_set_hash(&state.active_validator_set);
+                                            if response.validator_set_transitions.is_empty()
+                                                && finality_set_epoch == state.epoch
+                                                && freedom_consensus::validator_set_hash(&response.finality_validator_set) != trusted_local_set_hash {
+                                                eprintln!("SNAPSHOT_REJECTED finality set is not anchored to local trusted set");
                                                 continue;
                                             }
 
