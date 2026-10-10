@@ -1980,11 +1980,12 @@ mod m471_snapshot_state_transition_tests {
 
     fn state_and_checkpoint() -> (freedom_state::ChainState, freedom_types::Block) {
         let validators: Vec<Validator> = (1u8..=3).map(|i| {
-            let key = [i; 32];
+            let signing_key = ed25519_dalek::SigningKey::from_bytes(&[i; 32]);
+            let public_key = signing_key.verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&[b"m471-validator", &[i]].concat()),
-                owner: address_from_public_key(&key),
-                consensus_key: key,
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0,
                 unbonding_stake: 0,
                 blocks_proposed: 0,
@@ -1995,10 +1996,11 @@ mod m471_snapshot_state_transition_tests {
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
         let state = initialize(&genesis).unwrap();
         let owner = proposer_for_height_round(&state, 1, 0).unwrap();
-        let entry = state.active_validator_set.values()
-            .find(|entry| entry.owner == owner)
-            .unwrap();
-        let key = ed25519_dalek::SigningKey::from_bytes(&entry.consensus_key);
+        let seed = (1u8..=3).map(|i| [i; 32]).find(|seed| {
+            let public_key = ed25519_dalek::SigningKey::from_bytes(seed).verifying_key().to_bytes();
+            address_from_public_key(&public_key) == owner
+        }).unwrap();
+        let key = ed25519_dalek::SigningKey::from_bytes(&seed);
         let (_, block) = build_local_proposal(&state, owner, &key, 0).unwrap();
         (state, block)
     }
