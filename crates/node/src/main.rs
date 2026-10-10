@@ -910,6 +910,46 @@ mod m31_tests {
     }
 }
 
+fn validate_snapshot_state_transition(
+    local_state: &freedom_state::ChainState,
+    checkpoint: &freedom_types::Block,
+    supplied_snapshot_state: &freedom_state::ChainState,
+) -> Result<(), String> {
+    let expected_height = local_state
+        .height
+        .checked_add(1)
+        .ok_or_else(|| "local state height exceeds u64::MAX".to_string())?;
+    if checkpoint.header.height != expected_height {
+        return Err("checkpoint is not the next local height".into());
+    }
+    if checkpoint.header.previous_hash != local_state.last_block_hash {
+        return Err("checkpoint parent does not match local state".into());
+    }
+    let expected_proposer = proposer_for_height_round(
+        local_state,
+        checkpoint.header.height,
+        checkpoint.header.round,
+    )
+    .ok_or_else(|| "no proposer for checkpoint height/round".to_string())?;
+    if checkpoint.header.proposer != expected_proposer {
+        return Err("checkpoint proposer does not match local validator schedule".into());
+    }
+
+    let mut executed_state = local_state.clone();
+    let committed = execute_block(&mut executed_state, checkpoint)
+        .map_err(|e| format!("checkpoint execution rejected: {e}"))?;
+    if block_hash(&committed) != block_hash(checkpoint) {
+        return Err("executed checkpoint hash differs from supplied checkpoint".into());
+    }
+    if executed_state != *supplied_snapshot_state {
+        return Err("supplied snapshot state differs from locally executed checkpoint state".into());
+    }
+    executed_state
+        .validate_finality_state_integrity()
+        .map_err(|e| format!("executed checkpoint finality state invalid: {e:?}"))?;
+    Ok(())
+}
+
 fn replay_persisted_blocks(
     state: &mut freedom_state::ChainState,
     blocks: &[freedom_types::Block],
@@ -1531,6 +1571,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 continue;
                                             }
 
+                                            // A matching state root is not enough: a remote peer controls the
+                                            // supplied state JSON. Execute the checkpoint from our trusted local
+                                            // state and require an exact state match before accepting its snapshot.
+                                            if let Err(reason) = validate_snapshot_state_transition(
+                                                &state,
+                                                &response.checkpoint,
+                                                &snapshot_state,
+                                            ) {
+                                                eprintln!(
+                                                    "SNAPSHOT_REJECTED local execution/state mismatch height={} reason={}",
+                                                    response.height, reason
+                                                );
+                                                continue;
+                                            }
+
                                             let snapshot_fingerprint = hash_bytes(
                                                 &[
                                                     &response.height.to_le_bytes(),
@@ -1914,4 +1969,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(state.height, 0);
     }
 
+}
+
+
+#[cfg(test)]
+mod m471_snapshot_state_transition_tests {
+    use super::*;
+    use freedom_primitives::{hash_bytes, CHAIN_ID, GENESIS_SUPPLY};
+    use freedom_types::{Genesis, Validator};
+
+    fn state_and_checkpoint() -> (freedom_state::ChainState, freedom_types::Block) {
+        let validators: Vec<Validator> = (1u8..=3).map(|i| {
+            let key = [i; 32];
+            Validator {
+                validator_id: hash_bytes(&[b"m471-validator", &[i]].concat()),
+                owner: address_from_public_key(&key),
+                consensus_key: key,
+                stake: 0,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect();
+        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
+        let state = initialize(&genesis).unwrap();
+        let owner = proposer_for_height_round(&state, 1, 0).unwrap();
+        let entry = state.active_validator_set.values()
+            .find(|entry| entry.owner == owner)
+            .unwrap();
+        let key = ed25519_dalek::SigningKey::from_bytes(&entry.consensus_key);
+        let (_, block) = build_local_proposal(&state, owner, &key, 0).unwrap();
+        (state, block)
+    }
+
+    #[test]
+    fn m471_accepts_snapshot_state_matching_local_execution() {
+        let (state, checkpoint) = state_and_checkpoint();
+        let mut executed = state.clone();
+        execute_block(&mut executed, &checkpoint).unwrap();
+        assert!(validate_snapshot_state_transition(&state, &checkpoint, &executed).is_ok());
+    }
+
+    #[test]
+    fn m471_rejects_remote_state_not_matching_checkpoint_execution() {
+        let (state, checkpoint) = state_and_checkpoint();
+        let mut supplied = state.clone();
+        supplied.height = checkpoint.header.height;
+        supplied.last_block_hash = block_hash(&checkpoint);
+        assert!(validate_snapshot_state_transition(&state, &checkpoint, &supplied)
+            .unwrap_err()
+            .contains("supplied snapshot state differs"));
+    }
+
+    #[test]
+    fn m471_rejects_checkpoint_with_wrong_parent_before_execution() {
+        let (state, mut checkpoint) = state_and_checkpoint();
+        checkpoint.header.previous_hash = [0xA5; 32];
+        assert!(validate_snapshot_state_transition(&state, &checkpoint, &state)
+            .unwrap_err()
+            .contains("checkpoint parent"));
+    }
 }
