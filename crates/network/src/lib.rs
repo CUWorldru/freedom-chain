@@ -23,6 +23,11 @@ pub const VALSET_CERT_TOPIC: &str = "freedom/1/validator-set-certificates";
 pub const SYNC_TOPIC: &str = "freedom/1/sync";
 pub const MAX_SYNC_BLOCKS: u64 = 32;
 pub const MAX_SNAPSHOT_STATE_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_SNAPSHOT_TRANSITIONS: usize = 4096;
+pub const MAX_SNAPSHOT_VALIDATORS_PER_SET: usize = 4096;
+pub const MAX_SNAPSHOT_TOTAL_VALIDATOR_ENTRIES: usize = 16_384;
+pub const MAX_SNAPSHOT_CERTIFICATE_VOTES: usize = 4096;
+pub const MAX_SNAPSHOT_TOTAL_CERTIFICATE_VOTES: usize = 65_536;
 pub const SYNC_PROTOCOL: &str = "/freedom/1/sync/1";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -183,7 +188,7 @@ pub fn validate_snapshot_transition_sequence(
     transitions: &[SnapshotValidatorSetTransition],
     target_epoch: u64,
 ) -> Result<(), String> {
-    if transitions.len() > 4096 {
+    if transitions.len() > MAX_SNAPSHOT_TRANSITIONS {
         return Err("snapshot validator-set history exceeds maximum transition count".into());
     }
 
@@ -299,7 +304,63 @@ pub fn validate_snapshot_transition_target_set(
     Ok(())
 }
 
+fn validate_snapshot_resource_limits(
+    finality_validator_set: &std::collections::BTreeMap<freedom_primitives::Hash, freedom_types::ValidatorSetEntry>,
+    certificate: &freedom_types::FinalityCertificate,
+    epoch_transition_certificate: Option<&freedom_types::ValidatorSetCertificate>,
+    transitions: &[SnapshotValidatorSetTransition],
+) -> Result<(), String> {
+    if transitions.len() > MAX_SNAPSHOT_TRANSITIONS {
+        return Err("snapshot validator-set history exceeds maximum transition count".into());
+    }
+    if finality_validator_set.len() > MAX_SNAPSHOT_VALIDATORS_PER_SET {
+        return Err("snapshot finality validator set exceeds maximum validator count".into());
+    }
+    if certificate.precommits.len() > MAX_SNAPSHOT_CERTIFICATE_VOTES {
+        return Err("snapshot finality certificate exceeds maximum vote count".into());
+    }
+
+    let mut total_entries = finality_validator_set.len();
+    let mut total_votes = certificate.precommits.len();
+    if let Some(cert) = epoch_transition_certificate {
+        if cert.votes.len() > MAX_SNAPSHOT_CERTIFICATE_VOTES {
+            return Err("snapshot epoch transition certificate exceeds maximum vote count".into());
+        }
+        total_votes = total_votes.checked_add(cert.votes.len())
+            .ok_or_else(|| "snapshot certificate vote count overflows".to_string())?;
+    }
+
+    for transition in transitions {
+        if transition.new_validator_set.len() > MAX_SNAPSHOT_VALIDATORS_PER_SET {
+            return Err("snapshot transition validator set exceeds maximum validator count".into());
+        }
+        total_entries = total_entries.checked_add(transition.new_validator_set.len())
+            .ok_or_else(|| "snapshot validator entry count overflows".to_string())?;
+        if total_entries > MAX_SNAPSHOT_TOTAL_VALIDATOR_ENTRIES {
+            return Err("snapshot validator history exceeds maximum aggregate validator entries".into());
+        }
+        if transition.certificate.votes.len() > MAX_SNAPSHOT_CERTIFICATE_VOTES {
+            return Err("snapshot validator transition certificate exceeds maximum vote count".into());
+        }
+        total_votes = total_votes.checked_add(transition.certificate.votes.len())
+            .ok_or_else(|| "snapshot certificate vote count overflows".to_string())?;
+        if total_votes > MAX_SNAPSHOT_TOTAL_CERTIFICATE_VOTES {
+            return Err("snapshot validator history exceeds maximum aggregate certificate votes".into());
+        }
+    }
+    if total_votes > MAX_SNAPSHOT_TOTAL_CERTIFICATE_VOTES {
+        return Err("snapshot certificates exceed maximum aggregate vote count".into());
+    }
+    Ok(())
+}
+
 pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(), String> {
+    validate_snapshot_resource_limits(
+        &response.finality_validator_set,
+        &response.certificate,
+        response.epoch_transition_certificate.as_ref(),
+        &response.validator_set_transitions,
+    )?;
     if response.chain_id != freedom_primitives::CHAIN_ID {
         return Err("snapshot chain id mismatch".into());
     }
@@ -1058,6 +1119,72 @@ mod tests {
         let empty = std::collections::BTreeMap::new();
         assert!(validate_snapshot_validator_set_anchor([0; 32], &empty)
             .unwrap_err().contains("empty"));
+    }
+
+    fn make_resource_test_set(size: usize, offset: usize) -> std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry> {
+        let mut set = std::collections::BTreeMap::new();
+        for index in offset..offset + size {
+            let mut id = [0u8; 32];
+            id[..8].copy_from_slice(&(index as u64).to_le_bytes());
+            set.insert(id, freedom_types::ValidatorSetEntry {
+                validator_id: id, owner: [1; 32], consensus_key: [2; 32], stake: 1,
+            });
+        }
+        set
+    }
+
+    #[test]
+    fn snapshot_resource_limits_reject_oversized_finality_validator_set() {
+        let set = make_resource_test_set(MAX_SNAPSHOT_VALIDATORS_PER_SET + 1, 0);
+        let certificate = freedom_types::FinalityCertificate {
+            block_hash: [1; 32], height: 1, round: 0, precommits: Vec::new(),
+        };
+        let error = validate_snapshot_resource_limits(&set, &certificate, None, &[])
+            .unwrap_err();
+        assert!(error.contains("maximum validator count"));
+    }
+
+    #[test]
+    fn snapshot_resource_limits_reject_aggregate_validator_history_overflow() {
+        let finality_set = make_resource_test_set(MAX_SNAPSHOT_VALIDATORS_PER_SET, 0);
+        let mut transitions = Vec::new();
+        for index in 1..=4 {
+            transitions.push(SnapshotValidatorSetTransition {
+                certificate: freedom_types::ValidatorSetCertificate {
+                    from_epoch: index - 1, to_epoch: index, previous_set_hash: [3; 32],
+                    new_set_hash: [4; 32], votes: Vec::new(),
+                },
+                new_validator_set: make_resource_test_set(
+                    MAX_SNAPSHOT_VALIDATORS_PER_SET,
+                    index * MAX_SNAPSHOT_VALIDATORS_PER_SET,
+                ),
+            });
+        }
+        let certificate = freedom_types::FinalityCertificate {
+            block_hash: [1; 32], height: 1, round: 0, precommits: Vec::new(),
+        };
+        let error = validate_snapshot_resource_limits(
+            &finality_set, &certificate, None, &transitions,
+        ).unwrap_err();
+        assert!(error.contains("aggregate validator entries"));
+    }
+
+    #[test]
+    fn snapshot_resource_limits_reject_too_many_transitions() {
+        let transitions = vec![SnapshotValidatorSetTransition {
+            certificate: freedom_types::ValidatorSetCertificate {
+                from_epoch: 0, to_epoch: 1, previous_set_hash: [3; 32],
+                new_set_hash: [4; 32], votes: Vec::new(),
+            },
+            new_validator_set: std::collections::BTreeMap::new(),
+        }; MAX_SNAPSHOT_TRANSITIONS + 1];
+        let certificate = freedom_types::FinalityCertificate {
+            block_hash: [1; 32], height: 1, round: 0, precommits: Vec::new(),
+        };
+        let error = validate_snapshot_resource_limits(
+            &std::collections::BTreeMap::new(), &certificate, None, &transitions,
+        ).unwrap_err();
+        assert!(error.contains("maximum transition count"));
     }
 
     #[test]
