@@ -268,6 +268,37 @@ pub fn validate_snapshot_validator_set_history(
     Ok(())
 }
 
+/// Bind the transition history's final validator set to the set that signed the
+/// checkpoint finality certificate. Structural continuity alone is insufficient:
+/// otherwise a peer could attach a well-formed history that ends in another set.
+pub fn validate_snapshot_transition_target_set(
+    transitions: &[SnapshotValidatorSetTransition],
+    target_epoch: u64,
+    target_set: &std::collections::BTreeMap<freedom_primitives::Hash, freedom_types::ValidatorSetEntry>,
+) -> Result<(), String> {
+    if target_set.is_empty() {
+        return Err("snapshot target validator set is empty".into());
+    }
+    if target_epoch == 0 {
+        if !transitions.is_empty() {
+            return Err("genesis validator epoch must not contain prior transitions".into());
+        }
+        return Ok(());
+    }
+
+    let last = transitions.last()
+        .ok_or_else(|| "snapshot validator-set history has no transition for target epoch".to_string())?;
+    if last.certificate.to_epoch != target_epoch {
+        return Err("snapshot validator-set history ends at the wrong epoch".into());
+    }
+    if freedom_consensus::validator_set_hash(&last.new_validator_set)
+        != freedom_consensus::validator_set_hash(target_set)
+    {
+        return Err("snapshot validator-set history target set does not match finality set".into());
+    }
+    Ok(())
+}
+
 pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(), String> {
     if response.chain_id != freedom_primitives::CHAIN_ID {
         return Err("snapshot chain id mismatch".into());
@@ -315,6 +346,11 @@ pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(),
         if supplied_cert.hash() != checkpoint_cert.hash() {
             return Err("snapshot epoch transition certificate mismatch".into());
         }
+        if checkpoint_cert.from_epoch.checked_add(1) != Some(checkpoint_cert.to_epoch)
+            || checkpoint_cert.to_epoch != response.checkpoint.header.epoch
+        {
+            return Err("snapshot checkpoint transition epoch does not match checkpoint header".into());
+        }
     } else if response.epoch_transition_certificate.is_some() {
         return Err("snapshot supplied unexpected epoch transition certificate".into());
     }
@@ -327,6 +363,11 @@ pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(),
         .map(|cert| cert.from_epoch)
         .unwrap_or(response.checkpoint.header.epoch);
     validate_snapshot_transition_sequence(0, &response.validator_set_transitions, target_epoch)?;
+    validate_snapshot_transition_target_set(
+        &response.validator_set_transitions,
+        target_epoch,
+        &response.finality_validator_set,
+    )?;
     Ok(())
 }
 
@@ -805,6 +846,48 @@ mod tests {
             transactions: vec![], receipts: vec![],
         };
         assert!(validate_snapshot_extension(u64::MAX, [7;32], &checkpoint).is_err());
+    }
+
+    #[test]
+    fn snapshot_transition_target_set_rejects_mismatched_finality_set() {
+        let make_set = |seed: u8| {
+            let id = hash_bytes(&[b"m475-target-validator", &[seed]].concat());
+            let mut set = std::collections::BTreeMap::new();
+            set.insert(id, freedom_types::ValidatorSetEntry {
+                validator_id: id, owner: [seed; 32], consensus_key: [seed.wrapping_add(1); 32], stake: 10,
+            });
+            set
+        };
+        let history_set = make_set(1);
+        let different_finality_set = make_set(2);
+        let transitions = vec![SnapshotValidatorSetTransition {
+            certificate: freedom_types::ValidatorSetCertificate {
+                from_epoch: 0, to_epoch: 1, previous_set_hash: [9;32],
+                new_set_hash: freedom_consensus::validator_set_hash(&history_set), votes: Vec::new(),
+            },
+            new_validator_set: history_set,
+        }];
+        let error = validate_snapshot_transition_target_set(
+            &transitions, 1, &different_finality_set,
+        ).unwrap_err();
+        assert!(error.contains("target set does not match finality set"));
+    }
+
+    #[test]
+    fn snapshot_transition_target_set_accepts_matching_finality_set() {
+        let id = hash_bytes(b"m475-matching-target-validator");
+        let mut set = std::collections::BTreeMap::new();
+        set.insert(id, freedom_types::ValidatorSetEntry {
+            validator_id: id, owner: [1;32], consensus_key: [2;32], stake: 10,
+        });
+        let transitions = vec![SnapshotValidatorSetTransition {
+            certificate: freedom_types::ValidatorSetCertificate {
+                from_epoch: 0, to_epoch: 1, previous_set_hash: [9;32],
+                new_set_hash: freedom_consensus::validator_set_hash(&set), votes: Vec::new(),
+            },
+            new_validator_set: set.clone(),
+        }];
+        assert!(validate_snapshot_transition_target_set(&transitions, 1, &set).is_ok());
     }
 
     #[test]
