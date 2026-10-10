@@ -1504,6 +1504,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 continue;
                                             }
 
+                                            // The current storage model only supports appending a checkpoint
+                                            // to the verified local tip. A higher snapshot without an ancestry
+                                            // proof must not be treated as permission to skip canonical history.
+                                            if let Err(reason) = freedom_network::validate_snapshot_extension(
+                                                state.height,
+                                                state.last_block_hash,
+                                                &response.checkpoint,
+                                            ) {
+                                                eprintln!(
+                                                    "SNAPSHOT_REJECTED unsafe checkpoint extension local_height={} remote_height={} reason={}",
+                                                    state.height, response.height, reason
+                                                );
+                                                continue;
+                                            }
+
                                             let snapshot_fingerprint = hash_bytes(
                                                 &[
                                                     &response.height.to_le_bytes(),
