@@ -46,6 +46,11 @@ pub struct SnapshotSyncResponse {
     pub finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
     #[serde(default)]
     pub epoch_transition_certificate: Option<freedom_types::ValidatorSetCertificate>,
+    /// Ordered certificates proving each validator-set transition after the
+    /// locally trusted epoch. Each item carries the resulting set so the next
+    /// certificate can be verified against the immediately preceding set.
+    #[serde(default)]
+    pub validator_set_transitions: Vec<SnapshotValidatorSetTransition>,
     pub state_json: Vec<u8>,
 }
 
@@ -160,6 +165,72 @@ pub fn validate_snapshot_validator_set_anchor(
     }
     if freedom_consensus::validator_set_hash(supplied_set) != trusted_set_hash {
         return Err("snapshot finality validator set is not anchored to trusted local state".into());
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SnapshotValidatorSetTransition {
+    pub certificate: freedom_types::ValidatorSetCertificate,
+    pub new_validator_set: std::collections::BTreeMap<freedom_primitives::Hash, freedom_types::ValidatorSetEntry>,
+}
+
+/// Verify an ordered validator-set history from a locally trusted state. Each
+/// certificate is checked by the existing consensus validator against the
+/// immediately preceding set, including signature, validator-count, and stake
+/// quorum rules. Peer-provided snapshot state is never used as the trust anchor.
+pub fn validate_snapshot_validator_set_history(
+    trusted_state: &ChainState,
+    transitions: &[SnapshotValidatorSetTransition],
+    target_epoch: u64,
+    target_set: &std::collections::BTreeMap<freedom_primitives::Hash, freedom_types::ValidatorSetEntry>,
+) -> Result<(), String> {
+    let mut working = trusted_state.clone();
+    if working.active_validator_set.is_empty() {
+        return Err("trusted validator set is empty".into());
+    }
+    if transitions.len() > 4096 {
+        return Err("snapshot validator-set history exceeds maximum transition count".into());
+    }
+    for transition in transitions {
+        let cert = &transition.certificate;
+        let expected_to = working.epoch.checked_add(1)
+            .ok_or_else(|| "validator-set history epoch exceeds u64::MAX".to_string())?;
+        if cert.from_epoch != working.epoch || cert.to_epoch != expected_to {
+            return Err("validator-set history contains a gap or out-of-order transition".into());
+        }
+        if cert.previous_set_hash != freedom_consensus::validator_set_hash(&working.active_validator_set) {
+            return Err("validator-set history previous set does not link to trusted predecessor".into());
+        }
+        if transition.new_validator_set.is_empty()
+            || cert.new_set_hash != freedom_consensus::validator_set_hash(&transition.new_validator_set) {
+            return Err("validator-set history new set hash mismatch".into());
+        }
+        working.pending_validator_set = transition.new_validator_set.clone();
+        working.validator_set_history_sets.insert(
+            working.epoch,
+            working.active_validator_set.iter().map(|(id, entry)| (*id, entry.consensus_key)).collect(),
+        );
+        working.validator_set_history_entries.insert(working.epoch, working.active_validator_set.clone());
+        freedom_consensus::validate_validator_set_certificate(&working, cert)
+            .map_err(|e| format!("validator-set history certificate invalid: {e}"))?;
+        working.active_validator_set = transition.new_validator_set.clone();
+        working.epoch = cert.to_epoch;
+        working.validator_set_history.insert(working.epoch, cert.new_set_hash);
+        working.validator_set_history_sets.insert(
+            working.epoch,
+            working.active_validator_set.iter().map(|(id, entry)| (*id, entry.consensus_key)).collect(),
+        );
+        working.validator_set_history_entries.insert(working.epoch, working.active_validator_set.clone());
+        working.validator_set_history_key_hashes.insert(working.epoch, cert.new_set_hash);
+    }
+    if working.epoch != target_epoch {
+        return Err("validator-set history does not reach target epoch".into());
+    }
+    if working.active_validator_set.is_empty()
+        || freedom_consensus::validator_set_hash(&working.active_validator_set)
+            != freedom_consensus::validator_set_hash(target_set) {
+        return Err("validator-set history target set mismatch".into());
     }
     Ok(())
 }
@@ -644,6 +715,55 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_validator_set_history_rejects_epoch_gap() {
+        let key = [12u8; 32];
+        let id = hash_bytes(b"m472-history-validator");
+        let entry = freedom_types::ValidatorSetEntry {
+            validator_id: id, owner: [1; 32], consensus_key: key, stake: 10,
+        };
+        let mut set = std::collections::BTreeMap::new();
+        set.insert(id, entry);
+        let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![freedom_types::Validator {
+                validator_id: id, owner: [1; 32], consensus_key: key, stake: 10,
+                unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            }],
+        });
+        let transition = SnapshotValidatorSetTransition {
+            certificate: freedom_types::ValidatorSetCertificate {
+                from_epoch: 1, to_epoch: 2, previous_set_hash: freedom_consensus::validator_set_hash(&set),
+                new_set_hash: [8; 32], votes: Vec::new(),
+            },
+            new_validator_set: set.clone(),
+        };
+        let error = validate_snapshot_validator_set_history(&state, &[transition], 2, &set).unwrap_err();
+        assert!(error.contains("gap or out-of-order"));
+    }
+
+    #[test]
+    fn snapshot_validator_set_history_rejects_target_epoch_mismatch() {
+        let key = [13u8; 32];
+        let id = hash_bytes(b"m472-target-validator");
+        let entry = freedom_types::ValidatorSetEntry {
+            validator_id: id, owner: [1; 32], consensus_key: key, stake: 10,
+        };
+        let mut set = std::collections::BTreeMap::new();
+        set.insert(id, entry);
+        let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![freedom_types::Validator {
+                validator_id: id, owner: [1; 32], consensus_key: key, stake: 10,
+                unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            }],
+        });
+        let error = validate_snapshot_validator_set_history(&state, &[], 1, &set).unwrap_err();
+        assert!(error.contains("does not reach target epoch"));
+    }
+
+    #[test]
     fn snapshot_validator_set_anchor_accepts_exact_trusted_set() {
         let mut set = std::collections::BTreeMap::new();
         let id = hash_bytes(b"m471-validator");
@@ -697,6 +817,7 @@ mod tests {
             epoch_transition_certificate: Some(freedom_types::ValidatorSetCertificate {
                 from_epoch: 0, to_epoch: 1, previous_set_hash: [2;32], new_set_hash: [3;32], votes: Vec::new()
             }),
+            validator_set_transitions: Vec::new(),
             state_json: Vec::new(),
         };
         assert!(validate_snapshot_response(&response).is_err());
