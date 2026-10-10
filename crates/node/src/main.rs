@@ -1455,6 +1455,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 continue;
                                             }
 
+                                            // The checkpoint certificate must be verified against a validator set
+                                            // already trusted locally, not one authenticated only by the snapshot itself.
+                                            let trusted_local_set_hash =
+                                                freedom_consensus::validator_set_hash(&state.active_validator_set);
+                                            if let Err(reason) = freedom_network::validate_snapshot_validator_set_anchor(
+                                                trusted_local_set_hash,
+                                                &response.finality_validator_set,
+                                            ) {
+                                                eprintln!("SNAPSHOT_REJECTED untrusted finality validator set: {reason}");
+                                                continue;
+                                            }
+
                                             let expected_finality_set_hash = if let Some(cert) = &response.checkpoint.header.epoch_transition_certificate {
                                                 cert.previous_set_hash
                                             } else {
