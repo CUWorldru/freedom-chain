@@ -24,7 +24,7 @@ pub const SYNC_TOPIC: &str = "freedom/1/sync";
 pub const MAX_SYNC_BLOCKS: u64 = 32;
 /// Hard cap for a request/response JSON payload before serde deserialization.
 pub const MAX_SYNC_REQUEST_BYTES: usize = 1024 * 1024;
-pub const MAX_SYNC_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_SYNC_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_SNAPSHOT_STATE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_SNAPSHOT_TRANSITIONS: usize = 4096;
 pub const MAX_SNAPSHOT_VALIDATORS_PER_SET: usize = 4096;
