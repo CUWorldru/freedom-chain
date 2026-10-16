@@ -15,6 +15,16 @@ use tokio::time::{interval, Duration};
 const ROUND_TIMEOUT_SECS: u64 = 5;
 const SYNC_INTERVAL_SECS: u64 = 10;
 const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1000;
+const MAX_PENDING_SYNC_REQUESTS: usize = 2;
+const MAX_PENDING_SNAPSHOT_REQUESTS: usize = 2;
+
+fn available_sync_request_slots(pending_count: usize) -> usize {
+    MAX_PENDING_SYNC_REQUESTS.saturating_sub(pending_count)
+}
+
+fn snapshot_request_slot_available(pending_count: usize) -> bool {
+    pending_count < MAX_PENDING_SNAPSHOT_REQUESTS
+}
 
 fn request_id(validator_id: Hash, from_height: u64) -> Hash {
     hash_bytes(&[b"FREEDOM-SYNC-V1", &validator_id, &from_height.to_le_bytes()].concat())
@@ -323,16 +333,6 @@ fn decay_peer_reputation(
     changed
 }
 
-fn peer_is_eligible(
-    reputations: &BTreeMap<libp2p::PeerId, PeerReputation>,
-    peer: libp2p::PeerId,
-    current_height: u64,
-) -> bool {
-    reputations.get(&peer)
-        .map(|reputation| current_height >= reputation.cooldown_until_height && reputation.score < PEER_MISBEHAVIOR_THRESHOLD)
-        .unwrap_or(true)
-}
-
 fn send_snapshot_request(
     swarm: &mut libp2p::Swarm<freedom_network::FreedomBehaviour>,
     peer: libp2p::PeerId,
@@ -435,6 +435,22 @@ mod m31_tests {
         assert_eq!(select_sync_peer(&peers, &mut cursor), Some(a));
         assert_eq!(select_sync_peer(&[], &mut cursor), None);
         assert_eq!(cursor, 0);
+    }
+
+    #[test]
+    fn sync_request_slots_enforce_global_pending_cap() {
+        assert_eq!(available_sync_request_slots(0), MAX_PENDING_SYNC_REQUESTS);
+        assert_eq!(available_sync_request_slots(1), 1);
+        assert_eq!(available_sync_request_slots(MAX_PENDING_SYNC_REQUESTS), 0);
+        assert_eq!(available_sync_request_slots(usize::MAX), 0);
+    }
+
+    #[test]
+    fn snapshot_request_admission_enforces_pending_cap() {
+        assert!(snapshot_request_slot_available(0));
+        assert!(snapshot_request_slot_available(MAX_PENDING_SNAPSHOT_REQUESTS - 1));
+        assert!(!snapshot_request_slot_available(MAX_PENDING_SNAPSHOT_REQUESTS));
+        assert!(!snapshot_request_slot_available(usize::MAX));
     }
 
 
@@ -1218,7 +1234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 if !connected_peers.is_empty() && pending_sync.is_empty() {
                     let from_height = next_height;
-                    let peer_count = connected_peers.len().min(2);
+                    let peer_count = connected_peers.len().min(available_sync_request_slots(pending_sync.len()));
                     sync_required = peer_count.max(1);
                     sync_candidates.clear();
                     sync_round_peers.clear();
@@ -1271,7 +1287,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             sync_round_peers.insert(peer_id, next_height);
                         }
                         if !pending_snapshot.iter().any(|(pending_peer, ..)| *pending_peer == peer_id)
-                            && pending_snapshot.len() < 2
+                            && snapshot_request_slot_available(pending_snapshot.len())
                             && peer_is_eligible(&peer_reputations, peer_id, state.height)
                         {
                             if pending_snapshot.is_empty() {
