@@ -25,6 +25,9 @@ pub const MAX_SYNC_BLOCKS: u64 = 32;
 /// Hard cap for a request/response JSON payload before serde deserialization.
 pub const MAX_SYNC_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAX_SYNC_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum concurrent sync request/response streams per peer connection.
+/// This bounds simultaneous codec buffers; one sync and one snapshot may coexist.
+pub const MAX_CONCURRENT_SYNC_STREAMS: usize = 2;
 pub const MAX_SNAPSHOT_STATE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_SNAPSHOT_TRANSITIONS: usize = 4096;
 pub const MAX_SNAPSHOT_VALIDATORS_PER_SET: usize = 4096;
@@ -778,7 +781,8 @@ pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Erro
                         .set_request_size_maximum(MAX_SYNC_REQUEST_BYTES as u64)
                         .set_response_size_maximum(MAX_SYNC_RESPONSE_BYTES as u64),
                     std::iter::once((libp2p::StreamProtocol::new(SYNC_PROTOCOL), ProtocolSupport::Full)),
-                    request_response::Config::default(),
+                    request_response::Config::default()
+                        .with_max_concurrent_streams(MAX_CONCURRENT_SYNC_STREAMS),
                 ),
             })
         })?
