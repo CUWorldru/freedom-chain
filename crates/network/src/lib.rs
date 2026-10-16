@@ -22,6 +22,9 @@ pub const VALSET_VOTE_TOPIC: &str = "freedom/1/validator-set-votes";
 pub const VALSET_CERT_TOPIC: &str = "freedom/1/validator-set-certificates";
 pub const SYNC_TOPIC: &str = "freedom/1/sync";
 pub const MAX_SYNC_BLOCKS: u64 = 32;
+/// Hard cap for a request/response JSON payload before serde deserialization.
+pub const MAX_SYNC_REQUEST_BYTES: usize = 1024 * 1024;
+pub const MAX_SYNC_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_SNAPSHOT_STATE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_SNAPSHOT_TRANSITIONS: usize = 4096;
 pub const MAX_SNAPSHOT_VALIDATORS_PER_SET: usize = 4096;
@@ -77,6 +80,25 @@ pub fn validate_sync_request(req: &SyncRequest) -> Result<(), String> {
 }
 
 pub fn validate_snapshot_request(req: &SnapshotSyncRequest) -> Result<(), String> { if req.height == 0 { return Err("snapshot request cannot target genesis".into()); } Ok(()) }
+
+fn validate_serialized_size<T: Serialize>(value: &T, maximum: usize, label: &str) -> Result<(), String> {
+    let encoded = serde_json::to_vec(value)
+        .map_err(|e| format!("{label} serialization failed: {e}"))?;
+    if encoded.len() > maximum {
+        return Err(format!("{label} exceeds maximum encoded size"));
+    }
+    Ok(())
+}
+
+/// Enforce the outbound request cap before handing a request to libp2p.
+pub fn validate_sync_wire_request_size(request: &SyncWireRequest) -> Result<(), String> {
+    validate_serialized_size(request, MAX_SYNC_REQUEST_BYTES, "sync request")
+}
+
+/// Enforce the outbound response cap before handing a response to libp2p.
+pub fn validate_sync_wire_response_size(response: &SyncWireResponse) -> Result<(), String> {
+    validate_serialized_size(response, MAX_SYNC_RESPONSE_BYTES, "sync response")
+}
 
 pub fn validate_sync_response(response: &SyncResponse) -> Result<(), String> {
     if response.blocks.is_empty() { return Err("sync response is empty".into()); }
@@ -751,7 +773,10 @@ pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Erro
                 ),
                 ping: ping::Behaviour::default(),
                 kademlia: libp2p::kad::Behaviour::new(peer_id, libp2p::kad::store::MemoryStore::new(peer_id)),
-                sync: request_response::json::Behaviour::new(
+                sync: request_response::json::Behaviour::with_codec(
+                    request_response::json::codec::Codec::<SyncWireRequest, SyncWireResponse>::default()
+                        .set_request_size_maximum(MAX_SYNC_REQUEST_BYTES as u64)
+                        .set_response_size_maximum(MAX_SYNC_RESPONSE_BYTES as u64),
                     std::iter::once((libp2p::StreamProtocol::new(SYNC_PROTOCOL), ProtocolSupport::Full)),
                     request_response::Config::default(),
                 ),
@@ -796,6 +821,7 @@ pub fn send_sync_request(swarm: &mut Swarm<FreedomBehaviour>, peer: PeerId, requ
         SyncWireRequest::Blocks(req) => validate_sync_request(req)?,
         SyncWireRequest::Snapshot(req) => validate_snapshot_request(req)?,
     }
+    validate_sync_wire_request_size(&request)?;
     Ok(swarm.behaviour_mut().sync.send_request(&peer, request))
 }
 
@@ -1302,6 +1328,24 @@ mod tests {
             blocks: vec![block],
         };
         assert!(validate_sync_response(&response).is_ok());
+    }
+
+    #[test]
+    fn sync_wire_size_guard_rejects_oversized_payload_before_send() {
+        let oversized = "x".repeat(64);
+        assert!(validate_serialized_size(&oversized, 32, "test response")
+            .unwrap_err().contains("maximum encoded size"));
+        let small = "ok".to_string();
+        assert!(validate_serialized_size(&small, 32, "test response").is_ok());
+    }
+
+    #[test]
+    fn sync_wire_request_size_guard_accepts_valid_snapshot_request() {
+        let request = SyncWireRequest::Snapshot(SnapshotSyncRequest {
+            request_id: [1; 32],
+            height: 1,
+        });
+        assert!(validate_sync_wire_request_size(&request).is_ok());
     }
 
     #[test]
