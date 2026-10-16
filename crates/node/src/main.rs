@@ -342,6 +342,7 @@ fn send_snapshot_request(
     let request_id = hash_bytes(&[b"FREEDOM-SNAPSHOT-V1", &validator_id, &height.to_le_bytes()].concat());
     let request = freedom_network::SnapshotSyncRequest { request_id, height };
     freedom_network::validate_snapshot_request(&request)?;
+    freedom_network::validate_sync_wire_request_size(&SyncWireRequest::Snapshot(request.clone()))?;
     let outbound_id = swarm.behaviour_mut().sync.send_request(
         &peer,
         SyncWireRequest::Snapshot(request),
@@ -391,6 +392,7 @@ fn send_sync_request(
         to_height: to,
     };
     freedom_network::validate_sync_request(&request)?;
+    freedom_network::validate_sync_wire_request_size(&SyncWireRequest::Blocks(request.clone()))?;
     let outbound_id = swarm.behaviour_mut().sync.send_request(
         &peer,
         SyncWireRequest::Blocks(request),
@@ -1322,6 +1324,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             if req.from_height <= to {
                                                 if let Ok(blocks) = store.range(req.from_height, to) {
                                                     let response = SyncWireResponse::Blocks(SyncResponse { request_id: req.request_id, from_height: req.from_height, blocks });
+                                                    if let Err(reason) = freedom_network::validate_sync_wire_response_size(&response) {
+                                                        eprintln!("SYNC_RESPONSE_REJECTED from={} reason={}", req.from_height, reason);
+                                                        continue;
+                                                    }
                                                     let _ = swarm.behaviour_mut().sync.send_response(channel, response);
                                                 }
                                             }
@@ -1371,6 +1377,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                 eprintln!("SNAPSHOT_RESPONSE_REJECTED height={}", snapshot_response.height);
                                                                 continue;
                                                             }
+                                                        }
+                                                        if let Err(reason) = freedom_network::validate_sync_wire_response_size(&response) {
+                                                            eprintln!("SNAPSHOT_RESPONSE_REJECTED height={} reason={}", snapshot.height, reason);
+                                                            continue;
                                                         }
                                                         let _ = swarm.behaviour_mut().sync.send_response(channel, response);
                                                     }
