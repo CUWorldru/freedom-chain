@@ -18,7 +18,9 @@ const SYNC_INTERVAL_SECS: u64 = 10;
 const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1000;
 const MAX_PENDING_SYNC_REQUESTS: usize = 2;
 const MAX_PENDING_SNAPSHOT_REQUESTS: usize = 2;
-/// At most one fully prepared snapshot response may remain queued across all peers.
+/// At most two prepared sync responses (blocks or snapshots) may be queued globally.
+const MAX_PENDING_SYNC_RESPONSES: usize = 2;
+/// At most one prepared snapshot response may be queued globally.
 const MAX_PENDING_SNAPSHOT_RESPONSES: usize = 1;
 const MAX_PEER_SYNC_REQUESTS_PER_WINDOW: usize = 8;
 const PEER_SYNC_REQUEST_WINDOW: Duration = Duration::from_secs(10);
@@ -54,8 +56,12 @@ fn snapshot_request_slot_available(pending_count: usize) -> bool {
     pending_count < MAX_PENDING_SNAPSHOT_REQUESTS
 }
 
-fn snapshot_response_slot_available(pending_count: usize) -> bool {
-    pending_count < MAX_PENDING_SNAPSHOT_RESPONSES
+fn sync_response_slot_available(pending_count: usize) -> bool {
+    pending_count < MAX_PENDING_SYNC_RESPONSES
+}
+
+fn snapshot_response_slot_available(pending_snapshot_count: usize) -> bool {
+    pending_snapshot_count < MAX_PENDING_SNAPSHOT_RESPONSES
 }
 
 fn request_id(validator_id: Hash, from_height: u64) -> Hash {
@@ -1270,9 +1276,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pending_sync = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
     let mut peer_sync_request_times = HashMap::<libp2p::PeerId, VecDeque<Instant>>::new();
     let mut peer_snapshot_request_times = HashMap::<libp2p::PeerId, VecDeque<Instant>>::new();
-    // Track snapshot responses until libp2p reports that each response was sent
-    // (or the inbound request/connection fails), bounding queued large payloads globally.
-    let mut pending_snapshot_responses = Vec::new();
+    // Track all large sync responses until libp2p reports completion/failure.
+    // The tuple stores peer, inbound request id, and whether it is a snapshot response.
+    let mut pending_sync_responses = Vec::new();
     let mut sync_candidates = BTreeMap::<Hash, (u64, SyncResponse)>::new();
     let mut sync_required = 1usize;
     let mut sync_round_peers = BTreeMap::<libp2p::PeerId, u64>::new();
@@ -1394,7 +1400,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                        pending_snapshot_responses.retain(|(pending_peer, _)| *pending_peer != peer_id);
+                        pending_sync_responses.retain(|(pending_peer, _, _)| *pending_peer != peer_id);
                         connected_peers.retain(|p| *p != peer_id);
                         if !connected_peers.is_empty() {
                             sync_peer_cursor %= connected_peers.len();
@@ -1428,15 +1434,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Release the global snapshot-response slot only for the exact
                         // inbound request that finished or failed, not for block responses.
                         if let libp2p::request_response::Event::ResponseSent { peer, request_id } = &event {
-                            pending_snapshot_responses.retain(|(pending_peer, pending_id)| pending_peer != peer || pending_id != request_id);
+                            pending_sync_responses.retain(|(pending_peer, pending_id, _)| pending_peer != peer || pending_id != request_id);
                         } else if let libp2p::request_response::Event::InboundFailure { peer, request_id, .. } = &event {
-                            pending_snapshot_responses.retain(|(pending_peer, pending_id)| pending_peer != peer || pending_id != request_id);
+                            pending_sync_responses.retain(|(pending_peer, pending_id, _)| pending_peer != peer || pending_id != request_id);
                         }
                         if let libp2p::request_response::Event::Message { peer, message } = event {
                             match message {
                                 libp2p::request_response::Message::Request { request_id, request, channel } => {
                                     match request {
                                         SyncWireRequest::Blocks(req) => {
+                                            if !sync_response_slot_available(pending_sync_responses.len()) {
+                                                eprintln!("SYNC_RESPONSE_BUSY peer={} pending={}", peer, pending_sync_responses.len());
+                                                continue;
+                                            }
                                             if !admit_peer_request(
                                                 &mut peer_sync_request_times,
                                                 peer,
@@ -1459,13 +1469,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         eprintln!("SYNC_RESPONSE_REJECTED from={} reason={}", req.from_height, reason);
                                                         continue;
                                                     }
-                                                    let _ = swarm.behaviour_mut().sync.send_response(channel, response);
+                                                    match swarm.behaviour_mut().sync.send_response(channel, response) {
+                                                        Ok(()) => pending_sync_responses.push((peer, request_id, false)),
+                                                        Err(_) => eprintln!("SYNC_RESPONSE_SEND_FAILED peer={} from={}", peer, req.from_height),
+                                                    }
                                                 }
                                             }
                                         }
                                         SyncWireRequest::Snapshot(req) => {
-                                            if !snapshot_response_slot_available(pending_snapshot_responses.len()) {
-                                                eprintln!("SNAPSHOT_RESPONSE_BUSY peer={} pending={}", peer, pending_snapshot_responses.len());
+                                            let pending_snapshot_count = pending_sync_responses.iter()
+                                                .filter(|(_, _, is_snapshot)| *is_snapshot)
+                                                .count();
+                                            if !sync_response_slot_available(pending_sync_responses.len())
+                                                || !snapshot_response_slot_available(pending_snapshot_count)
+                                            {
+                                                eprintln!("SNAPSHOT_RESPONSE_BUSY peer={} pending_total={} pending_snapshots={}", peer, pending_sync_responses.len(), pending_snapshot_count);
                                                 continue;
                                             }
                                             if !admit_peer_request(
@@ -1532,7 +1550,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             continue;
                                                         }
                                                         match swarm.behaviour_mut().sync.send_response(channel, response) {
-                                                            Ok(()) => pending_snapshot_responses.push((peer, request_id)),
+                                                            Ok(()) => pending_sync_responses.push((peer, request_id, true)),
                                                             Err(_) => eprintln!("SNAPSHOT_RESPONSE_SEND_FAILED peer={} height={}", peer, snapshot.height),
                                                         }
                                                     }
@@ -2298,13 +2316,20 @@ mod m471_snapshot_state_transition_tests {
 
 
 #[cfg(test)]
-mod m483_snapshot_response_budget_tests {
+mod m484_global_sync_response_budget_tests {
     use super::*;
 
     #[test]
-    fn global_snapshot_response_budget_allows_only_one_queued_response() {
+    fn global_sync_response_budget_allows_only_two_queued_responses() {
+        assert!(sync_response_slot_available(0));
+        assert!(sync_response_slot_available(1));
+        assert!(!sync_response_slot_available(2));
+        assert!(!sync_response_slot_available(3));
+    }
+
+    #[test]
+    fn snapshot_response_budget_remains_one_even_when_global_budget_has_room() {
         assert!(snapshot_response_slot_available(0));
         assert!(!snapshot_response_slot_available(1));
-        assert!(!snapshot_response_slot_available(2));
     }
 }
