@@ -4,6 +4,7 @@ use freedom_primitives::{Address, Hash};
 use freedom_state::ChainState;
 use freedom_types::{BlockProposal, ValidatorVote, ValidatorTimeout};
 use libp2p::{
+    connection_limits,
     request_response::{self, ProtocolSupport},
     gossipsub::{self, IdentTopic, MessageAuthenticity, ValidationMode},
     identify, ping,
@@ -28,6 +29,12 @@ pub const MAX_SYNC_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 /// Maximum concurrent sync request/response streams per peer connection.
 /// This bounds simultaneous codec buffers; one sync and one snapshot may coexist.
 pub const MAX_CONCURRENT_SYNC_STREAMS: usize = 2;
+/// Global cap across all peers, enforced by libp2p's connection-limits behaviour.
+pub const MAX_ESTABLISHED_CONNECTIONS: u32 = 64;
+pub const MAX_ESTABLISHED_INCOMING_CONNECTIONS: u32 = 48;
+pub const MAX_ESTABLISHED_OUTGOING_CONNECTIONS: u32 = 16;
+pub const MAX_PENDING_INCOMING_CONNECTIONS: u32 = 32;
+pub const MAX_PENDING_OUTGOING_CONNECTIONS: u32 = 16;
 pub const MAX_SNAPSHOT_STATE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_SNAPSHOT_TRANSITIONS: usize = 4096;
 pub const MAX_SNAPSHOT_VALIDATORS_PER_SET: usize = 4096;
@@ -460,6 +467,7 @@ pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(),
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "FreedomEvent")]
 pub struct FreedomBehaviour {
+    pub connection_limits: connection_limits::Behaviour,
     pub gossipsub: gossipsub::Behaviour,
     pub identify: identify::Behaviour,
     pub ping: ping::Behaviour,
@@ -481,6 +489,7 @@ pub enum NetworkMessage {
 }
 
 pub enum FreedomEvent {
+    ConnectionLimits,
     Gossipsub(gossipsub::Event),
     Identify(identify::Event),
     Ping(ping::Event),
@@ -488,6 +497,9 @@ pub enum FreedomEvent {
     Sync(request_response::Event<SyncWireRequest, SyncWireResponse>),
 }
 
+impl From<()> for FreedomEvent {
+    fn from(_: ()) -> Self { Self::ConnectionLimits }
+}
 impl From<gossipsub::Event> for FreedomEvent {
     fn from(event: gossipsub::Event) -> Self { Self::Gossipsub(event) }
 }
@@ -770,6 +782,14 @@ pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Erro
             gossipsub.subscribe(&IdentTopic::new(TIMEOUT_TOPIC))?;
             gossipsub.subscribe(&sync_topic())?;
             Ok(FreedomBehaviour {
+                connection_limits: connection_limits::Behaviour::new(
+                    connection_limits::ConnectionLimits::default()
+                        .with_max_established(Some(MAX_ESTABLISHED_CONNECTIONS))
+                        .with_max_established_incoming(Some(MAX_ESTABLISHED_INCOMING_CONNECTIONS))
+                        .with_max_established_outgoing(Some(MAX_ESTABLISHED_OUTGOING_CONNECTIONS))
+                        .with_max_pending_incoming(Some(MAX_PENDING_INCOMING_CONNECTIONS))
+                        .with_max_pending_outgoing(Some(MAX_PENDING_OUTGOING_CONNECTIONS)),
+                ),
                 gossipsub,
                 identify: identify::Behaviour::new(
                     identify::Config::new(NETWORK_PROTOCOL.to_string(), key.public()),
