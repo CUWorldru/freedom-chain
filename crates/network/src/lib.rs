@@ -1435,6 +1435,18 @@ mod m160_bridge_proposal_tests {
     use super::*;
 
     #[test]
+    fn global_connection_budget_is_bounded_and_directional_caps_fit() {
+        assert!(MAX_ESTABLISHED_INCOMING_CONNECTIONS <= MAX_ESTABLISHED_CONNECTIONS);
+        assert!(MAX_ESTABLISHED_OUTGOING_CONNECTIONS <= MAX_ESTABLISHED_CONNECTIONS);
+        assert!(
+            MAX_ESTABLISHED_INCOMING_CONNECTIONS + MAX_ESTABLISHED_OUTGOING_CONNECTIONS
+                <= MAX_ESTABLISHED_CONNECTIONS
+        );
+        assert!(MAX_PENDING_INCOMING_CONNECTIONS > 0);
+        assert!(MAX_PENDING_OUTGOING_CONNECTIONS > 0);
+    }
+
+    #[test]
     fn bridge_mint_block_validation_rejects_duplicate_canonical_ids() {
         // The duplicate-ID rule is deterministic at proposal validation time:
         // two differently relayed transactions cannot represent the same proof.
