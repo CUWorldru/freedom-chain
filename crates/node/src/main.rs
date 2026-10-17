@@ -9,7 +9,8 @@ use freedom_storage::ChainStore;
 use freedom_types::{Genesis, Validator};
 use libp2p::{Multiaddr, SwarmEvent};
 use libp2p::futures::StreamExt;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::time::Instant;
 use tokio::time::{interval, Duration};
 
 const ROUND_TIMEOUT_SECS: u64 = 5;
@@ -17,6 +18,31 @@ const SYNC_INTERVAL_SECS: u64 = 10;
 const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1000;
 const MAX_PENDING_SYNC_REQUESTS: usize = 2;
 const MAX_PENDING_SNAPSHOT_REQUESTS: usize = 2;
+const MAX_PEER_SYNC_REQUESTS_PER_WINDOW: usize = 8;
+const PEER_SYNC_REQUEST_WINDOW: Duration = Duration::from_secs(10);
+const MAX_PEER_SNAPSHOT_REQUESTS_PER_WINDOW: usize = 1;
+const PEER_SNAPSHOT_REQUEST_WINDOW: Duration = Duration::from_secs(30);
+
+fn admit_peer_request(
+    requests: &mut HashMap<libp2p::PeerId, VecDeque<Instant>>,
+    peer: libp2p::PeerId,
+    now: Instant,
+    limit: usize,
+    window: Duration,
+) -> bool {
+    let recent = requests.entry(peer).or_default();
+    while recent.front()
+        .map(|timestamp| now.duration_since(*timestamp) >= window)
+        .unwrap_or(false)
+    {
+        recent.pop_front();
+    }
+    if recent.len() >= limit {
+        return false;
+    }
+    recent.push_back(now);
+    true
+}
 
 fn available_sync_request_slots(pending_count: usize) -> usize {
     MAX_PENDING_SYNC_REQUESTS.saturating_sub(pending_count)
@@ -424,6 +450,64 @@ fn make_evidence_message(
 
 #[cfg(test)]
 mod m31_tests {
+    #[test]
+    fn per_peer_sync_request_rate_limit_expires_after_window() {
+        let peer = libp2p::PeerId::random();
+        let start = Instant::now();
+        let mut requests = HashMap::<libp2p::PeerId, VecDeque<Instant>>::new();
+        for offset in 0..MAX_PEER_SYNC_REQUESTS_PER_WINDOW {
+            assert!(admit_peer_request(
+                &mut requests,
+                peer,
+                start + Duration::from_millis(offset as u64),
+                MAX_PEER_SYNC_REQUESTS_PER_WINDOW,
+                PEER_SYNC_REQUEST_WINDOW,
+            ));
+        }
+        assert!(!admit_peer_request(
+            &mut requests,
+            peer,
+            start + Duration::from_secs(1),
+            MAX_PEER_SYNC_REQUESTS_PER_WINDOW,
+            PEER_SYNC_REQUEST_WINDOW,
+        ));
+        assert!(admit_peer_request(
+            &mut requests,
+            peer,
+            start + PEER_SYNC_REQUEST_WINDOW + Duration::from_secs(1),
+            MAX_PEER_SYNC_REQUESTS_PER_WINDOW,
+            PEER_SYNC_REQUEST_WINDOW,
+        ));
+    }
+
+    #[test]
+    fn per_peer_snapshot_rate_limit_is_stricter_than_block_sync() {
+        let peer = libp2p::PeerId::random();
+        let start = Instant::now();
+        let mut requests = HashMap::<libp2p::PeerId, VecDeque<Instant>>::new();
+        assert!(admit_peer_request(
+            &mut requests,
+            peer,
+            start,
+            MAX_PEER_SNAPSHOT_REQUESTS_PER_WINDOW,
+            PEER_SNAPSHOT_REQUEST_WINDOW,
+        ));
+        assert!(!admit_peer_request(
+            &mut requests,
+            peer,
+            start + Duration::from_secs(1),
+            MAX_PEER_SNAPSHOT_REQUESTS_PER_WINDOW,
+            PEER_SNAPSHOT_REQUEST_WINDOW,
+        ));
+        assert!(admit_peer_request(
+            &mut requests,
+            peer,
+            start + PEER_SNAPSHOT_REQUEST_WINDOW + Duration::from_secs(1),
+            MAX_PEER_SNAPSHOT_REQUESTS_PER_WINDOW,
+            PEER_SNAPSHOT_REQUEST_WINDOW,
+        ));
+    }
+
     #[test]
     fn sync_peer_selection_rotates_and_handles_empty() {
         let a = libp2p::PeerId::random();
@@ -1178,6 +1262,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut timer = interval(Duration::from_secs(ROUND_TIMEOUT_SECS));
     let mut sync_timer = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
     let mut pending_sync = Vec::<(libp2p::PeerId, libp2p::request_response::OutboundRequestId, Hash, u64)>::new();
+    let mut peer_sync_request_times = HashMap::<libp2p::PeerId, VecDeque<Instant>>::new();
+    let mut peer_snapshot_request_times = HashMap::<libp2p::PeerId, VecDeque<Instant>>::new();
     let mut sync_candidates = BTreeMap::<Hash, (u64, SyncResponse)>::new();
     let mut sync_required = 1usize;
     let mut sync_round_peers = BTreeMap::<libp2p::PeerId, u64>::new();
@@ -1306,6 +1392,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             sync_peer_cursor = 0;
                         }
                         pending_sync.retain(|(pending_peer, ..)| *pending_peer != peer_id);
+                        peer_sync_request_times.remove(&peer_id);
+                        peer_snapshot_request_times.remove(&peer_id);
                         if pending_sync.is_empty() {
                             sync_candidates.clear();
                             sync_round_peers.clear();
@@ -1332,6 +1420,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 libp2p::request_response::Message::Request { request, channel, .. } => {
                                     match request {
                                         SyncWireRequest::Blocks(req) => {
+                                            if !admit_peer_request(
+                                                &mut peer_sync_request_times,
+                                                peer,
+                                                Instant::now(),
+                                                MAX_PEER_SYNC_REQUESTS_PER_WINDOW,
+                                                PEER_SYNC_REQUEST_WINDOW,
+                                            ) {
+                                                eprintln!("SYNC_REQUEST_RATE_LIMITED peer={} kind=blocks", peer);
+                                                continue;
+                                            }
                                             let latest = state.height;
                                             if freedom_network::validate_sync_request(&req).is_err() {
                                                 continue;
@@ -1349,6 +1447,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         SyncWireRequest::Snapshot(req) => {
+                                            if !admit_peer_request(
+                                                &mut peer_snapshot_request_times,
+                                                peer,
+                                                Instant::now(),
+                                                MAX_PEER_SNAPSHOT_REQUESTS_PER_WINDOW,
+                                                PEER_SNAPSHOT_REQUEST_WINDOW,
+                                            ) {
+                                                eprintln!("SYNC_REQUEST_RATE_LIMITED peer={} kind=snapshot", peer);
+                                                continue;
+                                            }
                                             if freedom_network::validate_snapshot_request(&req).is_err() { eprintln!("SNAPSHOT_REQUEST_REJECTED height={}", req.height); continue; }
                                             if let Ok(Some(snapshot)) = store.latest_snapshot_at_or_below(req.height) {
                                                 // A valid checkpoint is not enough if an ancestor has
