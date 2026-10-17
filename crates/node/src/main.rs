@@ -1482,7 +1482,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             continue;
                                                         }
                                                     };
-                                                    if let Ok(state_json) = serde_json::to_vec(&snapshot.state) {
+                                                    if let Ok(state_json) = freedom_network::serialize_bounded_json(
+                                                        &snapshot.state,
+                                                        freedom_network::MAX_SNAPSHOT_STATE_BYTES,
+                                                        "snapshot state",
+                                                    ) {
                                                         let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse {
                                                             request_id: req.request_id,
                                                             height: snapshot.height,
