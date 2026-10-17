@@ -1552,11 +1552,10 @@ mod m481_bounded_serialization_tests {
     use super::*;
 
     #[test]
-    #[test]
     fn bounded_json_serializer_accepts_payload_at_exact_limit() {
         let value = "abc";
         let encoded = serialize_bounded_json(&value, 5, "test payload").unwrap();
-        assert_eq!(encoded, br#"\"abc\""#);
+        assert_eq!(encoded, br#""abc""#);
     }
 
     #[test]
