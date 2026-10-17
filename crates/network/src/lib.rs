@@ -124,6 +124,59 @@ impl Write for BoundedSizeWriter {
     }
 }
 
+struct BoundedVecWriter {
+    bytes: Vec<u8>,
+    maximum: usize,
+    exceeded: bool,
+}
+
+impl BoundedVecWriter {
+    fn new(maximum: usize) -> Self {
+        Self {
+            // Avoid reserving the full protocol cap for small snapshots.
+            bytes: Vec::with_capacity(maximum.min(64 * 1024)),
+            maximum,
+            exceeded: false,
+        }
+    }
+}
+
+impl Write for BoundedVecWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let remaining = self.maximum.saturating_sub(self.bytes.len());
+        if bytes.len() > remaining {
+            self.exceeded = true;
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "encoded size limit exceeded",
+            ));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Serialize JSON into a bounded buffer. Unlike to_vec(), this never retains
+/// more than `maximum` payload bytes while preparing a network response.
+pub fn serialize_bounded_json<T: Serialize>(
+    value: &T,
+    maximum: usize,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let mut writer = BoundedVecWriter::new(maximum);
+    if let Err(error) = serde_json::to_writer(&mut writer, value) {
+        if writer.exceeded {
+            return Err(format!("{label} exceeds maximum encoded size"));
+        }
+        return Err(format!("{label} serialization failed: {error}"));
+    }
+    Ok(writer.bytes)
+}
+
 fn validate_serialized_size<T: Serialize>(value: &T, maximum: usize, label: &str) -> Result<(), String> {
     // Count encoded bytes without retaining a second full JSON buffer. The
     // writer aborts serialization as soon as the configured limit is crossed.
@@ -1499,6 +1552,20 @@ mod m481_bounded_serialization_tests {
     use super::*;
 
     #[test]
+    #[test]
+    fn bounded_json_serializer_accepts_payload_at_exact_limit() {
+        let value = "abc";
+        let encoded = serialize_bounded_json(&value, 5, "test payload").unwrap();
+        assert_eq!(encoded, br#"\"abc\""#);
+    }
+
+    #[test]
+    fn bounded_json_serializer_rejects_payload_before_exceeding_limit() {
+        let value = "abcd";
+        let error = serialize_bounded_json(&value, 5, "test payload").unwrap_err();
+        assert!(error.contains("exceeds maximum encoded size"));
+    }
+
     fn bounded_size_writer_accepts_exact_encoded_size_without_buffering_payload() {
         let value = "abc";
         assert!(validate_serialized_size(&value, 5, "test payload").is_ok());
