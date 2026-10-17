@@ -12,6 +12,7 @@ use libp2p::{
     PeerId, Swarm, SwarmBuilder,
 };
 use serde::{Deserialize, Serialize};
+use std::io::{self, Write};
 
 pub const NETWORK_PROTOCOL: &str = "/freedom/1";
 pub const PROPOSAL_TOPIC: &str = "freedom/1/proposals";
@@ -91,11 +92,49 @@ pub fn validate_sync_request(req: &SyncRequest) -> Result<(), String> {
 
 pub fn validate_snapshot_request(req: &SnapshotSyncRequest) -> Result<(), String> { if req.height == 0 { return Err("snapshot request cannot target genesis".into()); } Ok(()) }
 
+struct BoundedSizeWriter {
+    written: usize,
+    maximum: usize,
+    exceeded: bool,
+}
+
+impl BoundedSizeWriter {
+    fn new(maximum: usize) -> Self {
+        Self { written: 0, maximum, exceeded: false }
+    }
+}
+
+impl Write for BoundedSizeWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let remaining = self.maximum.saturating_sub(self.written);
+        if bytes.len() > remaining {
+            self.exceeded = true;
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "encoded size limit exceeded",
+            ));
+        }
+        self.written = self.written.checked_add(bytes.len()).ok_or_else(|| {
+            self.exceeded = true;
+            io::Error::new(io::ErrorKind::Other, "encoded size counter overflow")
+        })?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn validate_serialized_size<T: Serialize>(value: &T, maximum: usize, label: &str) -> Result<(), String> {
-    let encoded = serde_json::to_vec(value)
-        .map_err(|e| format!("{label} serialization failed: {e}"))?;
-    if encoded.len() > maximum {
-        return Err(format!("{label} exceeds maximum encoded size"));
+    // Count encoded bytes without retaining a second full JSON buffer. The
+    // writer aborts serialization as soon as the configured limit is crossed.
+    let mut writer = BoundedSizeWriter::new(maximum);
+    if let Err(error) = serde_json::to_writer(&mut writer, value) {
+        if writer.exceeded {
+            return Err(format!("{label} exceeds maximum encoded size"));
+        }
+        return Err(format!("{label} serialization failed: {error}"));
     }
     Ok(())
 }
@@ -1454,5 +1493,29 @@ mod m160_bridge_proposal_tests {
         let id = freedom_primitives::hash_bytes(b"bridge-proof");
         assert!(ids.insert(id));
         assert!(!ids.insert(id));
+    }
+}
+
+#[cfg(test)]
+mod m481_bounded_serialization_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_size_writer_accepts_exact_encoded_size_without_buffering_payload() {
+        let value = "abc";
+        assert!(validate_serialized_size(&value, 5, "test payload").is_ok());
+    }
+
+    #[test]
+    fn bounded_size_writer_rejects_payload_at_first_limit_crossing() {
+        let value = "abc";
+        let error = validate_serialized_size(&value, 4, "test payload").unwrap_err();
+        assert!(error.contains("exceeds maximum encoded size"));
+    }
+
+    #[test]
+    fn bounded_size_writer_accepts_zero_length_serialized_value_only_if_limit_allows_it() {
+        assert!(validate_serialized_size(&(), 2, "unit payload").is_ok());
+        assert!(validate_serialized_size(&(), 1, "unit payload").is_err());
     }
 }
