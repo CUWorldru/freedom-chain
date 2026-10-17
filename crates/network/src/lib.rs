@@ -114,10 +114,8 @@ impl Write for BoundedSizeWriter {
                 "encoded size limit exceeded",
             ));
         }
-        self.written = self.written.checked_add(bytes.len()).ok_or_else(|| {
-            self.exceeded = true;
-            io::Error::new(io::ErrorKind::Other, "encoded size counter overflow")
-        })?;
+        // The remaining-capacity check above proves this addition cannot overflow.
+        self.written += bytes.len();
         Ok(bytes.len())
     }
 
