@@ -64,6 +64,13 @@ fn snapshot_response_slot_available(pending_snapshot_count: usize) -> bool {
     pending_snapshot_count < MAX_PENDING_SNAPSHOT_RESPONSES
 }
 
+fn sync_response_byte_budget_available(pending_bytes: usize, next_response_bytes: usize) -> bool {
+    pending_bytes
+        .checked_add(next_response_bytes)
+        .map(|total| total <= freedom_network::MAX_SYNC_RESPONSE_BYTES)
+        .unwrap_or(false)
+}
+
 fn request_id(validator_id: Hash, from_height: u64) -> Hash {
     hash_bytes(&[b"FREEDOM-SYNC-V1", &validator_id, &from_height.to_le_bytes()].concat())
 }
@@ -1278,7 +1285,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut peer_snapshot_request_times = HashMap::<libp2p::PeerId, VecDeque<Instant>>::new();
     // Track all large sync responses until libp2p reports completion/failure.
     // The tuple stores peer, inbound request id, and whether it is a snapshot response.
+    // (peer, inbound request id, is snapshot, encoded response bytes)
     let mut pending_sync_responses = Vec::new();
+    let mut pending_sync_response_bytes = 0usize;
     let mut sync_candidates = BTreeMap::<Hash, (u64, SyncResponse)>::new();
     let mut sync_required = 1usize;
     let mut sync_round_peers = BTreeMap::<libp2p::PeerId, u64>::new();
@@ -1400,7 +1409,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                        pending_sync_responses.retain(|(pending_peer, _, _)| *pending_peer != peer_id);
+                        pending_sync_responses.retain(|(pending_peer, _, _, _)| *pending_peer != peer_id);
+                        pending_sync_response_bytes = pending_sync_responses.iter()
+                            .map(|(_, _, _, bytes)| *bytes)
+                            .sum();
                         connected_peers.retain(|p| *p != peer_id);
                         if !connected_peers.is_empty() {
                             sync_peer_cursor %= connected_peers.len();
@@ -1434,9 +1446,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Release the global snapshot-response slot only for the exact
                         // inbound request that finished or failed, not for block responses.
                         if let libp2p::request_response::Event::ResponseSent { peer, request_id } = &event {
-                            pending_sync_responses.retain(|(pending_peer, pending_id, _)| pending_peer != peer || pending_id != request_id);
+                            pending_sync_responses.retain(|(pending_peer, pending_id, _, _)| pending_peer != peer || pending_id != request_id);
+                            pending_sync_response_bytes = pending_sync_responses.iter()
+                                .map(|(_, _, _, bytes)| *bytes)
+                                .sum();
                         } else if let libp2p::request_response::Event::InboundFailure { peer, request_id, .. } = &event {
-                            pending_sync_responses.retain(|(pending_peer, pending_id, _)| pending_peer != peer || pending_id != request_id);
+                            pending_sync_responses.retain(|(pending_peer, pending_id, _, _)| pending_peer != peer || pending_id != request_id);
+                            pending_sync_response_bytes = pending_sync_responses.iter()
+                                .map(|(_, _, _, bytes)| *bytes)
+                                .sum();
                         }
                         if let libp2p::request_response::Event::Message { peer, message } = event {
                             match message {
@@ -1465,12 +1483,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             if req.from_height <= to {
                                                 if let Ok(blocks) = store.range(req.from_height, to) {
                                                     let response = SyncWireResponse::Blocks(SyncResponse { request_id: req.request_id, from_height: req.from_height, blocks });
-                                                    if let Err(reason) = freedom_network::validate_sync_wire_response_size(&response) {
-                                                        eprintln!("SYNC_RESPONSE_REJECTED from={} reason={}", req.from_height, reason);
+                                                    let response_bytes = match freedom_network::sync_wire_response_encoded_size(&response) {
+                                                        Ok(bytes) => bytes,
+                                                        Err(reason) => {
+                                                            eprintln!("SYNC_RESPONSE_REJECTED from={} reason={}", req.from_height, reason);
+                                                            continue;
+                                                        }
+                                                    };
+                                                    if !sync_response_byte_budget_available(pending_sync_response_bytes, response_bytes) {
+                                                        eprintln!("SYNC_RESPONSE_BUDGET_EXCEEDED peer={} pending_bytes={} response_bytes={}", peer, pending_sync_response_bytes, response_bytes);
                                                         continue;
                                                     }
                                                     match swarm.behaviour_mut().sync.send_response(channel, response) {
-                                                        Ok(()) => pending_sync_responses.push((peer, request_id, false)),
+                                                        Ok(()) => {
+                                                            pending_sync_response_bytes += response_bytes;
+                                                            pending_sync_responses.push((peer, request_id, false, response_bytes));
+                                                        }
                                                         Err(_) => eprintln!("SYNC_RESPONSE_SEND_FAILED peer={} from={}", peer, req.from_height),
                                                     }
                                                 }
@@ -1545,12 +1573,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                 continue;
                                                             }
                                                         }
-                                                        if let Err(reason) = freedom_network::validate_sync_wire_response_size(&response) {
-                                                            eprintln!("SNAPSHOT_RESPONSE_REJECTED height={} reason={}", snapshot.height, reason);
+                                                        let response_bytes = match freedom_network::sync_wire_response_encoded_size(&response) {
+                                                            Ok(bytes) => bytes,
+                                                            Err(reason) => {
+                                                                eprintln!("SNAPSHOT_RESPONSE_REJECTED height={} reason={}", snapshot.height, reason);
+                                                                continue;
+                                                            }
+                                                        };
+                                                        if !sync_response_byte_budget_available(pending_sync_response_bytes, response_bytes) {
+                                                            eprintln!("SNAPSHOT_RESPONSE_BUDGET_EXCEEDED peer={} pending_bytes={} response_bytes={}", peer, pending_sync_response_bytes, response_bytes);
                                                             continue;
                                                         }
                                                         match swarm.behaviour_mut().sync.send_response(channel, response) {
-                                                            Ok(()) => pending_sync_responses.push((peer, request_id, true)),
+                                                            Ok(()) => {
+                                                                pending_sync_response_bytes += response_bytes;
+                                                                pending_sync_responses.push((peer, request_id, true, response_bytes));
+                                                            }
                                                             Err(_) => eprintln!("SNAPSHOT_RESPONSE_SEND_FAILED peer={} height={}", peer, snapshot.height),
                                                         }
                                                     }
@@ -2331,5 +2369,14 @@ mod m484_global_sync_response_budget_tests {
     fn snapshot_response_budget_remains_one_even_when_global_budget_has_room() {
         assert!(snapshot_response_slot_available(0));
         assert!(!snapshot_response_slot_available(1));
+    }
+
+    #[test]
+    fn pending_sync_response_bytes_obey_global_cap_without_overflow() {
+        let cap = freedom_network::MAX_SYNC_RESPONSE_BYTES;
+        assert!(sync_response_byte_budget_available(0, cap));
+        assert!(sync_response_byte_budget_available(cap - 1, 1));
+        assert!(!sync_response_byte_budget_available(cap, 1));
+        assert!(!sync_response_byte_budget_available(usize::MAX, 1));
     }
 }
