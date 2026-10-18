@@ -696,10 +696,10 @@ impl CrossChainAssetRepresentation {
     pub fn matches_proof(&self, proof: &CrossChainAssetProof) -> bool {
         self.validate()
             && proof.asset_id == self.canonical_asset_id
-            && proof.representation_asset_id == self.representation.representation.asset_id
+            && proof.representation_asset_id == self.representation.asset_id
             && proof.asset_kind == self.asset_kind
             && proof.bridge_deposit.source_chain_id == self.representation.source_chain_id
-            && proof.bridge_deposit.bridge_id == self.representation.representation.bridge_id
+            && proof.bridge_deposit.bridge_id == self.representation.bridge_id
     }
 
     pub fn matches_external_identity(
@@ -709,7 +709,7 @@ impl CrossChainAssetRepresentation {
     ) -> bool {
         self.matches_proof(proof)
             && proof.representation_asset_id == expected_representation_asset_id
-            && self.representation.representation.asset_id == expected_representation_asset_id
+            && self.representation.asset_id == expected_representation_asset_id
     }
 }
 
