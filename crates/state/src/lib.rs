@@ -815,6 +815,8 @@ impl ChainState {
   }
   Ok(())
  }
+}
+
 #[cfg(test)]
 mod m339_validator_certificate_quorum_overflow_tests {
     use super::*;
@@ -1476,6 +1478,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
 
 }
 
+impl ChainState {
  pub fn validate_cross_chain_proof_adapter(&self,envelope:&freedom_types::CrossChainFinalityEnvelope)->Result<(),StateError>{
   match envelope.proof_kind {
     freedom_types::CrossChainProofKind::BitcoinUtxo => freedom_types::BitcoinUtxoFinalityAdapter::default().verify_envelope(envelope),
