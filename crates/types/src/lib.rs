@@ -2343,7 +2343,6 @@ fn bitcoin_target_to_compact(target: &Hash) -> Option<u32> {
     Some((exponent << 24) | (mantissa & 0x007f_ffff))
 }
 
-pub const BITCOIN_MAINNET_CHAIN_ID: u32 = 0x4254_4301;
 pub const BITCOIN_MAINNET_GENESIS_HASH: Hash = [
     0x6f, 0xe2, 0x8c, 0x0a, 0xb6, 0xf1, 0xb3, 0x72,
     0xc1, 0xa6, 0xa2, 0x46, 0xae, 0x63, 0xf7, 0x4f,
@@ -4797,7 +4796,7 @@ impl BitcoinUtxoAccumulator {
 
     pub fn compute_root(utxos: &[(Hash, u32, u64, Vec<u8>)]) -> Hash {
         let mut leaves: Vec<Hash> = utxos.iter()
-            .map(|(txid,vout,amount,script)| Self::leaf_hash(txid,vout,*amount,script))
+            .map(|(txid,vout,amount,script)| Self::leaf_hash(txid,*vout,*amount,script))
             .collect();
         leaves.sort();
         if leaves.is_empty() {
