@@ -302,6 +302,7 @@ pub struct UnbondingEntry {
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ValidatorLifecycle { Active, Unbonding, Exited }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ValidatorSetEntry {
     pub validator_id: Hash,
     pub owner: Address,
@@ -858,6 +859,7 @@ pub fn production_profiles() -> Vec<ExternalAssetConfig> {
     ]
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CrossChainAssetRegistry {
     pub canonical_asset_id: Hash,
     pub symbol: String,
@@ -4991,6 +4993,7 @@ pub struct BitcoinUtxoStateEntry {
 
 pub const BITCOIN_MAX_BLOCK_TXS_FOR_UTXO_TRANSITION: usize = 1_000_000;
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BitcoinUtxoAccumulatorTransition {
     pub bridge_id: Hash,
     pub chain_id: u32,
