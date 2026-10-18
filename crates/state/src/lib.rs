@@ -2276,7 +2276,6 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
    self.validator_set_history_entries.insert(self.epoch,entry_snapshot);
    self.epoch_issuance=0;
   }
- }
  fn release_mature_unbonding(&mut self){
   // Never partially mutate staking state from a malformed unbonding ledger.
   if self.validate_unbonding_integrity().is_err() { return; }
