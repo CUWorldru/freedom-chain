@@ -1558,8 +1558,9 @@ impl ChainState {
     let expected_sequence = previous.sequence.checked_add(1).ok_or(StateError::InvalidBridgeWithdrawal)?;
     if attestation.sequence != expected_sequence{return Err(StateError::InvalidBridgeWithdrawal);}
   }
-  self.bitcoin_utxo_attestations.insert(attestation.bridge_id,attestation);
-  self.bitcoin_utxo_attestation_policy_hashes.insert(attestation.bridge_id,policy.commitment_hash());
+  let bridge_id=attestation.bridge_id;
+  self.bitcoin_utxo_attestations.insert(bridge_id,attestation);
+  self.bitcoin_utxo_attestation_policy_hashes.insert(bridge_id,policy.commitment_hash());
   Ok(())
  }
  pub fn bitcoin_utxo_commitment_attestation(&self,bridge_id:Hash)->Option<&freedom_types::BitcoinUtxoCommitmentAttestation>{self.bitcoin_utxo_attestations.get(&bridge_id)} pub(crate) fn register_bitcoin_block_utxo_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:freedom_types::BitcoinUtxoBlockCommitment)->Result<(),StateError>{
