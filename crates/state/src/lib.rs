@@ -4770,7 +4770,9 @@ mod m269_epoch_snapshot_atomicity_tests {
         state.maybe_advance_epoch();
         assert_eq!(state.validator_set_history.get(&1).copied(),Some({ let mut b=Vec::new(); for (id,e) in &state.active_validator_set {b.extend_from_slice(id);b.extend_from_slice(&e.owner);b.extend_from_slice(&e.consensus_key);b.extend_from_slice(&e.stake.to_le_bytes());} freedom_primitives::hash_bytes(&b)}));
         assert_eq!(state.validator_set_history_entries.get(&1),Some(&state.active_validator_set));
-        assert_eq!(state.validator_set_history_sets.get(&1).unwrap().len(),state.validator_set_history_entries.get(&1).unwrap().len());    }}
+        assert_eq!(state.validator_set_history_sets.get(&1).unwrap().len(),state.validator_set_history_entries.get(&1).unwrap().len());
+    }
+}
 
 
 #[cfg(test)]
