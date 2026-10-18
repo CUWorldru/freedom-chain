@@ -3170,6 +3170,27 @@ pub fn bitcoin_hash_leq_target_v2(hash:Hash,target:[u8;32])->bool{hash.iter().re
 pub fn bitcoin_pow_valid(header:&BitcoinBlockHeader)->bool{header.validate_pow()}
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub enum BitcoinHeaderChainError{Empty,InvalidPow,InvalidLinkage,InvalidHeight}
+pub fn bitcoin_validate_header_chain(
+    start_height: u64,
+    headers: &[BitcoinBlockHeader],
+) -> Result<Hash, BitcoinHeaderChainError> {
+    if headers.is_empty() {
+        return Err(BitcoinHeaderChainError::Empty);
+    }
+    let count = u64::try_from(headers.len()).map_err(|_| BitcoinHeaderChainError::InvalidHeight)?;
+    start_height.checked_add(count - 1).ok_or(BitcoinHeaderChainError::InvalidHeight)?;
+
+    for (index, header) in headers.iter().enumerate() {
+        if !header.validate_pow() {
+            return Err(BitcoinHeaderChainError::InvalidPow);
+        }
+        if index > 0 && header.previous_block_hash != headers[index - 1].block_hash() {
+            return Err(BitcoinHeaderChainError::InvalidLinkage);
+        }
+    }
+
+    Ok(headers.last().expect("non-empty checked above").block_hash())
+}
 pub fn bitcoin_header_work(header:&BitcoinBlockHeader)->Option<[u8;32]>{
     use num_bigint::BigUint;
     let target=BigUint::from_bytes_be(&bitcoin_target_from_bits(header.bits)?);
