@@ -2,7 +2,7 @@ use freedom_primitives::{Address, Hash};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use crate::bridge_adapter::{EvmAdapter, SolanaAdapter, TonAdapter, TronAdapter};
+use crate::bridge_adapter::{BridgeAdapter, EvmAdapter, SolanaAdapter, TonAdapter, TronAdapter};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BridgeAdapterError { InvalidDescriptor, InvalidProof, InsufficientFinality, InvalidIntent }
@@ -4144,32 +4144,32 @@ impl ValidatorPrecommit {
 
 impl EvmAdapter {
  pub fn verify_erc20_transfer(&self,p:&EvmTransferProof)->Result<BridgeDepositProof,BridgeAdapterError>{
-  if p.bridge_id!=self.descriptor.bridge_id||p.chain_id!=self.descriptor.chain_id||p.tx_hash==[0;32]||p.token_contract.is_empty()||p.from.is_empty()||p.to.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
-  if p.confirmations<self.descriptor.required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
+  if p.bridge_id!=self.descriptor().bridge_id||p.chain_id!=self.descriptor().chain_id||p.tx_hash==[0;32]||p.token_contract.is_empty()||p.from.is_empty()||p.to.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
+  if p.confirmations<self.descriptor().required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
   Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.event_index(),block_or_slot:p.block_number,confirmations:p.confirmations,proof:p.proof_bytes()})
  }
  pub fn build_erc20_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.len()!=20{return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
 }
 impl TronAdapter {
  pub fn verify_trc20_transfer(&self,p:&TronTrc20TransferProof)->Result<BridgeDepositProof,BridgeAdapterError>{
-  if p.bridge_id!=self.descriptor.bridge_id||p.chain_id!=self.descriptor.chain_id||p.tx_hash==[0;32]||p.token_contract.is_empty()||p.from.is_empty()||p.to.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
-  if p.confirmations<self.descriptor.required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
+  if p.bridge_id!=self.descriptor().bridge_id||p.chain_id!=self.descriptor().chain_id||p.tx_hash==[0;32]||p.token_contract.is_empty()||p.from.is_empty()||p.to.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
+  if p.confirmations<self.descriptor().required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
   Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.replay_event_index(),block_or_slot:p.block_number,confirmations:p.confirmations,proof:p.proof_bytes()})
  }
  pub fn build_trc20_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.len()!=34{return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
 }
 impl TonAdapter {
  pub fn verify_jetton_transfer(&self,p:&TonJettonTransferProof)->Result<BridgeDepositProof,BridgeAdapterError>{
-  if p.bridge_id!=self.descriptor.bridge_id||p.chain_id!=self.descriptor.chain_id||p.tx_hash==[0;32]||p.jetton_master.is_empty()||p.sender.is_empty()||p.recipient.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
-  if p.confirmations<self.descriptor.required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
+  if p.bridge_id!=self.descriptor().bridge_id||p.chain_id!=self.descriptor().chain_id||p.tx_hash==[0;32]||p.jetton_master.is_empty()||p.sender.is_empty()||p.recipient.is_empty()||p.amount==0||p.proof.is_empty()||p.event_signature==[0;32]{return Err(BridgeAdapterError::InvalidProof)}
+  if p.confirmations<self.descriptor().required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
   Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.replay_event_index(),block_or_slot:p.block_or_seqno,confirmations:p.confirmations,proof:p.proof_bytes()})
  }
  pub fn build_jetton_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.is_empty(){return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
 }
 impl SolanaAdapter {
  pub fn verify_spl_transfer(&self,p:&SolanaTransferProof)->Result<BridgeDepositProof,BridgeAdapterError>{
-  if p.bridge_id!=self.descriptor.bridge_id||p.chain_id!=self.descriptor.chain_id||p.tx_hash==[0;32]||p.token_mint.is_empty()||p.source.is_empty()||p.destination.is_empty()||p.amount==0||p.proof.is_empty()||p.program_id.is_empty(){return Err(BridgeAdapterError::InvalidProof)}
-  if p.confirmations<self.descriptor.required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
+  if p.bridge_id!=self.descriptor().bridge_id||p.chain_id!=self.descriptor().chain_id||p.tx_hash==[0;32]||p.token_mint.is_empty()||p.source.is_empty()||p.destination.is_empty()||p.amount==0||p.proof.is_empty()||p.program_id.is_empty(){return Err(BridgeAdapterError::InvalidProof)}
+  if p.confirmations<self.descriptor().required_confirmations{return Err(BridgeAdapterError::InsufficientFinality)}
   Ok(BridgeDepositProof{bridge_id:p.bridge_id,source_chain_id:p.chain_id,tx_hash:p.tx_hash,event_index:p.replay_event_index(),block_or_slot:p.slot,confirmations:p.confirmations,proof:p.proof_bytes()})
  }
  pub fn build_spl_withdrawal_intent(&self,w:Hash,a:Hash,amount:u128,recipient:Vec<u8>,nonce:u64)->Result<BridgeWithdrawalIntent,BridgeAdapterError>{if recipient.len()!=32{return Err(BridgeAdapterError::InvalidIntent)}self.build_withdrawal_intent(w,a,amount,recipient,nonce)}
