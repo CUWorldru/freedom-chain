@@ -177,7 +177,7 @@ pub fn serialize_bounded_json<T: Serialize>(
     Ok(writer.bytes)
 }
 
-fn validate_serialized_size<T: Serialize>(value: &T, maximum: usize, label: &str) -> Result<(), String> {
+fn serialized_size_bounded<T: Serialize>(value: &T, maximum: usize, label: &str) -> Result<usize, String> {
     // Count encoded bytes without retaining a second full JSON buffer. The
     // writer aborts serialization as soon as the configured limit is crossed.
     let mut writer = BoundedSizeWriter::new(maximum);
@@ -187,7 +187,11 @@ fn validate_serialized_size<T: Serialize>(value: &T, maximum: usize, label: &str
         }
         return Err(format!("{label} serialization failed: {error}"));
     }
-    Ok(())
+    Ok(writer.written)
+}
+
+fn validate_serialized_size<T: Serialize>(value: &T, maximum: usize, label: &str) -> Result<(), String> {
+    serialized_size_bounded(value, maximum, label).map(|_| ())
 }
 
 /// Enforce the outbound request cap before handing a request to libp2p.
@@ -198,6 +202,12 @@ pub fn validate_sync_wire_request_size(request: &SyncWireRequest) -> Result<(), 
 /// Enforce the outbound response cap before handing a response to libp2p.
 pub fn validate_sync_wire_response_size(response: &SyncWireResponse) -> Result<(), String> {
     validate_serialized_size(response, MAX_SYNC_RESPONSE_BYTES, "sync response")
+}
+
+/// Measure an outbound response using the same bounded serializer used by the
+/// size validator. Returns the encoded size without allocating a JSON buffer.
+pub fn sync_wire_response_encoded_size(response: &SyncWireResponse) -> Result<usize, String> {
+    serialized_size_bounded(response, MAX_SYNC_RESPONSE_BYTES, "sync response")
 }
 
 pub fn validate_sync_response(response: &SyncResponse) -> Result<(), String> {
