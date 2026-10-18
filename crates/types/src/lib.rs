@@ -4527,7 +4527,8 @@ pub struct BitcoinSpendScanBlock {
     pub height: u64,
     pub header: BitcoinBlockHeader,
     /// Complete raw transactions for this block, in canonical block order.
-    pub raw_transactions: Vec<Vec<u8>>,}
+    pub raw_transactions: Vec<Vec<u8>>,
+}
 
 impl BitcoinSpendScanBlock {
     pub fn transaction_hashes(&self) -> Result<Vec<Hash>, String> {
@@ -5933,6 +5934,14 @@ mod m408_bitcoin_pow_target_parser_regression_tests {
 
     #[test]
     fn low_level_pow_limit_parser_is_non_recursive() {
+        let raw_limit = bitcoin_target_from_bits_raw(0x1d00_ffff)
+            .expect("Bitcoin mainnet proof-of-work limit must parse");
+        let bounded_limit = bitcoin_target_from_bits(0x1d00_ffff)
+            .expect("Bitcoin mainnet proof-of-work limit must be accepted");
+        assert_eq!(raw_limit, bounded_limit);
+        assert!(bitcoin_target_from_bits_raw(0x1d00_0000).is_none());
+    }
+}
 
 #[cfg(test)]
 mod m409_bitcoin_difficulty_window_boundary_tests {
