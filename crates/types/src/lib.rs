@@ -2974,6 +2974,7 @@ impl BitcoinUtxoProof {
             recipient,
         )
     }
+}
 
 impl BitcoinUtxoProof {
     pub fn computed_tx_hash(&self)->Option<Hash>{if self.raw_transaction.is_empty(){return None;}Some(bitcoin_sha256d(&self.raw_transaction))}
@@ -5924,6 +5925,7 @@ pub struct BitcoinUtxoMerkleMultiproof {
     pub leaf_count: u64,
     pub leaves: Vec<BitcoinUtxoTransitionWitness>,
     pub auxiliary_nodes: Vec<Hash>,
+}
 
 #[cfg(test)]
 mod m408_bitcoin_pow_target_parser_regression_tests {
