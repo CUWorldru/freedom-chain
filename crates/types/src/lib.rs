@@ -3415,6 +3415,82 @@ impl EvmTransferProof {
 
 
 
+/// Verified TRON block header proof backed by the canonical protobuf raw_data bytes.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TronBlockHeaderProof {
+    /// Canonical protobuf serialization of protocol.block.BlockHeader.raw_data.
+    pub raw_data: Vec<u8>,
+    /// Canonical TRON block ID, including the block-number prefix.
+    pub block_id: Hash,
+}
+
+impl TronBlockHeaderProof {
+    fn read_varint(bytes: &[u8], pos: &mut usize) -> Result<u64, String> {
+        let mut value = 0u64;
+        for shift in (0..=63).step_by(7) {
+            let byte = *bytes.get(*pos).ok_or_else(|| "truncated TRON header varint".to_string())?;
+            *pos += 1;
+            if shift == 63 && byte > 1 { return Err("TRON header varint overflow".into()); }
+            value |= ((byte & 0x7f) as u64) << shift;
+            if byte & 0x80 == 0 { return Ok(value); }
+        }
+        Err("TRON header varint overflow".into())
+    }
+
+    fn fields(&self) -> Result<(u64, Hash), String> {
+        let mut pos = 0usize;
+        let mut number = None;
+        let mut tx_root = None;
+        while pos < self.raw_data.len() {
+            let key = Self::read_varint(&self.raw_data, &mut pos)?;
+            let field = key >> 3;
+            let wire = key & 7;
+            if field == 0 { return Err("invalid TRON header protobuf field".into()); }
+            match wire {
+                0 => {
+                    let value = Self::read_varint(&self.raw_data, &mut pos)?;
+                    if field == 7 {
+                        if number.replace(value).is_some() { return Err("duplicate TRON block number".into()); }
+                    }
+                }
+                1 => { pos = pos.checked_add(8).filter(|p| *p <= self.raw_data.len()).ok_or_else(|| "truncated TRON fixed64".to_string())?; }
+                2 => {
+                    let len = usize::try_from(Self::read_varint(&self.raw_data, &mut pos)?).map_err(|_| "TRON header field length overflow".to_string())?;
+                    let end = pos.checked_add(len).filter(|p| *p <= self.raw_data.len()).ok_or_else(|| "truncated TRON header bytes".to_string())?;
+                    if field == 2 {
+                        if len != 32 || tx_root.replace(self.raw_data[pos..end].try_into().map_err(|_| "invalid TRON transaction root".to_string())?).is_some() {
+                            return Err("invalid or duplicate TRON transaction root".into());
+                        }
+                    }
+                    pos = end;
+                }
+                5 => { pos = pos.checked_add(4).filter(|p| *p <= self.raw_data.len()).ok_or_else(|| "truncated TRON fixed32".to_string())?; }
+                _ => return Err("unsupported TRON header protobuf wire type".into()),
+            }
+        }
+        Ok((number.filter(|n| *n > 0).ok_or_else(|| "missing TRON block number".to_string())?,
+            tx_root.ok_or_else(|| "missing TRON transaction trie root".to_string())?))
+    }
+
+    pub fn block_number(&self) -> Result<u64, String> {
+        self.fields().map(|(number, _)| number)
+    }
+
+    pub fn tx_trie_root(&self) -> Result<Hash, String> {
+        self.fields().map(|(_, root)| root)
+    }
+
+    pub fn validate(&self) -> bool {
+        let Ok((number, _)) = self.fields() else { return false; };
+        if self.block_id == [0; 32] { return false; }
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(&self.raw_data);
+        let mut expected: Hash = digest.into();
+        expected[..8].copy_from_slice(&number.to_be_bytes());
+        expected == self.block_id
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TronTransactionInclusionProof {
     pub tx_hash: Hash,
