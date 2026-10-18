@@ -6765,6 +6765,7 @@ mod m284_validator_consensus_identity_hardening_tests {
             Err(StateError::InvalidBridgeWithdrawal)
         );
     }
+}
 
 #[cfg(test)]
 mod m392_reorg_severity_checkpoint_binding_tests {
