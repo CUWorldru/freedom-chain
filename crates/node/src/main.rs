@@ -1506,7 +1506,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         SyncWireRequest::Snapshot(req) => {
                                             let pending_snapshot_count = pending_sync_responses.iter()
-                                                .filter(|(_, _, is_snapshot)| *is_snapshot)
+                                                .filter(|(_, _, is_snapshot, _)| *is_snapshot)
                                                 .count();
                                             if !sync_response_slot_available(pending_sync_responses.len())
                                                 || !snapshot_response_slot_available(pending_snapshot_count)
