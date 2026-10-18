@@ -2,6 +2,7 @@ use freedom_primitives::{Address, Hash};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use crate::bridge_adapter::{EvmAdapter, SolanaAdapter, TonAdapter, TronAdapter};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BridgeAdapterError { InvalidDescriptor, InvalidProof, InsufficientFinality, InvalidIntent }
