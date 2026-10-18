@@ -18,7 +18,7 @@ pub fn verify(public_key: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> bo
 pub fn bls_verify(public_key:&[u8;48],message:&[u8],signature:&[u8;96])->bool{
     let Ok(pk)=blst::min_pk::PublicKey::from_bytes(public_key) else{return false};
     let Ok(sig)=blst::min_pk::Signature::from_bytes(signature) else{return false};
-    sig.verify(true,message,b"FREEDOM-ETH-BLS-V1",&pk,true)==blst::BLST_ERROR::BLST_SUCCESS
+    sig.verify(true,message,b"FREEDOM-ETH-BLS-V1",&[],&pk,true)==blst::BLST_ERROR::BLST_SUCCESS
 }
 
 pub fn bls_verify_aggregate(public_keys:&[[u8;48]],message:&[u8],signature:&[u8;96])->bool{
