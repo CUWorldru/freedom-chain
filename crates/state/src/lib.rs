@@ -4271,7 +4271,8 @@ mod m243_direct_bridge_mint_bitcoin_gate_tests {
             Ok(())
         );
         assert!(state.validate_bridge_message(&message).is_err());
-    }}
+    }
+}
 
 #[cfg(test)]
 mod m244_bridge_acceptance_boundary_tests {
