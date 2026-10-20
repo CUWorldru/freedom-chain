@@ -297,7 +297,7 @@ impl ChainState {
    return Err(StateError::InvalidBridgePauseAuthorization);
   }
   if auth_set.authorizations.iter().any(|a|a.bridge_id!=bridge_id||a.nonce!=auth_set.nonce||!keys.contains_key(&a.validator_id)){return Err(StateError::InvalidBridgePauseAuthorization);}
-  if auth_set.authenticated_count(&keys)<usize::from(policy.validator_quorum){return Err(StateError::InvalidBridgePauseAuthorization);}
+  if auth_set.authenticated_count(&keys)<policy.validator_quorum{return Err(StateError::InvalidBridgePauseAuthorization);}
   let mut next=policy.clone();next.emergency_paused=auth_set.authorizations.first().map(|a|a.paused).ok_or(StateError::InvalidBridgePauseAuthorization)?;
   if auth_set.authorizations.iter().any(|a|a.paused!=next.emergency_paused){return Err(StateError::InvalidBridgePauseAuthorization);}
   self.bridge_security_policies.insert(bridge_id,next);
@@ -2662,7 +2662,7 @@ mod m330_public_chain_id_boundary_tests {
   let draw=self.draws.get(&draw_id).cloned().ok_or(StateError::InvalidDraw)?; if draw.executed{return Err(StateError::DrawAlreadyExecuted)} if self.height<draw.config.ends_at{return Err(StateError::DrawNotReady)} if draw.total_tickets==0||draw.config.winner_count as u64>draw.total_tickets{return Err(StateError::InvalidDraw)}
   let seed=freedom_primitives::hash_bytes(&[b"FREEDOM-DRAW-V1".as_slice(),&self.last_block_hash,&draw_id,&draw.config.seed_block.to_le_bytes()].concat());
   let mut ids:Vec<Hash>=self.tickets.values().filter(|t|t.draw_id==draw_id).map(|t|t.ticket_id).collect(); ids.sort();
-  let mut winners=Vec::new(); let mut salt=0u64; while winners.len()<draw.config.winner_count as usize {let h=freedom_primitives::hash_bytes(&[&seed,&salt.to_le_bytes()].concat());let idx=(u128::from_le_bytes(h[..16].try_into().unwrap())%(ids.len() as u128)) as usize;let id=ids[idx];if !winners.contains(&id){winners.push(id)}salt=salt.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;}
+  let mut winners=Vec::new(); let mut salt=0u64; while winners.len()<draw.config.winner_count as usize {let h=freedom_primitives::hash_bytes(&[&seed[..],&salt.to_le_bytes()[..]].concat());let idx=(u128::from_le_bytes(h[..16].try_into().unwrap())%(ids.len() as u128)) as usize;let id=ids[idx];if !winners.contains(&id){winners.push(id)}salt=salt.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;}
   let selection_proof=freedom_primitives::hash_bytes(&[b"FREEDOM-DRAW-PROOF-V1".as_slice(),&seed,winners.concat().as_slice()].concat()); let result=DrawResult{draw_id,total_tickets:draw.total_tickets,prize_pool_native_units:draw.prize_pool_native_units,cu_fund_native_units:draw.cu_fund_native_units,annual_reserve_native_units:draw.annual_reserve_native_units,winners:winners.clone(),randomness_seed:seed,selection_proof};
   let per=draw.prize_pool_native_units.checked_div(winners.len() as u128).ok_or(StateError::ArithmeticOverflow)?;
   let remainder=draw.prize_pool_native_units.checked_sub(per.checked_mul(winners.len() as u128).ok_or(StateError::ArithmeticOverflow)?).ok_or(StateError::ArithmeticOverflow)?;
