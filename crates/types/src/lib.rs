@@ -1055,6 +1055,14 @@ pub enum BridgeDirection { Inbound = 1, Outbound = 2 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[repr(u8)]
+pub enum BridgeMessageStatus {
+    Verified = 1,
+    Accepted = 2,
+    Minted = 3,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
 pub enum BridgeWithdrawalStatus {
     Requested = 1, Validated = 2, Approved = 3, Signing = 4,
     Broadcast = 5, ExternalConfirmed = 6, Finalized = 7, Rejected = 8,
