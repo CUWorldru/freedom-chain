@@ -3212,7 +3212,7 @@ mod m155_bridge_mint_boundary_tests {
   let message=deposit.to_bridge_message(freedom_primitives::CHAIN_ID,1).unwrap();
   let unsigned=BridgeMessageApproval{bridge_id,message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
   let signature=freedom_crypto::sign(&key,&unsigned.approval_hash());
-  let approvals=BridgeMessageApprovalSet{bridge_id,message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
+  let approvals=BridgeMessageApprovalSet{bridge_id:message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
   let auth=BridgeMintAuthorization::from_authenticated_message(&message,&deposit,&approvals,state.bridge_security_policies.get(&bridge_id).unwrap(),&state.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()).unwrap();
   (state,deposit,message,auth,approvals)
  }
