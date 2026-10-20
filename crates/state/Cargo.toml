@@ -8,3 +8,4 @@ license.workspace = true
 serde.workspace = true
 freedom-primitives = { path = "../primitives" }
 freedom-types = { path = "../types" }
+serde_json.workspace = true
