@@ -1085,7 +1085,7 @@ mod tests {
     #[test]
     fn snapshot_transition_target_set_rejects_mismatched_finality_set() {
         let make_set = |seed: u8| {
-            let id = hash_bytes(&[b"m475-target-validator", &[seed]].concat());
+            let id = hash_bytes(&[b"m475-target-validator".as_slice(), &[seed]].concat());
             let mut set = std::collections::BTreeMap::new();
             set.insert(id, freedom_types::ValidatorSetEntry {
                 validator_id: id, owner: [seed; 32], consensus_key: [seed.wrapping_add(1); 32], stake: 10,
@@ -1127,7 +1127,7 @@ mod tests {
     #[test]
     fn snapshot_transition_sequence_accepts_complete_epoch_prefix() {
         let make_set = |seed: u8| {
-            let id = hash_bytes(&[b"m474-transition-validator", &[seed]].concat());
+            let id = hash_bytes(&[b"m474-transition-validator".as_slice(), &[seed]].concat());
             let mut set = std::collections::BTreeMap::new();
             set.insert(id, freedom_types::ValidatorSetEntry {
                 validator_id: id, owner: [seed; 32], consensus_key: [seed.wrapping_add(1); 32], stake: 10,
@@ -1219,7 +1219,7 @@ mod tests {
         let mut set = std::collections::BTreeMap::new();
         set.insert(id, entry);
         let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
+            chain_id: u64::from(freedom_primitives::CHAIN_ID),
             initial_supply: 0,
             validators: vec![freedom_types::Validator {
                 validator_id: id, owner: [1; 32], consensus_key: key, stake: 10,
@@ -1247,7 +1247,7 @@ mod tests {
         let mut set = std::collections::BTreeMap::new();
         set.insert(id, entry);
         let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
-            chain_id: freedom_primitives::CHAIN_ID,
+            chain_id: u64::from(freedom_primitives::CHAIN_ID),
             initial_supply: 0,
             validators: vec![freedom_types::Validator {
                 validator_id: id, owner: [1; 32], consensus_key: key, stake: 10,
@@ -1329,7 +1329,7 @@ mod tests {
                 },
                 new_validator_set: make_resource_test_set(
                     MAX_SNAPSHOT_VALIDATORS_PER_SET,
-                    index * MAX_SNAPSHOT_VALIDATORS_PER_SET,
+                    (index as usize) * MAX_SNAPSHOT_VALIDATORS_PER_SET,
                 ),
             });
         }
@@ -1371,7 +1371,7 @@ mod tests {
             transactions: vec![], receipts: vec![],
         };
         let response = SnapshotSyncResponse {
-            request_id: [1;32], chain_id: freedom_primitives::CHAIN_ID, height: 7,
+            request_id: [1;32], chain_id: u64::from(freedom_primitives::CHAIN_ID), height: 7,
             block_hash: freedom_consensus::block_hash(&checkpoint), state_root: [1;32], checkpoint,
             certificate: freedom_types::FinalityCertificate { block_hash: [0;32], height: 7, round: 2, precommits: Vec::new() },
             finality_validator_set: std::collections::BTreeMap::new(),
@@ -1395,7 +1395,7 @@ mod tests {
             transactions: vec![], receipts: vec![],
         };
         let response = SnapshotSyncResponse {
-            request_id: [1;32], chain_id: freedom_primitives::CHAIN_ID.wrapping_add(1), height: 7,
+            request_id: [1;32], chain_id: u64::from(freedom_primitives::CHAIN_ID).wrapping_add(1), height: 7,
             block_hash: freedom_consensus::block_hash(&checkpoint), state_root: [1;32], checkpoint,
             certificate: freedom_types::FinalityCertificate { block_hash: [0;32], height: 7, round: 2, precommits: Vec::new() },
             finality_validator_set: std::collections::BTreeMap::new(),
@@ -1415,7 +1415,7 @@ mod tests {
             transactions: vec![], receipts: vec![],
         };
         let response = SnapshotSyncResponse {
-            request_id: [1;32], chain_id: freedom_primitives::CHAIN_ID, height: 7,
+            request_id: [1;32], chain_id: u64::from(freedom_primitives::CHAIN_ID), height: 7,
             block_hash: [9;32], state_root: [1;32], checkpoint,
             certificate: freedom_types::FinalityCertificate { block_hash: [9;32], height: 7, round: 2, precommits: Vec::new() },
             finality_validator_set: std::collections::BTreeMap::new(),
@@ -1501,6 +1501,7 @@ mod tests {
             header: freedom_types::BlockHeader {
                 height: 7, round: 0, previous_hash: [0;32], state_root: [1;32], tx_root: [2;32],
                 receipts_root: [3;32], timestamp: 7, epoch: 7, proposer: [3;32],
+                epoch_transition_certificate: None,
             },
             transactions: vec![],
             receipts: vec![],
