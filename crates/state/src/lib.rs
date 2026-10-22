@@ -1479,34 +1479,14 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
 }
 
 impl ChainState {
+ /// Fail closed for chains whose consensus/finality verifier is not implemented.
+ /// Bitcoin envelopes still pass through the full state-level canonical-tip,
+ /// policy, attestation, and validator-set checks below.
  pub fn validate_cross_chain_proof_adapter(&self,envelope:&freedom_types::CrossChainFinalityEnvelope)->Result<(),StateError>{
-  match envelope.proof_kind {
-    freedom_types::CrossChainProofKind::BitcoinUtxo => freedom_types::BitcoinUtxoFinalityAdapter::default().verify_envelope(envelope),
-    freedom_types::CrossChainProofKind::Ethereum => freedom_types::EvmFinalityAdapter::default().verify_envelope(envelope),
-    freedom_types::CrossChainProofKind::Tron => freedom_types::TronFinalityAdapter::default().verify_envelope(envelope),
-    _ => return Err(StateError::InvalidBridgeWithdrawal),
-  }.map_err(|_|StateError::InvalidBridgeWithdrawal)?;
+  if envelope.proof_kind != freedom_types::CrossChainProofKind::BitcoinUtxo {
+   return Err(StateError::InvalidBridgeWithdrawal);
+  }
   self.validate_cross_chain_finality_envelope(envelope)
- }
- pub fn validate_ethereum_finality_proof(&self,envelope:&freedom_types::CrossChainFinalityEnvelope,proof:&freedom_types::EthereumFinalityProof)->Result<(),StateError>{
-  if envelope.proof_kind!=freedom_types::CrossChainProofKind::Ethereum{return Err(StateError::InvalidBridgeWithdrawal);}
-  freedom_types::EvmFinalityAdapter::default().verify_finality_proof(proof,envelope).map_err(|_|StateError::InvalidBridgeWithdrawal)?;
-  if envelope.sequence==0{return Err(StateError::InvalidBridgeWithdrawal);}
-  Ok(())
- }
- pub fn validate_ethereum_sync_committee_proof(&self,proof:&freedom_types::EthereumSyncCommitteeProof)->Result<(),StateError>{
-  if !proof.verify(){return Err(StateError::InvalidBridgeWithdrawal);}
-  if proof.finalized_checkpoint_root==[0;32] || proof.committee_root==[0;32]{return Err(StateError::InvalidBridgeWithdrawal);}
-  Ok(())
- }
- pub fn validate_ethereum_sync_committee_signature(&self,signature:&freedom_types::EthereumSyncCommitteeSignature,expected_signing_root:Hash)->Result<(),StateError>{
-  if signature.signing_root!=expected_signing_root || !signature.verify(){return Err(StateError::InvalidBridgeWithdrawal);}
-  Ok(())
- }
- pub fn validate_ethereum_end_to_end_proof(&self,proof:&freedom_types::EthereumEndToEndProof)->Result<(),StateError>{
-  if !proof.verify(){return Err(StateError::InvalidBridgeWithdrawal);}
-  self.validate_cross_chain_finality_envelope(&proof.envelope)?;
-  Ok(())
  }
 
  pub(crate) fn apply_bitcoin_utxo_attested_commitment(&mut self,bridge_id:Hash,block:&freedom_types::BitcoinSpendScanBlock,commitment:&freedom_types::BitcoinUtxoBlockCommitment,attestation:&freedom_types::BitcoinUtxoCommitmentAttestation)->Result<(),StateError>{
