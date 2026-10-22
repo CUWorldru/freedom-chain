@@ -8,3 +8,4 @@ license.workspace = true
 freedom-primitives = { path = "../primitives" }
 freedom-crypto = { path = "../crypto" }
 freedom-state = { path = "../state" }
+freedom-types = { path = "../types" }
