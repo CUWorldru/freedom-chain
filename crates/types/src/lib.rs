@@ -5352,6 +5352,25 @@ impl BitcoinUtxoAccumulatorTransition {
         Ok((BitcoinUtxoAccumulator::compute_root(&rows), map.len() as u64))
     }
 
+    /// Verify a candidate block's transaction Merkle commitment and derive the
+    /// resulting UTXO accumulator root and leaf count from the authenticated
+    /// pre-block UTXO set. Script execution and full Bitcoin consensus checks
+    /// remain separate validation responsibilities.
+    pub fn verify_block_against_header(
+        previous: &[BitcoinUtxoStateEntry],
+        block: &BitcoinSpendScanBlock,
+    ) -> Result<(Hash, u64), String> {
+        if block.raw_transactions.is_empty() {
+            return Err("block transaction list is empty".into());
+        }
+        let computed_merkle_root = block.merkle_root_from_transactions()?;
+        if computed_merkle_root != block.header.merkle_root {
+            return Err("Bitcoin block transaction Merkle root mismatch".into());
+        }
+        let (spent, created) = Self::derive_block_delta(&block.raw_transactions)?;
+        Self::compute_next(previous, &spent, &created)
+    }
+
     pub fn verify_transition(&self, previous: &[BitcoinUtxoStateEntry]) -> Result<(), String> {
         if self.bridge_id == [0;32] || self.chain_id == 0
             || self.previous_root == [0;32] || self.next_root == [0;32]
