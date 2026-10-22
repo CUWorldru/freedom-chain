@@ -33,7 +33,7 @@ pub enum CrossChainProofKind {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CrossChainFinalityEnvelope {
     pub bridge_id: Hash,
-    pub chain_id: u64,
+    pub chain_id: u32,
     pub sequence: u64,
     pub proof_kind: CrossChainProofKind,
     pub finalized_height: u64,
