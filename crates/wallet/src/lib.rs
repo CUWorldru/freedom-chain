@@ -54,7 +54,7 @@ mod tests {
     fn snapshot_reads_chain_balance() {
         let w = create_wallet();
         let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
-        state.insert_account(freedom_state::Account::new(w.public_key, 12345));
+        state.accounts.insert(w.address, freedom_state::Account::new(w.public_key, 12345));
         let s = snapshot(&state, &w.address).unwrap();
         assert_eq!(s.balance_321m_units, 12345);
         assert_eq!(s.balance_321m, "0.12345");
