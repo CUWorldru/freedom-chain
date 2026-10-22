@@ -2164,7 +2164,7 @@ impl ChainState {
   let n=previous_keys.len();
   let ceil_third=n/3+usize::from(n%3!=0);
   let required_quorum=n-ceil_third+1;
-  if certificate.authenticated_vote_count(previous_keys) as usize < required_quorum {
+  if (certificate.authenticated_vote_count(previous_keys) as usize) < required_quorum {
     return Err(StateError::InvalidBridgeWithdrawal);
   }
   Ok(())
@@ -2296,6 +2296,8 @@ impl ChainState {
  pub(crate) fn insert_account(&mut self,a:Account){self.accounts.insert(a.address,a);}
  pub fn drain_events(&mut self)->Vec<Event>{std::mem::take(&mut self.events)}
  pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{if tx.chain_id!=freedom_primitives::CHAIN_ID{return Err(StateError::InvalidChainId)}let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>{let id:Hash=tx.payload.as_slice().try_into().map_err(|_|StateError::UnsupportedTransaction)?;self.claim_reward(id)},TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),TxKind::BridgeMint=>self.execute_bridge_mint(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
+}
+
 #[cfg(test)]
 mod m330_public_chain_id_boundary_tests {
     use super::*;
@@ -2335,6 +2337,7 @@ mod m330_public_chain_id_boundary_tests {
     }
 }
 
+impl ChainState {
  fn execute_bridge_mint(&mut self,tx:&Transaction)->Result<(),StateError>{
   let payload=BridgeMintTransactionPayload::decode(&tx.payload).map_err(|_|StateError::InvalidBridgeMintTransaction)?;
   let sender=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
