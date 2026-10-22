@@ -493,7 +493,7 @@ pub fn validate_snapshot_response(response: &SnapshotSyncResponse) -> Result<(),
         response.epoch_transition_certificate.as_ref(),
         &response.validator_set_transitions,
     )?;
-    if response.chain_id != freedom_primitives::CHAIN_ID {
+    if response.chain_id != u64::from(freedom_primitives::CHAIN_ID) {
         return Err("snapshot chain id mismatch".into());
     }
     if response.height == 0 {
@@ -599,6 +599,9 @@ pub enum FreedomEvent {
 
 impl From<()> for FreedomEvent {
     fn from(_: ()) -> Self { Self::ConnectionLimits }
+}
+impl From<std::convert::Infallible> for FreedomEvent {
+    fn from(event: std::convert::Infallible) -> Self { match event {} }
 }
 impl From<gossipsub::Event> for FreedomEvent {
     fn from(event: gossipsub::Event) -> Self { Self::Gossipsub(event) }
@@ -859,7 +862,7 @@ pub fn vote_topic() -> IdentTopic {
     IdentTopic::new(VOTE_TOPIC)
 }
 
-pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Error>> {
+pub fn build_swarm() -> Result<Swarm<FreedomBehaviour>, Box<dyn std::error::Error + Send + Sync>> {
     let mut swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
         .with_tcp(
