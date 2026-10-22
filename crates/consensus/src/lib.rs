@@ -1,7 +1,7 @@
 use freedom_primitives::{domain_hash, hash_bytes, merkle_root, Hash};
 use freedom_crypto::{sign, verify};
 use freedom_state::{Account, ChainState};
-use freedom_types::{Block, Event, Receipt, Transaction, ValidatorSetCertificate};
+use freedom_types::{Block, BlockHeader, Event, Receipt, Transaction, ValidatorSetCertificate};
 #[derive(Clone, Debug)] pub struct ConsensusConfig { pub min_validators: usize }
 impl Default for ConsensusConfig { fn default()->Self{Self{min_validators:3}}}
 pub fn validator_set_hash(set: &std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>) -> Hash {
@@ -440,7 +440,7 @@ mod m332_block_nonce_sequence_tests {
     }
 }
 
-#[cfg(test)]mod tests{use super::*;use freedom_primitives::{merkle_proof,merkle_root,verify_merkle_proof};use freedom_types::{TxKind,Transaction,Receipt};#[test]fn merkle_proof_verifies(){let leaves=vec![hash_bytes(b"a"),hash_bytes(b"b"),hash_bytes(b"c")];let root=merkle_root(&leaves);let proof=merkle_proof(&leaves,2).unwrap();assert!(verify_merkle_proof(root,leaves[2],&proof));}#[test]fn roots_are_order_sensitive(){let a=Transaction{chain_id:1,sender:[1;32],nonce:0,kind:TxKind::Transfer,payload:vec![1],fee:0,signature:vec![2;64]};let b=Transaction{chain_id:1,sender:[1;32],nonce:1,kind:TxKind::Transfer,payload:vec![2],fee:0,signature:vec![3;64]};assert_ne!(tx_root(&[a.clone(),b.clone()]),tx_root(&[b,a]));let r1=Receipt{tx_hash:a.hash(),success:true,gas_used:1,events:vec![]};let r2=Receipt{tx_hash:b.hash(),success:true,gas_used:1,events:vec![]};assert_ne!(receipts_root(&[r1.clone(),r2.clone()]),receipts_root(&[r2,r1]));}}
+#[cfg(test)]mod tests{use super::*;use freedom_primitives::{merkle_proof,merkle_root,verify_merkle_proof};use freedom_types::{TxKind,Transaction,Receipt};#[test]fn merkle_proof_verifies(){let leaves=vec![hash_bytes(b"a"),hash_bytes(b"b"),hash_bytes(b"c")];let root=merkle_root(&leaves);let proof=merkle_proof(&leaves,2).unwrap();assert!(verify_merkle_proof(root,leaves[2],&proof));}#[test]fn roots_are_order_sensitive(){let a=Transaction{chain_id:1,sender:[1;32],nonce:0,kind:TxKind::Transfer,payload:vec![1],fee:0,signature:vec![2;64]};let b=Transaction{chain_id:1,sender:[1;32],nonce:1,kind:TxKind::Transfer,payload:vec![2],fee:0,signature:vec![3;64]};assert_ne!(tx_root(&[a.clone(),b.clone()]),tx_root(&[b.clone(),a.clone()]));let r1=Receipt{tx_hash:a.hash(),success:true,gas_used:1,events:vec![]};let r2=Receipt{tx_hash:b.hash(),success:true,gas_used:1,events:vec![]};assert_ne!(receipts_root(&[r1.clone(),r2.clone()]),receipts_root(&[r2.clone(),r1.clone()]));}}
 
 
 
@@ -514,7 +514,7 @@ mod m335_active_validator_quorum_tests {
     use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
     use freedom_types::{Genesis, Validator, ValidatorSetEntry, ValidatorVote};
 
-    fn state_with_divergent_validator_sets() -> (ChainState, Vec<freedom_crypto::SigningKey>) {
+    fn state_with_divergent_validator_sets() -> (ChainState, Vec<ed25519_dalek::SigningKey>) {
         let keys = vec![generate_keypair(), generate_keypair(), generate_keypair(), generate_keypair(), generate_keypair()];
         let validators = keys.iter().enumerate().map(|(i, key)| {
             let public_key = key.verifying_key().to_bytes();
@@ -725,7 +725,7 @@ mod quorum_tests {
         let validators = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
-                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                validator_id: hash_bytes(&[b"validator".as_slice(), &[i + 1]].concat()),
                 owner: freedom_primitives::address_from_public_key(&key),
                 consensus_key: key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -755,15 +755,15 @@ mod quorum_tests {
     fn three_of_three_votes_reach_current_threshold() {
         let state = state_with_validators();
         let hash = hash_bytes(b"block");
-        let votes = vec![vote(&state, 0, hash, 1), vote(&state, 1, hash, 1), vote(&state, 2, hash, 1, 0)];
-        assert!(validate_quorum(&state, hash, 1, &votes).is_ok());
+        let votes = vec![vote(&state, 0, hash, 1, 0), vote(&state, 1, hash, 1, 0), vote(&state, 2, hash, 1, 0)];
+        assert!(validate_quorum(&state, hash, 1, 0, &votes).is_ok());
     }
 
     #[test]
     fn duplicate_vote_is_rejected() {
         let state = state_with_validators();
         let hash = hash_bytes(b"block");
-        let v = vote(&state, 0, hash, 1);
+        let v = vote(&state, 0, hash, 1, 0);
         assert!(validate_quorum(&state, hash, 1, 0, &[v.clone(), v]).is_err());
     }
 }
@@ -861,8 +861,9 @@ mod m325_precommit_stake_overflow_tests {
     fn validator_set(stakes: &[u128]) -> std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry> {
         stakes.iter().enumerate().map(|(i, stake)| {
             let key = [i as u8 + 40; 32];
-            let id = hash_bytes(&[b"m325-validator", &[i as u8 + 40]].concat());
+            let id = hash_bytes(&[b"m325-validator".as_slice(), &[i as u8 + 40]].concat());
             (id, freedom_types::ValidatorSetEntry {
+                validator_id: id,
                 owner: freedom_primitives::address_from_public_key(&key),
                 consensus_key: key,
                 stake: *stake,
@@ -1112,8 +1113,8 @@ mod m26_stake_tests {
     fn state(stakes: [u128;3]) -> ChainState {
         let validators=(0..3).map(|i|{
             let key=[(i+1) as u8;32];
-            let id=hash_bytes(&[b"v",&[(i+1) as u8]].concat());
-            Validator{validator_id:id,owner:freedom_primitives::address_from_public_key(&key),consensus_key:key,stake:stakes[i],blocks_proposed:0,blocks_finalized:0,missed_votes:0}
+            let id=hash_bytes(&[b"v".as_slice(),&[(i+1) as u8]].concat());
+            Validator{validator_id:id,owner:freedom_primitives::address_from_public_key(&key),consensus_key:key,stake:stakes[i],unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0}
         }).collect();
         ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators})
     }
@@ -1301,7 +1302,7 @@ mod m323_stake_quorum_overflow_tests {
     fn state_with_stakes(stakes: &[u128]) -> ChainState {
         let validators = stakes.iter().enumerate().map(|(i, stake)| {
             let key = [i as u8 + 1; 32];
-            let id = hash_bytes(&[b"m323-validator", &[i as u8 + 1]].concat());
+            let id = hash_bytes(&[b"m323-validator".as_slice(), &[i as u8 + 1]].concat());
             Validator {
                 validator_id: id,
                 owner: freedom_primitives::address_from_public_key(&key),
@@ -1324,7 +1325,7 @@ mod m323_stake_quorum_overflow_tests {
     fn huge_stake_does_not_turn_two_thirds_quorum_into_one_third() {
         let total = u128::MAX;
         let state = state_with_stakes(&[total / 3 + 1, total - (total / 3 + 1)]);
-        let first = hash_bytes(&[b"m323-validator", &[1u8]].concat());
+        let first = hash_bytes(&[b"m323-validator".as_slice(), &[1u8]].concat());
 
         let mut signers = std::collections::BTreeSet::new();
         signers.insert(first);
@@ -1357,7 +1358,7 @@ mod m324_stake_sum_overflow_tests {
         let stakes = [u128::MAX, 1u128];
         let validators = stakes.iter().enumerate().map(|(i, stake)| {
             let key = [i as u8 + 20; 32];
-            let id = hash_bytes(&[b"m324-validator", &[i as u8 + 20]].concat());
+            let id = hash_bytes(&[b"m324-validator".as_slice(), &[i as u8 + 20]].concat());
             Validator {
                 validator_id: id,
                 owner: freedom_primitives::address_from_public_key(&key),
