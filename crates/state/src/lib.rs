@@ -2457,7 +2457,7 @@ mod m330_public_chain_id_boundary_tests {
   if active<p.amount{return Err(StateError::InsufficientBalance)}
   let a=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
   if a.staked<p.amount{return Err(StateError::InsufficientBalance)}
-  let release_height=self.height.checked_add(UNBONDING_COOLDOWN).ok_or(StateError::ArithmeticOverflow)?;
+  let release_height=self.height.checked_add(Self::UNBONDING_COOLDOWN).ok_or(StateError::ArithmeticOverflow)?;
   let unbonding_id=freedom_primitives::hash_bytes(&[b"FREEDOM-UNBONDING-V1".as_slice(),&id,&tx.sender,&tx.nonce.to_le_bytes(),&p.amount.to_le_bytes(),&release_height.to_le_bytes()].concat());
   if self.unbonding.contains_key(&unbonding_id){return Err(StateError::InvalidUnbonding)}
   let v=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?;
