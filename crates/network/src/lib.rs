@@ -849,7 +849,27 @@ pub fn validate_validator_set_vote(
     Ok(())
 }
 
-pub fn make_timeout(state: &ChainState, height: u64, round: u64, validator_id: Hash, consensus_key: &ed25519_dalek::SigningKey) -> Result<ValidatorTimeout, String> {\n    let validator = state.active_validator_set.get(&validator_id)\n        .ok_or_else(|| "timeout signer is not active".to_string())?;\n    if validator.consensus_key != consensus_key.verifying_key().to_bytes() {\n        return Err("timeout signer key mismatch".into());\n    }\n    let mut t = ValidatorTimeout {\n        height,\n        round,\n        validator_id,\n        signature: Vec::new(),\n    };\n    t.signature = sign(consensus_key, &t.signing_bytes()).to_vec();\n    Ok(t)\n}
+pub fn make_timeout(
+    state: &ChainState,
+    height: u64,
+    round: u64,
+    validator_id: Hash,
+    consensus_key: &ed25519_dalek::SigningKey,
+) -> Result<ValidatorTimeout, String> {
+    let validator = state.active_validator_set.get(&validator_id)
+        .ok_or_else(|| "timeout signer is not active".to_string())?;
+    if validator.consensus_key != consensus_key.verifying_key().to_bytes() {
+        return Err("timeout signer key mismatch".into());
+    }
+    let mut t = ValidatorTimeout {
+        height,
+        round,
+        validator_id,
+        signature: Vec::new(),
+    };
+    t.signature = sign(consensus_key, &t.signing_bytes()).to_vec();
+    Ok(t)
+}
 
 pub fn proposal_topic() -> IdentTopic {
     IdentTopic::new(PROPOSAL_TOPIC)
