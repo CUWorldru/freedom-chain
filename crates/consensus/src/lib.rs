@@ -76,7 +76,7 @@ pub fn validate_validator_set_certificate(
 pub fn validate_genesis(state:&ChainState,config:&ConsensusConfig)->Result<(),String>{if state.validators.len()<config.min_validators{return Err(format!("M0 requires at least {} validators",config.min_validators));}if state.supply.total!=0{return Err("genesis supply must be zero".into())}Ok(())}
 fn push_u32(o:&mut Vec<u8>,v:u32){o.extend_from_slice(&v.to_le_bytes())} fn push_u64(o:&mut Vec<u8>,v:u64){o.extend_from_slice(&v.to_le_bytes())} fn push_bytes(o:&mut Vec<u8>,b:&[u8]){push_u64(o,b.len() as u64);o.extend_from_slice(b)}
 fn canonical_tx(o:&mut Vec<u8>,tx:&Transaction){push_u32(o,tx.chain_id);o.extend_from_slice(&tx.sender);push_u64(o,tx.nonce);o.push(tx.kind.code());push_bytes(o,&tx.payload);o.extend_from_slice(&tx.fee.to_le_bytes());push_bytes(o,&tx.signature)}
-fn canonical_event(o:&mut Vec<u8>,e:&Event){match e{Event::NativeAssetTransferred{from,to,amount}=>{o.push(1);o.extend_from_slice(from);o.extend_from_slice(to);o.extend_from_slice(&amount.to_le_bytes())},Event::TicketCreated{ticket_id,draw_id,owner}=>{o.push(2);o.extend_from_slice(ticket_id);o.extend_from_slice(draw_id);o.extend_from_slice(owner)},Event::DrawFundAllocated{draw_id,prize_pool,cu_fund,annual_reserve}=>{o.push(3);o.extend_from_slice(draw_id);o.extend_from_slice(&prize_pool.to_le_bytes());o.extend_from_slice(&cu_fund.to_le_bytes());o.extend_from_slice(&annual_reserve.to_le_bytes())},Event::DrawExecuted{draw_id,randomness_seed,selection_proof}=>{o.push(4);o.extend_from_slice(draw_id);o.extend_from_slice(randomness_seed);o.extend_from_slice(selection_proof)},Event::PrizePaid{draw_id,ticket_id,winner,amount}=>{o.push(5);o.extend_from_slice(draw_id);o.extend_from_slice(ticket_id);o.extend_from_slice(winner);o.extend_from_slice(&amount.to_le_bytes())}}}
+fn canonical_event(o:&mut Vec<u8>,e:&Event){match e{Event::NativeAssetTransferred{from,to,amount}=>{o.push(1);o.extend_from_slice(from);o.extend_from_slice(to);o.extend_from_slice(&amount.to_le_bytes())},Event::TicketCreated{ticket_id,draw_id,owner}=>{o.push(2);o.extend_from_slice(ticket_id);o.extend_from_slice(draw_id);o.extend_from_slice(owner)},Event::DrawFundAllocated{draw_id,prize_pool,cu_fund,annual_reserve}=>{o.push(3);o.extend_from_slice(draw_id);o.extend_from_slice(&prize_pool.to_le_bytes());o.extend_from_slice(&cu_fund.to_le_bytes());o.extend_from_slice(&annual_reserve.to_le_bytes())},Event::DrawExecuted{draw_id,randomness_seed,selection_proof}=>{o.push(4);o.extend_from_slice(draw_id);o.extend_from_slice(randomness_seed);o.extend_from_slice(selection_proof)},Event::PrizePaid{draw_id,ticket_id,winner,amount}=>{o.push(5);o.extend_from_slice(draw_id);o.extend_from_slice(ticket_id);o.extend_from_slice(winner);o.extend_from_slice(&amount.to_le_bytes())},Event::BridgeMinted{replay_key,asset_id,recipient,amount}=>{o.push(6);o.extend_from_slice(replay_key);o.extend_from_slice(asset_id);o.extend_from_slice(recipient);o.extend_from_slice(&amount.to_le_bytes())},Event::EquivocationSlashed{evidence_hash,validator_id,amount}=>{o.push(7);o.extend_from_slice(evidence_hash);o.extend_from_slice(validator_id);o.extend_from_slice(&amount.to_le_bytes())}}}
 pub fn canonical_receipt_bytes(r:&Receipt)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(b"FREEDOM-RECEIPT-V1");o.extend_from_slice(&r.tx_hash);o.push(r.success as u8);o.extend_from_slice(&r.gas_used.to_le_bytes());o.extend_from_slice(&(r.events.len() as u64).to_le_bytes());for e in &r.events{canonical_event(&mut o,e)}o}
 pub fn tx_root(txs:&[Transaction])->Hash{let leaves:Vec<Hash>=txs.iter().map(|t|domain_hash(b"FREEDOM-TX-LEAF-V1",&[&t.hash()])).collect();merkle_root(&leaves)}
 pub fn receipts_root(rs:&[Receipt])->Hash{let leaves:Vec<Hash>=rs.iter().map(|r|domain_hash(b"FREEDOM-RECEIPT-LEAF-V1",&[&hash_bytes(&canonical_receipt_bytes(r))])).collect();merkle_root(&leaves)}
@@ -443,7 +443,6 @@ mod m332_block_nonce_sequence_tests {
 #[cfg(test)]mod tests{use super::*;use freedom_primitives::{merkle_proof,merkle_root,verify_merkle_proof};use freedom_types::{TxKind,Transaction,Receipt};#[test]fn merkle_proof_verifies(){let leaves=vec![hash_bytes(b"a"),hash_bytes(b"b"),hash_bytes(b"c")];let root=merkle_root(&leaves);let proof=merkle_proof(&leaves,2).unwrap();assert!(verify_merkle_proof(root,leaves[2],&proof));}#[test]fn roots_are_order_sensitive(){let a=Transaction{chain_id:1,sender:[1;32],nonce:0,kind:TxKind::Transfer,payload:vec![1],fee:0,signature:vec![2;64]};let b=Transaction{chain_id:1,sender:[1;32],nonce:1,kind:TxKind::Transfer,payload:vec![2],fee:0,signature:vec![3;64]};assert_ne!(tx_root(&[a.clone(),b.clone()]),tx_root(&[b,a]));let r1=Receipt{tx_hash:a.hash(),success:true,gas_used:1,events:vec![]};let r2=Receipt{tx_hash:b.hash(),success:true,gas_used:1,events:vec![]};assert_ne!(receipts_root(&[r1.clone(),r2.clone()]),receipts_root(&[r2,r1]));}}
 
 
-use freedom_crypto::verify;
 
 pub fn quorum_threshold(validator_count: usize) -> usize {
     if validator_count == 0 { return usize::MAX; }
@@ -905,7 +904,7 @@ pub fn validate_precommit_quorum(
 
 pub fn detect_prevote_equivocation(
     votes: &[freedom_types::ValidatorVote],
-) -> Vec<(Hash, Hash, u64, u64)> {
+) -> Vec<(Hash, Hash, Hash, u64)> {
     let mut first = std::collections::BTreeMap::<(Hash,u64,u64), Hash>::new();
     let mut evidence = Vec::new();
     for vote in votes {
@@ -921,7 +920,7 @@ pub fn detect_prevote_equivocation(
 
 pub fn detect_precommit_equivocation(
     precommits: &[freedom_types::ValidatorPrecommit],
-) -> Vec<(Hash, Hash, u64, u64)> {
+) -> Vec<(Hash, Hash, Hash, u64)> {
     let mut first = std::collections::BTreeMap::<(Hash,u64,u64), Hash>::new();
     let mut evidence = Vec::new();
     for precommit in precommits {
