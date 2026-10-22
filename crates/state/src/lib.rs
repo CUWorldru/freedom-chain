@@ -3193,7 +3193,7 @@ mod m155_bridge_mint_boundary_tests {
 
   let deposit=VerifiedDeposit{canonical_asset_id:asset_id,representation_asset_id:[2;32],bridge_id,source_chain_id,tx_hash:[4;32],event_index:7,block_or_slot:8,confirmations:20,amount:500,recipient:vec![9;20],replay_key:[10;32],proof_hash:[11;32]};
   let message=deposit.to_bridge_message(freedom_primitives::CHAIN_ID,1).unwrap();
-  let unsigned=BridgeMessageApproval{bridge_id,message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
+  let unsigned=BridgeMessageApproval{bridge_id:message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
   let signature=freedom_crypto::sign(&key,&unsigned.approval_hash());
   let approvals=BridgeMessageApprovalSet{bridge_id:message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
   let auth=BridgeMintAuthorization::from_authenticated_message(&message,&deposit,&approvals,state.bridge_security_policies.get(&bridge_id).unwrap(),&state.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()).unwrap();
@@ -3272,9 +3272,9 @@ mod m156_bridge_mint_transaction_tests {
 
   let deposit=VerifiedDeposit{canonical_asset_id:asset_id,representation_asset_id:[2;32],bridge_id,source_chain_id,tx_hash:[4;32],event_index:7,block_or_slot:8,confirmations:20,amount:500,recipient:vec![9;20],replay_key:[10;32],proof_hash:[11;32]};
   let message=deposit.to_bridge_message(freedom_primitives::CHAIN_ID,1).unwrap();
-  let unsigned=BridgeMessageApproval{bridge_id,message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
+  let unsigned=BridgeMessageApproval{bridge_id:message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
   let signature=sign(&validator_key,&unsigned.approval_hash());
-  let approvals=BridgeMessageApprovalSet{bridge_id,message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
+  let approvals=BridgeMessageApprovalSet{bridge_id:message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
   let auth=BridgeMintAuthorization::from_authenticated_message(&message,&deposit,&approvals,state.bridge_security_policies.get(&bridge_id).unwrap(),&state.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()).unwrap();
 
   state.record_bridge_message(message.clone()).unwrap();
