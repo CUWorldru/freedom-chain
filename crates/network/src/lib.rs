@@ -1219,7 +1219,7 @@ mod tests {
         let mut set = std::collections::BTreeMap::new();
         set.insert(id, entry);
         let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
-            chain_id: u64::from(freedom_primitives::CHAIN_ID),
+            chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![freedom_types::Validator {
                 validator_id: id, owner: [1; 32], consensus_key: key, stake: 10,
@@ -1247,7 +1247,7 @@ mod tests {
         let mut set = std::collections::BTreeMap::new();
         set.insert(id, entry);
         let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
-            chain_id: u64::from(freedom_primitives::CHAIN_ID),
+            chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![freedom_types::Validator {
                 validator_id: id, owner: [1; 32], consensus_key: key, stake: 10,
