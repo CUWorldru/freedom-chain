@@ -51,3 +51,11 @@ pub fn commit_validator_set_certificate(
 ) -> Result<(), String> {
     freedom_consensus::validate_validator_set_certificate(state, certificate)?;
     if let Some(existing) = state.validator_set_certificate.as_ref() {
+        if existing != certificate {
+            return Err("validator set certificate is already committed for this transition".into());
+        }
+        return Ok(());
+    }
+    state.validator_set_certificate = Some(certificate.clone());
+    Ok(())
+}
