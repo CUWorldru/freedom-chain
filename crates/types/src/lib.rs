@@ -17,6 +17,45 @@ pub struct BlockHeader {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Block { pub header: BlockHeader, pub transactions: Vec<Transaction>, pub receipts: Vec<Receipt> }
 
+/// Finality proof family. Ethereum and Tron are intentionally fail-closed until
+/// their chain-specific consensus verifiers are implemented and audited.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CrossChainProofKind {
+    BitcoinUtxo,
+    Ethereum,
+    Tron,
+    Other,
+}
+
+/// Canonical cross-chain finality statement. This is a commitment envelope,
+/// not a proof by itself; callers must validate it against chain-specific
+/// consensus evidence and the local bridge policy before accepting deposits.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrossChainFinalityEnvelope {
+    pub bridge_id: Hash,
+    pub chain_id: u64,
+    pub sequence: u64,
+    pub proof_kind: CrossChainProofKind,
+    pub finalized_height: u64,
+    pub finalized_hash: Hash,
+    pub state_root: Hash,
+    pub previous_state_root: Hash,
+    pub proof_hash: Hash,
+}
+
+impl CrossChainFinalityEnvelope {
+    pub fn validate_structure(&self) -> bool {
+        self.bridge_id != [0; 32]
+            && self.sequence > 0
+            && self.finalized_height > 0
+            && self.finalized_hash != [0; 32]
+            && self.state_root != [0; 32]
+            && self.previous_state_root != [0; 32]
+            && self.proof_hash != [0; 32]
+            && self.state_root != self.previous_state_root
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Transaction {
     pub chain_id: u32, pub sender: Address, pub nonce: u64, pub kind: TxKind,
