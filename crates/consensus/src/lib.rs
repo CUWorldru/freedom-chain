@@ -560,7 +560,7 @@ mod m337_certificate_active_quorum_tests {
     use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
     use freedom_types::{Genesis, Validator, ValidatorSetCertificate, ValidatorSetEntry, ValidatorSetVote};
 
-    fn transition_state() -> (ChainState, Vec<freedom_crypto::SigningKey>) {
+    fn transition_state() -> (ChainState, Vec<ed25519_dalek::SigningKey>) {
         let keys: Vec<_> = (0..5).map(|_| generate_keypair()).collect();
         let mut state = ChainState::genesis(&Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: vec![] });
         state.epoch = 4;
@@ -610,7 +610,7 @@ mod m336_timeout_active_validator_quorum_tests {
     use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
     use freedom_types::{Genesis, Validator, ValidatorTimeout, ValidatorSetEntry};
 
-    fn divergent_state() -> (ChainState, Vec<freedom_crypto::SigningKey>) {
+    fn divergent_state() -> (ChainState, Vec<ed25519_dalek::SigningKey>) {
         let keys: Vec<_> = (0..5).map(|_| generate_keypair()).collect();
         let validators = keys.iter().enumerate().map(|(i, key)| {
             let public_key = key.verifying_key().to_bytes();
