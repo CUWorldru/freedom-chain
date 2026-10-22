@@ -4126,6 +4126,7 @@ impl SubmitEvidencePayload {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EvidenceMessage { pub evidence: EquivocationEvidence, pub sender: Hash, pub signature: Vec<u8> }
 
 impl EvidenceMessage { pub fn signing_bytes(&self)->Vec<u8>{ let mut out=Vec::new(); out.extend_from_slice(b"FREEDOM-EVIDENCE-MSG-V1"); out.extend_from_slice(&self.evidence.evidence_hash); out.extend_from_slice(&self.evidence.validator_id); out.extend_from_slice(&self.sender); out } pub fn message_id(&self)->Hash{freedom_primitives::hash_bytes(&self.signing_bytes())} }
