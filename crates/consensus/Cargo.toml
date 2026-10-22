@@ -9,3 +9,6 @@ freedom-primitives = { path = "../primitives" }
 freedom-types = { path = "../types" }
 freedom-state = { path = "../state" }
 freedom-crypto = { path = "../crypto" }
+
+[dev-dependencies]
+ed25519-dalek = { workspace = true }
