@@ -735,7 +735,7 @@ mod quorum_tests {
     }
 
     fn vote(state: &ChainState, index: u8, block_hash: Hash, height: u64, round: u64) -> ValidatorVote {
-        let id = hash_bytes(&[b"validator", &[index + 1]].concat());
+        let id = hash_bytes(&[b"validator".as_slice(), &[index + 1]].concat());
         let key = [index + 1; 32];
         let mut v = ValidatorVote { block_hash, height, round, validator_id: id, signature: Vec::new() };
         v.signature = sign(&ed25519_dalek::SigningKey::from_bytes(&key), &v.signing_bytes()).to_vec();
@@ -1338,7 +1338,7 @@ mod m323_stake_quorum_overflow_tests {
         let total = u128::MAX;
         let required = total - total / 3;
         let state = state_with_stakes(&[required, total - required]);
-        let first = hash_bytes(&[b"m323-validator", &[1u8]].concat());
+        let first = hash_bytes(&[b"m323-validator".as_slice(), &[1u8]].concat());
 
         let mut signers = std::collections::BTreeSet::new();
         signers.insert(first);
