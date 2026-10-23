@@ -1113,7 +1113,7 @@ mod m26_stake_tests {
     fn state(stakes: [u128;3]) -> ChainState {
         let validators=(0..3).map(|i|{
             let key=[(i+1) as u8;32];
-            let id=hash_bytes(&[b"v".as_slice(),&[(i+1) as u8]].concat());
+            let id=hash_bytes(&[b"v".as_slice(),&[(i+1) as u8][..]].concat());
             Validator{validator_id:id,owner:freedom_primitives::address_from_public_key(&key),consensus_key:key,stake:stakes[i],unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0}
         }).collect();
         ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators})
@@ -1302,7 +1302,7 @@ mod m323_stake_quorum_overflow_tests {
     fn state_with_stakes(stakes: &[u128]) -> ChainState {
         let validators = stakes.iter().enumerate().map(|(i, stake)| {
             let key = [i as u8 + 1; 32];
-            let id = hash_bytes(&[b"m323-validator".as_slice(), &[i as u8 + 1]].concat());
+            let id = hash_bytes(&[b"m323-validator".as_slice(), &[i as u8 + 1][..]].concat());
             Validator {
                 validator_id: id,
                 owner: freedom_primitives::address_from_public_key(&key),
@@ -1325,7 +1325,7 @@ mod m323_stake_quorum_overflow_tests {
     fn huge_stake_does_not_turn_two_thirds_quorum_into_one_third() {
         let total = u128::MAX;
         let state = state_with_stakes(&[total / 3 + 1, total - (total / 3 + 1)]);
-        let first = hash_bytes(&[b"m323-validator".as_slice(), &[1u8]].concat());
+        let first = hash_bytes(&[b"m323-validator".as_slice(), &[1u8][..]].concat());
 
         let mut signers = std::collections::BTreeSet::new();
         signers.insert(first);
@@ -1358,7 +1358,7 @@ mod m324_stake_sum_overflow_tests {
         let stakes = [u128::MAX, 1u128];
         let validators = stakes.iter().enumerate().map(|(i, stake)| {
             let key = [i as u8 + 20; 32];
-            let id = hash_bytes(&[b"m324-validator".as_slice(), &[i as u8 + 20]].concat());
+            let id = hash_bytes(&[b"m324-validator".as_slice(), &[i as u8 + 20][..]].concat());
             Validator {
                 validator_id: id,
                 owner: freedom_primitives::address_from_public_key(&key),
