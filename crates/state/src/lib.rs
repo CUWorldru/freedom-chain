@@ -2186,7 +2186,7 @@ impl ChainState {
   Ok(())
  }
 
- pub(crate) fn maybe_advance_epoch(&mut self){
+ pub fn maybe_advance_epoch(&mut self){
   let at_epoch_boundary=self.epoch_length>0
     && self.height>0
     && self.height%self.epoch_length==0;
