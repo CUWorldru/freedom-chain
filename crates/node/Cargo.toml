@@ -17,3 +17,5 @@ freedom-network = { path = "../network" }
 libp2p.workspace = true
 tokio.workspace = true
 freedom-storage = { path = "../storage" }
+freedom-crypto = { path = "../crypto" }
+hex.workspace = true
