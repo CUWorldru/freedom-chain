@@ -4220,7 +4220,7 @@ mod m241_bridge_mint_execution_security_tests {
                 owner: [0u8; 32],
                 consensus_key: registry_only_key,
                 stake: 1,
-            , unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0, },
+            unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0, },
         );
 
         let keys = state.active_validator_set.iter()
@@ -5386,7 +5386,7 @@ mod m306_evidence_event_canonicalization_tests {
             sender:owner, nonce:0, fee:0,
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
-        , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
+        chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
         assert!(state.execute_transaction(&tx).is_ok());
         assert!(matches!(
             state.events.last(),
@@ -5430,7 +5430,7 @@ mod m305_evidence_nonce_atomicity_tests {
             sender:owner, nonce:u64::MAX, fee:0,
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
-        , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
+        chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
         assert_eq!(state.execute_transaction(&tx),Err(StateError::ArithmeticOverflow));
         assert!(!state.evidence.contains_key(&evidence.evidence_hash));
         assert!(!state.slashed_evidence.contains_key(&evidence.evidence_hash));
@@ -5477,7 +5477,7 @@ mod m304_slash_replay_evidence_binding_tests {
             sender:owner, nonce:0, fee:0,
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
-        , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
+        chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
         assert_eq!(state.execute_transaction(&tx),Err(StateError::InvalidEvidence));
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,0);
     }
@@ -5519,7 +5519,7 @@ mod m303_slash_replay_transaction_tests {
             sender:owner, nonce:0, fee:0,
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
-        , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
+        chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
         assert!(state.execute_transaction(&tx).is_ok());
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,1);
     }
@@ -5552,7 +5552,7 @@ mod m303_slash_replay_transaction_tests {
             sender:owner, nonce:0, fee:0,
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
-        , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
+        chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
         assert_eq!(state.execute_transaction(&tx),Err(StateError::InvalidEvidence));
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,0);
     }
@@ -5677,7 +5677,7 @@ mod m300_evidence_submission_atomicity_tests {
             sender:owner, nonce:0, fee:0,
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
-        , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
+        chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
         assert_eq!(state.execute_transaction(&tx),Err(StateError::InvalidEvidence));
         assert!(!state.evidence.contains_key(&evidence.evidence_hash));
         assert!(!state.slashed_evidence.contains_key(&evidence.evidence_hash));
@@ -5710,7 +5710,7 @@ mod m300_evidence_submission_atomicity_tests {
             sender:owner, nonce:0, fee:0,
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
-        , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
+        chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
         assert!(state.execute_transaction(&tx).is_ok());
         assert_eq!(state.slashed_evidence.get(&evidence.evidence_hash),Some(&10));
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,1);
@@ -5757,7 +5757,7 @@ mod m299_evidence_slash_basis_hardening_tests {
             sender:owner, nonce:0, fee:0,
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
-        , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], });
+        chain_id: freedom_primitives::CHAIN_ID, signature: vec![], });
         assert!(result.is_ok());
         assert_eq!(state.slashed_evidence.get(&evidence.evidence_hash),Some(&10));
     }
