@@ -724,7 +724,7 @@ mod tests {
             chain_id: 1, initial_supply: 0, validators: vec![]
         });
         let snapshot = StateSnapshot {
-            chain_id: CHAIN_ID,
+            chain_id: u64::from(CHAIN_ID),
             height: 1,
             block_hash: [7; 32],
             state_root: genesis.state_root(),
@@ -854,7 +854,7 @@ mod tests {
             chain_id: 1, initial_supply: 0, validators: vec![]
         });
         let mut snapshot = StateSnapshot {
-            chain_id: CHAIN_ID,
+            chain_id: u64::from(CHAIN_ID),
             height: 0,
             block_hash: [0; 32],
             state_root: genesis.state_root(),
