@@ -1115,7 +1115,7 @@ mod m225_bridge_approval_set_active_validator_tests {
 
     #[test]
     fn approval_set_rejects_inactive_validator() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bridge_security_policies.insert([7;32], freedom_types::BridgeSecurityPolicy {
             bridge_id:[7;32], approval_mode: freedom_types::BridgeApprovalMode::Quorum,
@@ -1140,7 +1140,7 @@ mod m223_bitcoin_reorg_recovery_active_validator_tests {
 
     #[test]
     fn recovery_rejects_signer_outside_active_set() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bitcoin_reorg_policy.insert([7;32], freedom_types::BitcoinReorgPolicy {
             bridge_id:[7;32], max_reorg_depth:6, min_chainwork:[1;32], validator_quorum:1,
@@ -1229,7 +1229,7 @@ mod m222_bitcoin_attestation_apply_active_validator_tests {
 
     #[test]
     fn commitment_validation_rejects_signer_outside_active_set() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bitcoin_canonical_tips.insert([7;32], freedom_types::BitcoinChainCheckpoint {
             height: 100, block_hash: [8;32], chainwork: [9;32],
@@ -1274,7 +1274,7 @@ mod m221_bitcoin_attestation_active_validator_tests {
 
     #[test]
     fn registration_rejects_attestation_signer_outside_active_set() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bitcoin_canonical_tips.insert([7;32], freedom_types::BitcoinChainCheckpoint {
             height: 100, block_hash: [8;32], chainwork: [9;32],
@@ -1321,7 +1321,7 @@ mod m220_sequence_overflow_tests {
 
     #[test]
     fn finality_rejects_repeated_max_sequence() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bitcoin_canonical_tips.insert([7;32], freedom_types::BitcoinChainCheckpoint {
             height: 100, block_hash: [8;32], chainwork: [9;32],
@@ -1350,7 +1350,7 @@ mod m219_bitcoin_utxo_attestation_sequence_tests {
     use super::*;
 
     fn state_with_attestation(sequence: u64) -> ChainState {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bitcoin_canonical_tips.insert([7;32], freedom_types::BitcoinChainCheckpoint {
             height: 100, block_hash: [8;32], chainwork: [9;32],
@@ -1390,7 +1390,7 @@ mod m215_cross_chain_finality_bitcoin_binding_tests {
     use super::*;
 
     fn state_with_bitcoin_finality() -> ChainState {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bitcoin_canonical_tips.insert([7;32], freedom_types::BitcoinChainCheckpoint {
             height: 100, block_hash: [8;32], chainwork: [9;32],
@@ -2967,7 +2967,7 @@ mod m32_tests {
  #[test]
  fn slash_amount_is_deterministic_by_evidence_kind() {
   let s=1_000_000u128;
-  let g=freedom_types::Genesis::default();
+  let g=freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
   let state=ChainState::genesis(&g);
   assert_eq!(state.deterministic_slash_amount(&freedom_types::EquivocationKind::DoubleProposal,s),50_000);
   assert_eq!(state.deterministic_slash_amount(&freedom_types::EquivocationKind::DoublePrevote,s),100_000);
@@ -2975,7 +2975,7 @@ mod m32_tests {
  }
  #[test]
  fn zero_stake_has_zero_slash() {
-  let g=freedom_types::Genesis::default();
+  let g=freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
   let state=ChainState::genesis(&g);
   assert_eq!(state.deterministic_slash_amount(&freedom_types::EquivocationKind::DoublePrecommit,0),0);
  }
@@ -3344,7 +3344,7 @@ mod m208_bitcoin_attestation_chain_id_tests {
 
     fn state_with_bitcoin_bridge() -> ChainState {
         let genesis = freedom_types::Genesis {
-            initial_supply: 0,
+            chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0,
             validators: vec![],
         };
         let mut state = ChainState::genesis(&genesis);
@@ -3411,7 +3411,7 @@ mod m209_bitcoin_state_proof_chain_id_tests {
     use freedom_types::{BitcoinChainCheckpoint, BitcoinUtxoAccumulator, BitcoinUtxoAccumulatorProof, BitcoinUtxoProof, BitcoinUtxoSpendStateProof};
 
     fn state_with_tip() -> ChainState {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bitcoin_canonical_tips.insert(
             [7; 32],
@@ -3491,7 +3491,7 @@ mod m210_bitcoin_adapter_chain_id_tests {
     use freedom_types::{BitcoinChainCheckpoint, BridgeAdapterDescriptor, BridgeAdapterKind};
 
     fn state_with_bitcoin_bridge() -> ChainState {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
             bridge_id: [7; 32],
@@ -3557,7 +3557,7 @@ mod m426_bitcoin_utxo_header_binding_tests {
 
     #[test]
     fn utxo_deposit_rejects_merkle_proof_with_invalid_block_header_binding() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         let bridge = [7u8; 32];
         state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
@@ -3616,7 +3616,7 @@ mod m211_bitcoin_merkle_proof_chain_id_tests {
     use freedom_types::{BitcoinChainCheckpoint, BitcoinMerkleProof, BitcoinBlockHeader};
 
     fn state_with_tip() -> ChainState {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.register_bridge_security_policy(freedom_types::BridgeSecurityPolicy {
             bridge_id: [7; 32],
@@ -3681,7 +3681,7 @@ mod m427_bitcoin_utxo_transition_anchor_tests {
 
     #[test]
     fn accumulator_transition_rejects_unanchored_previous_root() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         let bridge = [7u8; 32];
         let canonical = BitcoinChainCheckpoint { height: 100, block_hash: [8u8; 32], chainwork: [9u8; 32] };
@@ -3727,7 +3727,7 @@ mod m425_bitcoin_utxo_accumulator_anchor_tests {
 
     #[test]
     fn accumulator_proof_must_match_authoritative_attestation_root() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         let bridge = [7u8; 32];
         let canonical = BitcoinChainCheckpoint { height: 100, block_hash: [8u8; 32], chainwork: [9u8; 32] };
@@ -3801,7 +3801,7 @@ mod m212_bitcoin_utxo_transition_chain_id_tests {
     #[test]
     fn block_transition_rejects_non_bitcoin_chain_id() {
         let state = {
-            let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+            let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
             let mut state = ChainState::genesis(&genesis);
             state.bitcoin_canonical_tips.insert([7; 32], BitcoinChainCheckpoint {
                 height: 100, block_hash: [8; 32], chainwork: [9; 32],
@@ -3826,7 +3826,7 @@ mod m212_bitcoin_utxo_transition_chain_id_tests {
     #[test]
     fn accumulator_transition_rejects_non_bitcoin_chain_id() {
         let state = {
-            let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+            let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
             let mut state = ChainState::genesis(&genesis);
             state.bitcoin_canonical_tips.insert([7; 32], BitcoinChainCheckpoint {
                 height: 100, block_hash: [8; 32], chainwork: [9; 32],
@@ -3848,7 +3848,7 @@ mod m213_bitcoin_utxo_root_continuity_tests {
     use freedom_types::{BitcoinChainCheckpoint, BitcoinUtxoBlockCommitment, BitcoinUtxoSmtUpdateProof, BitcoinUtxoCommitmentAttestation};
 
     fn state_with_root(root: [u8;32]) -> ChainState {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         state.bitcoin_canonical_tips.insert([7; 32], BitcoinChainCheckpoint {
             height: 100, block_hash: [8; 32], chainwork: [9; 32],
@@ -3966,7 +3966,7 @@ mod m235_bitcoin_reorg_gate_validation_tests {
     use freedom_types::{BitcoinChainCheckpoint, BitcoinReorgEvidence, BitcoinReorgPolicy};
 
     fn state_with_critical_reorg() -> ChainState {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         let bridge_id = [7; 32];
         state.bitcoin_canonical_tips.insert(
@@ -4180,7 +4180,7 @@ mod m241_bridge_mint_execution_security_tests {
 
     #[test]
     fn bridge_mint_execution_key_map_excludes_registry_only_validator() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         let active_id = [11u8; 32];
         let active_key = [12u8; 32];
@@ -4698,7 +4698,7 @@ mod m267_validator_quorum_binding_tests {
 
     #[test]
     fn finality_rejects_policy_total_smaller_than_historical_validator_set() {
-        let mut state = ChainState::genesis(&freedom_types::Genesis { initial_supply: 0, validators: vec![] });
+        let mut state = ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         let keys = BTreeMap::from([
             ([1u8;32], [2u8;32]),
             ([3u8;32], [4u8;32]),
@@ -4727,7 +4727,7 @@ mod m268_validator_set_binding_tests {
 
     #[test]
     fn finality_integrity_rejects_historical_entry_hash_mismatch() {
-        let mut state=ChainState::genesis(&freedom_types::Genesis { initial_supply:0, validators:vec![] });
+        let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] });
         let mut entries=BTreeMap::new();
         entries.insert([1u8;32],freedom_types::ValidatorSetEntry{validator_id:[1u8;32],owner:[2u8;32],consensus_key:[3u8;32],stake:100});
         state.validator_set_history_entries.insert(0,entries);
@@ -4736,7 +4736,7 @@ mod m268_validator_set_binding_tests {
 
     #[test]
     fn historical_entry_mutation_changes_state_root() {
-        let mut state=ChainState::genesis(&freedom_types::Genesis { initial_supply:0, validators:vec![] });
+        let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] });
         let before=state.state_root();
         state.validator_set_history_entries.get_mut(&0).unwrap().values_mut().next().unwrap().stake=101;
         assert_ne!(before,state.state_root());
@@ -4984,7 +4984,7 @@ mod m276_bitcoin_attestation_epoch_binding_tests {
 
     #[test]
     fn attestation_must_bind_to_current_validator_set_epoch_and_hash() {
-        let genesis = freedom_types::Genesis { initial_supply: 0, validators: vec![] };
+        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let state = ChainState::genesis(&genesis);
         let expected_hash = *state.validator_set_history.get(&state.epoch).unwrap();
 
@@ -5833,7 +5833,7 @@ mod m297_slashed_evidence_history_hardening_tests {
 
     #[test]
     fn orphan_slashed_evidence_still_rejected() {
-        let mut state=ChainState::genesis(&freedom_types::Genesis::default());
+        let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         state.slashed_evidence.insert([1;32],1);
         assert_eq!(
             state.validate_slashed_evidence_integrity(),
@@ -6038,7 +6038,7 @@ mod m293_validator_set_certificate_quorum_hardening_tests {
 
     #[test]
     fn certificate_quorum_is_strictly_more_than_two_thirds() {
-        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let mut state = ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         state.staking_activated = true;
         state.epoch = 1;
 
@@ -6198,7 +6198,7 @@ mod m291_validator_set_certificate_integrity_hardening_tests {
 
     #[test]
     fn certificate_without_staking_activation_is_rejected() {
-        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let mut state = ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         state.validator_set_certificate = Some(freedom_types::ValidatorSetCertificate {
             from_epoch: 0,
             to_epoch: 1,
@@ -6215,14 +6215,14 @@ mod m291_validator_set_certificate_integrity_hardening_tests {
 
     #[test]
     fn missing_certificate_is_allowed_before_transition() {
-        let state = ChainState::genesis(&freedom_types::Genesis::default());
+        let state = ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
 
         assert_eq!(state.validate_validator_set_certificate_integrity(), Ok(()));
     }
 
     #[test]
     fn certificate_hash_must_match_current_active_set() {
-        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let mut state = ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         state.staking_activated = true;
         state.epoch = 1;
         state.validator_set_history.insert(1, [3; 32]);
@@ -6252,7 +6252,7 @@ mod m290_slashed_evidence_integrity_hardening_tests {
 
     #[test]
     fn orphan_slashed_evidence_is_rejected() {
-        let state = ChainState::genesis(&freedom_types::Genesis::default());
+        let state = ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         let mut state = state;
         state.slashed_evidence.insert([7u8; 32], 1);
 
@@ -6262,7 +6262,7 @@ mod m290_slashed_evidence_integrity_hardening_tests {
 
     #[test]
     fn zero_slash_amount_is_rejected() {
-        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let mut state = ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         let key = [3u8; 32];
         let id = freedom_primitives::hash_bytes(&key);
         let owner = [2u8; 32];
@@ -6300,7 +6300,7 @@ mod m290_slashed_evidence_integrity_hardening_tests {
 
     #[test]
     fn deterministic_slashed_evidence_passes() {
-        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let mut state = ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] });
         let key = [3u8; 32];
         let id = freedom_primitives::hash_bytes(&key);
         let owner = [2u8; 32];
