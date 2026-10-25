@@ -4477,7 +4477,7 @@ mod m102_bitcoin_chainwork_tests {
  use super::*;
  #[test] fn work_is_positive(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let w=bitcoin_header_work(&h).unwrap();assert!(w.iter().any(|x|*x!=0));}
  #[test] fn longer_valid_chain_has_more_work_same_target(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=b.clone();c.previous_block_hash=b.block_hash();assert_eq!(bitcoin_chainwork_cmp(&[a.clone(),b.clone()],&[a,b,c]).unwrap(),std::cmp::Ordering::Less);}
- #[test] fn chainwork_comparison_is_not_height_only(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=a.clone();c.previous_block_hash=a.block_hash();c.bits=0x1f00ffff;assert!(bitcoin_chainwork_cmp(&[a,b],&[a,c]).is_ok());}
+ #[test] fn chainwork_comparison_is_not_height_only(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=a.clone();c.previous_block_hash=a.block_hash();c.bits=0x1f00ffff;assert!(bitcoin_chainwork_cmp(&[a.clone(),b],&[a,c]).is_ok());}
 }
 
 #[cfg(test)]
@@ -4509,7 +4509,7 @@ mod m98_bitcoin_merkle_tests {
  #[test] fn merkle_root_changes_with_index(){let tx=[1;32];let a=[2;32];let b=[3;32];let x=bitcoin_merkle_root(tx,&[a,b],0);let y=bitcoin_merkle_root(tx,&[a,b],1);assert_ne!(x,y);}
  #[test] fn merkle_proof_verifies(){let tx=[1;32];let branch=vec![[2;32],[3;32]];let root=bitcoin_merkle_root(tx,&branch,0);let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,timestamp:1,bits:1,nonce:1};let p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:6,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(p.verify(6));}
  #[test] fn insufficient_confirmations_fail(){let tx=[1;32];let branch=vec![[2;32]];let root=bitcoin_merkle_root(tx,&branch,0);let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,timestamp:1,bits:1,nonce:1};let p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:5,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(!p.verify(6));}
- #[test] fn header_merkle_root_is_bound(){let tx=[1;32];let branch=vec![[2;32]];let root=bitcoin_merkle_root(tx,&branch,0);let mut h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,timestamp:1,bits:1,nonce:1};let mut p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:6,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(p.verify(6));h.merkle_root=[8;32];p.block_header=h;assert!(!p.verify(6));}
+ #[test] fn header_merkle_root_is_bound(){let tx=[1;32];let branch=vec![[2;32]];let root=bitcoin_merkle_root(tx,&branch,0);let mut h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,timestamp:1,bits:1,nonce:1};let mut p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:6,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h.clone()};assert!(p.verify(6));h.merkle_root=[8;32];p.block_header=h;assert!(!p.verify(6));}
 }
 
 #[cfg(test)]
