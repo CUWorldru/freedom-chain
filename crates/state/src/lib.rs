@@ -20,7 +20,7 @@ fn decode_submit_evidence(b:&[u8])->Option<freedom_types::SubmitEvidencePayload>
 use std::collections::{BTreeMap,BTreeSet};
 use serde::{Deserialize, Serialize};
 use freedom_primitives::{address_from_public_key, Address, Hash, Supply, GENESIS_SUPPLY};
-use freedom_types::{Genesis, RegisterNodePayload, SubmitContributionPayload, BillingPayload, PurchasePayload, CreateTicketPayload, DrawConfig, DrawResult, Event, Transaction, TxKind, TransferPayload, Validator, UnbondingEntry, AssetDefinition, AssetType, AssetStatus, BridgeMessage, BRIDGE_MESSAGE_PROTOCOL_VERSION, BridgeSecurityPolicy, BridgeApprovalSet, BridgeMessageApprovalSet, BridgeMintAuthorization, BridgeMintTransactionPayload, VerifiedDeposit, DepositReplayRecord, BridgeRateLimitUsage, BridgeNonceKey, BridgeDirection, BitcoinChainCheckpoint, BitcoinReorgEvidence, BridgeWithdrawal, BridgeWithdrawalStatus, BridgeAccounting, BridgePauseAuthorizationSet, BridgeMessageStatus};
+use freedom_types::{Genesis, RegisterNodePayload, SubmitContributionPayload, BillingPayload, PurchasePayload, CreateTicketPayload, DrawConfig, DrawResult, Event, Transaction, TxKind, TransferPayload, Validator, UnbondingEntry, AssetDefinition, AssetType, AssetStatus, BridgeMessage, BRIDGE_MESSAGE_PROTOCOL_VERSION, BridgeSecurityPolicy, BridgeApprovalSet, BridgeMessageApprovalSet, BridgeMintAuthorization, BridgeMintTransactionPayload, VerifiedDeposit, DepositReplayRecord, BridgeRateLimitUsage, BridgeNonceKey, BridgeDirection, BitcoinChainCheckpoint, BitcoinReorgEvidence, BridgeWithdrawal, BridgeWithdrawalStatus, BridgeAccounting, BridgePauseAuthorizationSet, BridgeMessageStatus, BridgeApproval};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account { pub address:Address,pub public_key:[u8;32],pub nonce:u64,pub balance:u128,pub locked:u128,pub staked:u128 }
@@ -1368,6 +1368,8 @@ mod m219_bitcoin_utxo_attestation_sequence_tests {
             validator_ids: vec![],
             signatures: vec![],
             attestation_hash: [12;32],
+        validator_set_epoch: 0,
+        validator_set_hash: [0; 32],
         });
         state
     }
@@ -2994,7 +2996,7 @@ mod m33_tests {
  }
  #[test] fn unstake_enters_cooldown_without_returning_balance() {
   let (mut s,owner,id)=validator_state(); let tx=Transaction{chain_id:1,sender:owner,nonce:0,kind:TxKind::Unstake,payload:UnstakePayload{amount:40}.encode(),fee:0,signature:vec![]}; s.unstake(&tx).unwrap();
-  assert_eq!(s.accounts.get(&owner).unwrap().balance,0); assert_eq!(s.accounts.get(&owner).unwrap().staked,100); assert_eq!(s.validators.get(&id).unwrap().stake,60); assert_eq!(s.validators.get(&id).unwrap().unbonding_stake,40); assert_eq!(s.unbonding.len(),1); assert_eq!(s.unbonding.values().next().unwrap().release_height,UNBONDING_COOLDOWN);
+  assert_eq!(s.accounts.get(&owner).unwrap().balance,0); assert_eq!(s.accounts.get(&owner).unwrap().staked,100); assert_eq!(s.validators.get(&id).unwrap().stake,60); assert_eq!(s.validators.get(&id).unwrap().unbonding_stake,40); assert_eq!(s.unbonding.len(),1); assert_eq!(s.unbonding.values().next().unwrap().release_height,ChainState::UNBONDING_COOLDOWN);
  }
  #[test] fn unbonding_releases_at_maturity() {
   let (mut s,owner,id)=validator_state(); let tx=Transaction{chain_id:1,sender:owner,nonce:0,kind:TxKind::Unstake,payload:UnstakePayload{amount:100}.encode(),fee:0,signature:vec![]}; s.unstake(&tx).unwrap();
@@ -3462,6 +3464,8 @@ mod m209_bitcoin_state_proof_chain_id_tests {
                 confirmations: 1,
                 merkle_branch: vec![],
                 merkle_index: 0,
+            raw_transaction: vec![],
+            block_header: None,
             },
             inclusion_header: freedom_types::BitcoinBlockHeader {
                 version: 1,
@@ -3588,7 +3592,7 @@ mod m426_bitcoin_utxo_header_binding_tests {
             amount_sat: 1,
             block_height: 100,
             confirmations: 1,
-            merkle_root: [2; 32],
+
             merkle_branch: vec![[3; 32]],
             merkle_index: 0,
             script_pubkey: vec![0],
@@ -3700,6 +3704,7 @@ mod m427_bitcoin_utxo_transition_anchor_tests {
             validator_ids: vec![],
             signatures: vec![],
             attestation_hash: [12; 32],
+        bitcoin_tip_chainwork: [0; 32],
         });
         let transition = BitcoinUtxoAccumulatorTransition {
             bridge_id: bridge,
@@ -3750,6 +3755,7 @@ mod m425_bitcoin_utxo_accumulator_anchor_tests {
             validator_ids: vec![],
             signatures: vec![],
             attestation_hash: [14u8; 32],
+        bitcoin_tip_chainwork: [0; 32],
         });
 
         let proof = BitcoinUtxoAccumulatorProof {
