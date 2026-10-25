@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+freedom-consensus = { path = "../consensus" }
+freedom-state = { path = "../state" }
+serde.workspace = true
+serde_json.workspace = true
+ed25519-dalek.workspace = true
 freedom-primitives = { path = "../primitives" }
 freedom-runtime = { path = "../runtime" }
 freedom-types = { path = "../types" }
