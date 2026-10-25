@@ -1114,7 +1114,7 @@ mod m225_bridge_approval_set_active_validator_tests {
     use super::*;
 
     #[test]
-    fn bridge_approval_set_is_stored_by_request_id() {
+    fn empty_bridge_approval_set_is_rejected() {
         let genesis = freedom_types::Genesis {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
@@ -1127,8 +1127,11 @@ mod m225_bridge_approval_set_active_validator_tests {
             approvals: vec![],
             threshold_signatures: 0,
         };
-        assert_eq!(state.record_bridge_approval_set(set), Ok(()));
-        assert!(state.bridge_approval_set(&request_id).is_some());
+        assert_eq!(
+            state.record_bridge_approval_set(set),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+        assert!(state.bridge_approval_set(&request_id).is_none());
     }
 }
 
