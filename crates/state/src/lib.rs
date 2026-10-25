@@ -6853,7 +6853,7 @@ mod m423_ticket_allocation_order_tests {
         let mut state=ChainState::genesis(&genesis);
         state.insert_account(Account::new(key,0));
         let draw_id=[7u8;32];
-        state.create_draw(DrawConfig{draw_id,starts_at:0,ends_at:u64::MAX,ticket_price_native_units:10_000,winner_count:1,seed_block:0}).unwrap();
+        state.create_draw(DrawConfig{draw_id,draw_type:freedom_types::DrawType::Daily,starts_at:0,ends_at:u64::MAX,ticket_price_native_units:10_000,winner_count:1,seed_block:0}).unwrap();
         let quantity=1_000_000_000u64;
         let tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender:owner,nonce:0,kind:TxKind::CreateTicket,payload:CreateTicketPayload{draw_id,quantity}.encode(),fee:0,signature:vec![]};
         assert_eq!(state.create_ticket(&tx),Err(StateError::InsufficientBalanceForPurchase));
