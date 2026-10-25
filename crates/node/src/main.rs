@@ -984,7 +984,7 @@ mod m31_tests {
                 validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
                 owner: address_from_public_key(&key),
                 consensus_key: key,
-                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
@@ -1005,10 +1005,10 @@ mod m31_tests {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
-                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
                 owner: address_from_public_key(&key),
                 consensus_key: key,
-                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
@@ -1036,10 +1036,10 @@ mod m31_tests {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
-                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
                 owner: address_from_public_key(&key),
                 consensus_key: key,
-                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
@@ -1061,10 +1061,10 @@ mod m31_tests {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
-                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
                 owner: address_from_public_key(&key),
                 consensus_key: key,
-                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
@@ -1086,10 +1086,10 @@ mod m31_tests {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
-                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
                 owner: address_from_public_key(&key),
                 consensus_key: key,
-                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
@@ -1189,10 +1189,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let validators: Vec<Validator> = (0u8..3).map(|i| {
         let key = [i + 1; 32];
         Validator {
-            validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+            validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
             owner: address_from_public_key(&key),
             consensus_key: key,
-            stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
         }
     }).collect();
 
@@ -2249,10 +2249,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
-                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
                 owner: address_from_public_key(&key),
                 consensus_key: key,
-                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
@@ -2281,10 +2281,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
-                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
                 owner: address_from_public_key(&key),
                 consensus_key: key,
-                stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
