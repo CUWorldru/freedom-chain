@@ -2904,7 +2904,7 @@ mod m79_bridge_replay_tests {
   assert!(state.record_bridge_message(second).is_ok()); assert_eq!(state.processed_bridge_messages.len(),2);
  }
  #[test] fn bridge_message_requires_active_bound_asset_and_valid_hash(){
-  let(mut state,asset,bridge_id,asset_id)=setup(); let mut tampered=message(bridge_id,asset_id); tampered.amount+=1;
+  let(mut state,mut asset,bridge_id,asset_id)=setup(); let mut tampered=message(bridge_id,asset_id); tampered.amount+=1;
   assert_eq!(state.record_bridge_message(tampered),Err(StateError::InvalidBridgeMessage));
   asset.status=AssetStatus::Paused; state.asset_registry.insert(asset.asset_id,asset);
   assert_eq!(state.record_bridge_message(message(bridge_id,asset_id)),Err(StateError::InvalidBridgeMessage));
@@ -4434,8 +4434,8 @@ mod m260_validator_history_transition_tests {
     fn epoch_transition_records_hash_of_activated_set() {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
-            validators:vec![freedom_types::GenesisValidator {
-                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10,
+            validators:vec![freedom_types::Validator {
+                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let mut state=ChainState::genesis(&genesis);
@@ -4453,8 +4453,8 @@ mod m260_validator_history_transition_tests {
     fn history_is_stable_on_repeated_epoch_check() {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
-            validators:vec![freedom_types::GenesisValidator {
-                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10,
+            validators:vec![freedom_types::Validator {
+                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let mut state=ChainState::genesis(&genesis);
@@ -4534,8 +4534,8 @@ mod m263_previous_set_certificate_tests {
     fn genesis_history_contains_previous_validator_keys() {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
-            validators:vec![freedom_types::GenesisValidator {
-                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10,
+            validators:vec![freedom_types::Validator {
+                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let state=ChainState::genesis(&genesis);
@@ -4553,8 +4553,8 @@ mod m264_validator_snapshot_hash_tests {
     fn genesis_validator_key_snapshot_has_authoritative_hash() {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
-            validators:vec![freedom_types::GenesisValidator {
-                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10,
+            validators:vec![freedom_types::Validator {
+                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let state=ChainState::genesis(&genesis);
@@ -4574,11 +4574,11 @@ mod m265_state_commitment_finality_data_tests {
         ChainState::genesis(&freedom_types::Genesis {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
-            validators: vec![freedom_types::GenesisValidator {
+            validators: vec![freedom_types::Validator {
                 validator_id: [1u8; 32],
                 owner: [2u8; 20],
                 consensus_key: [3u8; 32],
-                stake: 10,
+                stake: 10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         })
     }
@@ -4815,11 +4815,11 @@ mod m271_validator_history_write_boundary_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID,
             initial_supply:0,
-            validators:vec![freedom_types::GenesisValidator {
+            validators:vec![freedom_types::Validator {
                 validator_id:[1u8;32],
                 owner:[2u8;32],
                 consensus_key:[3u8;32],
-                stake:100,
+                stake:100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         });
         let original=state.validator_set_history.clone();
@@ -4833,11 +4833,11 @@ mod m271_validator_history_write_boundary_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID,
             initial_supply:0,
-            validators:vec![freedom_types::GenesisValidator {
+            validators:vec![freedom_types::Validator {
                 validator_id:[1u8;32],
                 owner:[2u8;32],
                 consensus_key:[3u8;32],
-                stake:100,
+                stake:100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         });
         let hash=state.validator_set_history.get(&0).copied().unwrap();
@@ -4854,11 +4854,11 @@ mod m272_finality_state_root_coverage_tests {
         ChainState::genesis(&freedom_types::Genesis {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
-            validators: vec![freedom_types::GenesisValidator {
+            validators: vec![freedom_types::Validator {
                 validator_id:[1u8;32],
                 owner:[2u8;32],
                 consensus_key:[3u8;32],
-                stake:100,
+                stake:100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         })
     }
@@ -5064,11 +5064,11 @@ mod m278_validator_history_continuity_tests {
         ChainState::genesis(&freedom_types::Genesis {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
-            validators: vec![freedom_types::GenesisValidator {
+            validators: vec![freedom_types::Validator {
                 validator_id: [1u8; 32],
                 owner: [2u8; 32],
                 consensus_key: [3u8; 32],
-                stake: 100,
+                stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         })
     }
@@ -5353,7 +5353,7 @@ mod m306_evidence_event_canonicalization_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,0));
+        state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5397,7 +5397,7 @@ mod m305_evidence_nonce_atomicity_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,0));
+        state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         state.accounts.get_mut(&owner).unwrap().nonce=u64::MAX;
 
@@ -5438,7 +5438,7 @@ mod m304_slash_replay_evidence_binding_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,0));
+        state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
 
         let mut stored=freedom_types::EquivocationEvidence {
@@ -5482,7 +5482,7 @@ mod m303_slash_replay_transaction_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,0));
+        state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5519,7 +5519,7 @@ mod m303_slash_replay_transaction_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,0));
+        state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5646,7 +5646,7 @@ mod m300_evidence_submission_atomicity_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,0));
+        state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5679,7 +5679,7 @@ mod m300_evidence_submission_atomicity_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,0));
+        state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5717,7 +5717,7 @@ mod m299_evidence_slash_basis_hardening_tests {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
         state.staking_activated=true;
-        state.insert_account(freedom_types::Account::new(key,100));
+        state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5760,7 +5760,7 @@ mod m298_exited_validator_slash_hardening_tests {
             unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0,
         };        let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],        });
-        state.insert_account(freedom_types::Account::new(key,0));
+        state.insert_account(Account::new(key,0));
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -5811,7 +5811,7 @@ mod m297_slashed_evidence_history_hardening_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,100));
+        state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
 
         let mut evidence=freedom_types::EquivocationEvidence {
@@ -5858,7 +5858,7 @@ mod m296_slash_replay_amount_hardening_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,100));
+        state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5883,7 +5883,7 @@ mod m296_slash_replay_amount_hardening_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key,100));
+        state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5916,7 +5916,7 @@ mod m295_slash_mutation_safety_hardening_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key, 1));
+        state.insert_account(Account::new(key, 1));
         state.accounts.get_mut(&owner).unwrap().staked=1;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoubleProposal, height:0, round:0,
@@ -5944,7 +5944,7 @@ mod m295_slash_mutation_safety_hardening_tests {
         let mut state=ChainState::genesis(&freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key, 10));
+        state.insert_account(Account::new(key, 10));
         state.accounts.get_mut(&owner).unwrap().staked=10;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -5987,7 +5987,7 @@ mod m294_slashed_evidence_basis_hardening_tests {
             initial_supply: 0,
             validators: vec![validator],
         });
-        state.insert_account(freedom_types::Account::new(key, 100));
+        state.insert_account(Account::new(key, 100));
         state.accounts.get_mut(&owner).unwrap().staked = 90;
 
         let mut evidence = freedom_types::EquivocationEvidence {
@@ -6345,11 +6345,11 @@ mod m289_evidence_integrity_hardening_tests {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![
-                freedom_types::GenesisValidator {
+                freedom_types::Validator {
                     validator_id: freedom_primitives::hash_bytes(&key),
                     owner: [2u8; 32],
                     consensus_key: key,
-                    stake: 100,
+                    stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
                 },
             ],
         })
@@ -6412,11 +6412,11 @@ mod m288_slash_atomicity_hardening_tests {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![
-                freedom_types::GenesisValidator {
+                freedom_types::Validator {
                     validator_id: freedom_primitives::hash_bytes(&key),
                     owner: [2u8; 32],
                     consensus_key: key,
-                    stake: 100,
+                    stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
                 },
             ],
         })
@@ -6493,11 +6493,11 @@ mod m287_staking_accounting_hardening_tests {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![
-                freedom_types::GenesisValidator {
+                freedom_types::Validator {
                     validator_id: freedom_primitives::hash_bytes(&key),
                     owner: [2u8; 32],
                     consensus_key: key,
-                    stake: 100,
+                    stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
                 },
             ],
         })
@@ -6578,11 +6578,11 @@ mod m286_unbonding_integrity_hardening_tests {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![
-                freedom_types::GenesisValidator {
+                freedom_types::Validator {
                     validator_id: freedom_primitives::hash_bytes(&key),
                     owner: [2u8; 32],
                     consensus_key: key,
-                    stake: 100,
+                    stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
                 },
             ],
         })
@@ -6668,11 +6668,11 @@ mod m285_validator_owner_uniqueness_hardening_tests {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![
-                freedom_types::GenesisValidator {
+                freedom_types::Validator {
                     validator_id: freedom_primitives::hash_bytes(&key),
                     owner: [2u8; 32],
                     consensus_key: key,
-                    stake: 100,
+                    stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
                 },
             ],
         })
@@ -6733,11 +6733,11 @@ mod m284_validator_consensus_identity_hardening_tests {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![
-                freedom_types::GenesisValidator {
+                freedom_types::Validator {
                     validator_id: freedom_primitives::hash_bytes(&[3u8; 32]),
                     owner: [2u8; 32],
                     consensus_key: [3u8; 32],
-                    stake: 100,
+                    stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
                 },
             ],
         })
