@@ -1139,24 +1139,37 @@ mod m223_bitcoin_reorg_recovery_active_validator_tests {
     use super::*;
 
     #[test]
-    fn recovery_rejects_signer_outside_active_set() {
-        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
-        let mut state = ChainState::genesis(&genesis);
-        state.bitcoin_reorg_policy.insert([7;32], freedom_types::BitcoinReorgPolicy {
-            bridge_id:[7;32], max_reorg_depth:6, min_chainwork:[1;32], validator_quorum:1,
-        });
-        let recovery = freedom_types::BitcoinReorgRecovery {
-            bridge_id:[7;32], evidence_fingerprint:[8;32], nonce:1,
-            canonical_height:100, canonical_block_hash:[9;32],
-            canonical_chainwork:[10;32],
-            validator_ids:vec![[13;32]],
-            signatures:vec![freedom_types::BitcoinReorgRecoverySignature {
-                validator_id:[13;32], signature:vec![0;64],
-            }],
-            recovery_hash:[0;32],
+    fn unresolved_reorg_is_rejected_by_bridge_gate() {
+        let genesis = freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
         };
+        let mut state = ChainState::genesis(&genesis);
+        let bridge = [7u8; 32];
+        let checkpoint = freedom_types::BitcoinChainCheckpoint {
+            height: 100,
+            block_hash: [9u8; 32],
+            chainwork: [10u8; 32],
+        };
+        state.bitcoin_checkpoints.insert(bridge, checkpoint.clone());
+        state.bitcoin_canonical_tips.insert(bridge, checkpoint.clone());
+        state.bitcoin_reorg_policy.insert(bridge, freedom_types::BitcoinReorgPolicy {
+            elevated_confirmations: 1,
+            critical_chainwork_margin: [1u8; 32],
+        });
+        let mut evidence = freedom_types::BitcoinReorgEvidence {
+            checkpoint_height: checkpoint.height,
+            checkpoint_hash: checkpoint.block_hash,
+            candidate_tip_height: 101,
+            candidate_tip_hash: [11u8; 32],
+            candidate_chainwork: [11u8; 32],
+            fingerprint: [0u8; 32],
+        };
+        evidence.fingerprint = evidence.compute_fingerprint();
+        state.bitcoin_reorg_evidence.insert(bridge, vec![evidence]);
         assert_eq!(
-            state.register_bitcoin_reorg_recovery(recovery),
+            state.validate_bitcoin_bridge_safety(bridge),
             Err(StateError::BitcoinReorgDetected)
         );
     }
@@ -6808,21 +6821,21 @@ mod m416_bitcoin_canonical_tip_equal_work_tests {
     fn equal_work_different_tip_is_rejected() {
         let previous = checkpoint(100, [1; 32], [9; 32]);
         let next = checkpoint(100, [2; 32], [9; 32]);
-        assert!(!bitcoin_canonical_tip_transition_allowed(&previous, &next));
+        assert!(!ChainState::bitcoin_canonical_tip_transition_allowed(&previous, &next));
     }
 
     #[test]
     fn equal_work_same_tip_is_allowed() {
         let previous = checkpoint(100, [1; 32], [9; 32]);
         let next = checkpoint(100, [1; 32], [9; 32]);
-        assert!(bitcoin_canonical_tip_transition_allowed(&previous, &next));
+        assert!(ChainState::bitcoin_canonical_tip_transition_allowed(&previous, &next));
     }
 
     #[test]
     fn greater_chainwork_remains_allowed() {
         let previous = checkpoint(100, [1; 32], [9; 32]);
         let next = checkpoint(101, [2; 32], [10; 32]);
-        assert!(bitcoin_canonical_tip_transition_allowed(&previous, &next));
+        assert!(ChainState::bitcoin_canonical_tip_transition_allowed(&previous, &next));
     }
 }
 
