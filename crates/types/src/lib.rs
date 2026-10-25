@@ -44,6 +44,22 @@ pub struct CrossChainFinalityEnvelope {
 }
 
 impl CrossChainFinalityEnvelope {
+    /// Hashes the finality envelope payload, excluding proof_hash itself.
+    /// The field stores this digest and is not part of its own preimage.
+    pub fn compute_hash(&self) -> Hash {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"FREEDOM-CROSS-CHAIN-FINALITY-ENVELOPE-V1");
+        bytes.extend_from_slice(&self.bridge_id);
+        bytes.extend_from_slice(&self.chain_id.to_le_bytes());
+        bytes.extend_from_slice(&self.sequence.to_le_bytes());
+        bytes.push(self.proof_kind as u8);
+        bytes.extend_from_slice(&self.finalized_height.to_le_bytes());
+        bytes.extend_from_slice(&self.finalized_hash);
+        bytes.extend_from_slice(&self.state_root);
+        bytes.extend_from_slice(&self.previous_state_root);
+        freedom_primitives::hash_bytes(&bytes)
+    }
+
     pub fn validate_structure(&self) -> bool {
         self.bridge_id != [0; 32]
             && self.sequence > 0
