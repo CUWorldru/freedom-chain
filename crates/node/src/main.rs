@@ -7,7 +7,7 @@ use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_
 use freedom_runtime::{build_next_block, execute_block, initialize, Mempool, ValidatorProtocol};
 use freedom_storage::ChainStore;
 use freedom_types::{Genesis, Validator};
-use libp2p::{Multiaddr, SwarmEvent};
+use libp2p::{swarm::SwarmEvent, Multiaddr};
 use libp2p::futures::StreamExt;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
@@ -446,7 +446,6 @@ fn send_sync_request(
     Ok((id, outbound_id))
 }
 
-#[tokio::main]
 fn make_evidence_message(
     state: &freedom_state::ChainState,
     evidence: freedom_types::EquivocationEvidence,
@@ -1168,7 +1167,8 @@ fn replay_persisted_blocks(
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let validators: Vec<Validator> = (0u8..3).map(|i| {
         let key = [i + 1; 32];
         Validator {
