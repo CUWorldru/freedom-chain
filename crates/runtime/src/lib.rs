@@ -663,6 +663,7 @@ pub fn build_next_block(
 
 #[cfg(test)]
 fn test_state() -> ChainState {
+        use freedom_types::Validator;
         let validators = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             let owner = freedom_primitives::address_from_public_key(&key);
@@ -684,8 +685,8 @@ fn test_state() -> ChainState {
         let mut state = initialize(&genesis).unwrap();
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]);
         let public = signing_key.verifying_key().to_bytes();
-        state.accounts.insert(Account::new(public, 1_000).address, Account::new(public, 1_000));
-        state.supply = Supply { total: 1_000, circulating: 1_000, locked: 0, staked: 0, treasury: 0 };
+        state.accounts.insert(freedom_state::Account::new(public, 1_000).address, freedom_state::Account::new(public, 1_000));
+        state.supply = freedom_primitives::Supply { total: 1_000, circulating: 1_000, locked: 0, staked: 0, treasury: 0 };
         state.assert_invariants();
         state
     }
@@ -1251,8 +1252,8 @@ mod m159_bridge_mint_relay_tests {
         let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[8;32],bridge_id);
         let validator=Validator{validator_id,owner:[1;32],consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
         let mut state=initialize(&Genesis{chain_id:CHAIN_ID,initial_supply:0,validators:vec![validator]}).unwrap();
-        state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
-        state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
+        state.asset_registry.insert(asset_id, AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active});
+        state.bridge_security_policies.insert(bridge_id, BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1});
 
         let deposit=VerifiedDeposit{canonical_asset_id:asset_id,representation_asset_id:[2;32],bridge_id,source_chain_id,tx_hash:[4;32],event_index:7,block_or_slot:8,confirmations:20,amount:500,recipient:vec![9;20],replay_key:[10;32],proof_hash:[11;32]};
         let message=deposit.to_bridge_message(CHAIN_ID,1).unwrap();
@@ -1260,14 +1261,14 @@ mod m159_bridge_mint_relay_tests {
         let signature=sign(&validator_key,&unsigned.approval_hash());
         let approvals=BridgeMessageApprovalSet{bridge_id:message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
         let auth=BridgeMintAuthorization::from_authenticated_message(&message,&deposit,&approvals,state.bridge_security_policies.get(&bridge_id).unwrap(),&state.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()).unwrap();
-        state.record_bridge_message(message.clone()).unwrap();
-        state.record_verified_external_lock(deposit.canonical_asset_id,deposit.amount).unwrap();
-        state.accept_bridge_message(message.replay_key()).unwrap();
+        let replay_key = message.replay_key();
+        state.processed_bridge_messages.insert(replay_key, message.clone());
+        state.bridge_message_status.insert(replay_key, freedom_types::BridgeMessageStatus::Accepted);
 
         let relayer_key=SigningKey::from_bytes(&[42;32]);
         let relayer_pub=relayer_key.verifying_key().to_bytes();
         let sender=freedom_primitives::address_from_public_key(&relayer_pub);
-        state.insert_account(freedom_state::Account::new(relayer_pub,1_000));
+        state.accounts.insert(sender, freedom_state::Account::new(relayer_pub,1_000));
         let payload=BridgeMintTransactionPayload{message,deposit,authorization:auth,approvals};
         let canonical_id=payload.canonical_id().unwrap();
         let mut tx=Transaction{chain_id:CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload:payload.encode().unwrap(),fee:0,signature:Vec::new()};
