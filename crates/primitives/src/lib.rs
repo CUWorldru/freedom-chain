@@ -19,6 +19,14 @@ pub fn hash_bytes(data: &[u8]) -> Hash {
     *blake3::hash(data).as_bytes()
 }
 
+/// Returns the Byzantine quorum threshold (floor(2n/3) + 1).
+/// The zero-validator sentinel is usize::MAX; arithmetic is overflow-safe.
+pub fn quorum_threshold(validator_count: usize) -> usize {
+    if validator_count == 0 { return usize::MAX; }
+    let ceil_third = validator_count / 3 + usize::from(validator_count % 3 != 0);
+    validator_count - ceil_third + 1
+}
+
 pub fn address_from_public_key(public_key: &[u8]) -> Address {
     let mut input = b"FREEDOM-ADDRESS-V1".to_vec();
     input.extend_from_slice(public_key);
