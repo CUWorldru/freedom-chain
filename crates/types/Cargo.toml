@@ -12,3 +12,7 @@ num-bigint.workspace = true
 freedom-primitives = { path = "../primitives" }
 freedom-crypto = { path = "../crypto" }
 freedom-bitcoin-script = { path = "../bitcoin-script" }
+
+[dev-dependencies]
+ed25519-dalek.workspace = true
+serde_json.workspace = true
