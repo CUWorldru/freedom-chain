@@ -8,7 +8,7 @@ pub fn collect_validator_set_certificate(
     state: &ChainState,
     votes: &[freedom_types::ValidatorSetVote],
 ) -> Result<freedom_types::ValidatorSetCertificate, String> {
-    if let Some(existing) = state.validator_set_certificate.as_ref() {
+    if state.validator_set_certificate.is_some() {
         // A transition certificate is immutable once committed. Do this
         // before collecting new votes so no alternate collection path can
         // manufacture a replacement certificate for the same epoch.
@@ -1098,10 +1098,10 @@ impl ValidatorProtocol {
     pub fn receive_timeout(&mut self, state: &ChainState, timeout: freedom_types::ValidatorTimeout, height: u64, round: u64) -> Result<bool, String> { freedom_consensus::validate_timeout(state, &timeout, height, round)?;
 if let Some(existing)=self.timeouts.get(&timeout.validator_id){
  if existing.signing_bytes()!=timeout.signing_bytes(){return Err("validator timeout equivocation detected".into());}
- return Ok(freedom_consensus::stake_quorum_reached(state, self.timeouts.keys()));
+ return Ok(freedom_consensus::stake_quorum_reached(state, &self.timeouts.keys().copied().collect()));
 }
 self.timeouts.insert(timeout.validator_id, timeout);
-Ok(freedom_consensus::stake_quorum_reached(state, self.timeouts.keys())) }
+Ok(freedom_consensus::stake_quorum_reached(state, &self.timeouts.keys().copied().collect())) }
 
     pub fn receive_vote(&mut self, state: &ChainState, vote: freedom_types::ValidatorVote, expected_block_hash: Hash, height: u64, round: u64) -> Result<bool, String> {
         freedom_consensus::validate_vote(state, &vote, expected_block_hash, height, round)?;
@@ -1109,10 +1109,10 @@ Ok(freedom_consensus::stake_quorum_reached(state, self.timeouts.keys())) }
             if existing.block_hash != vote.block_hash || existing.round != vote.round {
                 return Err("validator prevote equivocation detected".into());
             }
-            return Ok(freedom_consensus::stake_quorum_reached(state, self.votes.keys()));
+            return Ok(freedom_consensus::stake_quorum_reached(state, &self.votes.keys().copied().collect()));
         }
         self.votes.insert(vote.validator_id, vote);
-        Ok(freedom_consensus::stake_quorum_reached(state, self.votes.keys()))
+        Ok(freedom_consensus::stake_quorum_reached(state, &self.votes.keys().copied().collect()))
     }
 
     pub fn lock_on_prevote_quorum(
@@ -1158,10 +1158,10 @@ Ok(freedom_consensus::stake_quorum_reached(state, self.timeouts.keys())) }
             if existing.block_hash != precommit.block_hash || existing.round != precommit.round {
                 return Err("validator precommit equivocation detected".into());
             }
-            return Ok(freedom_consensus::stake_quorum_reached(state, self.precommits.keys()));
+            return Ok(freedom_consensus::stake_quorum_reached(state, &self.precommits.keys().copied().collect()));
         }
         self.precommits.insert(precommit.validator_id, precommit);
-        Ok(freedom_consensus::stake_quorum_reached(state, self.precommits.keys()))
+        Ok(freedom_consensus::stake_quorum_reached(state, &self.precommits.keys().copied().collect()))
     }
 
     pub fn finalize_if_quorum(&self, state: &mut ChainState, block: &Block, round: u64) -> Result<Block, String> {
@@ -1250,9 +1250,9 @@ mod m159_bridge_mint_relay_tests {
 
         let deposit=VerifiedDeposit{canonical_asset_id:asset_id,representation_asset_id:[2;32],bridge_id,source_chain_id,tx_hash:[4;32],event_index:7,block_or_slot:8,confirmations:20,amount:500,recipient:vec![9;20],replay_key:[10;32],proof_hash:[11;32]};
         let message=deposit.to_bridge_message(CHAIN_ID,1).unwrap();
-        let unsigned=BridgeMessageApproval{bridge_id,message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
+        let unsigned=BridgeMessageApproval{bridge_id:message.bridge_id,message_hash:message.message_hash,validator_id,signature:vec![0;64]};
         let signature=sign(&validator_key,&unsigned.approval_hash());
-        let approvals=BridgeMessageApprovalSet{bridge_id,message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
+        let approvals=BridgeMessageApprovalSet{bridge_id:message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
         let auth=BridgeMintAuthorization::from_authenticated_message(&message,&deposit,&approvals,state.bridge_security_policies.get(&bridge_id).unwrap(),&state.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()).unwrap();
         state.record_bridge_message(message.clone()).unwrap();
         state.record_verified_external_lock(deposit.canonical_asset_id,deposit.amount).unwrap();
