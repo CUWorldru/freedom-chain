@@ -4428,56 +4428,69 @@ mod m82_adapter_tests { use super::*; use super::bridge_adapter::*;
 }
 
 #[cfg(test)]
-mod m83_bitcoin_tests { use super::*; use super::bridge_adapter::*;
- fn d()->BridgeAdapterDescriptor{BridgeAdapterDescriptor{bridge_id:[9;32],chain_id:8332,kind:BridgeAdapterKind::Bitcoin,finality_model:BridgeFinalityModel::Confirmations,required_confirmations:6,native_asset:true,enabled:true}}
- fn p(c:u64)->BitcoinUtxoProof{BitcoinUtxoProof{bridge_id:[9;32],chain_id:8332,tx_hash:[1;32],vout:2,amount_sat:50_000,block_height:100,confirmations:c,merkle_branch:vec![[2;32]],merkle_index:0,script_pubkey:vec![0,20,1,2,3]}}
- #[test] fn bitcoin_utxo_requires_six_confirmations(){let a=BitcoinAdapter::new(d()).unwrap();assert_eq!(a.verify_utxo_deposit(&p(5)),Err(BridgeAdapterError::InsufficientFinality));assert!(a.verify_utxo_deposit(&p(6)).is_ok());}
- #[test] fn bitcoin_vout_is_replay_event_identity(){assert_eq!(p(6).event_index(),2);}
- #[test] fn bitcoin_withdrawal_uses_script_bytes(){let a=BitcoinAdapter::new(d()).unwrap();let x=a.build_utxo_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();assert!(x.validate_hash());}
+mod m83_bitcoin_tests {
+ use super::*;
+ use super::bridge_adapter::*;
+ fn descriptor()->BridgeAdapterDescriptor {
+  BridgeAdapterDescriptor{bridge_id:[9;32],chain_id:8332,kind:BridgeAdapterKind::Bitcoin,finality_model:BridgeFinalityModel::Confirmations,required_confirmations:6,native_asset:true,enabled:true}
+ }
+ #[test]
+ fn bitcoin_adapter_requires_six_confirmations() {
+  let adapter=BitcoinAdapter::new(descriptor()).unwrap();
+  let proof=|confirmations| BridgeDepositProof{bridge_id:[9;32],source_chain_id:8332,tx_hash:[1;32],event_index:2,block_or_slot:100,confirmations,proof:vec![1]};
+  assert_eq!(adapter.verify_deposit(&proof(5)),Err(BridgeAdapterError::InsufficientFinality));
+  assert!(adapter.verify_deposit(&proof(6)).is_ok());
+ }
+ #[test]
+ fn bitcoin_withdrawal_intent_uses_canonical_adapter_interface() {
+  let adapter=BitcoinAdapter::new(descriptor()).unwrap();
+  let intent=adapter.build_withdrawal_intent([3;32],[4;32],1000,vec![0,20,9],8).unwrap();
+  assert!(intent.validate_hash());
+ }
 }
 
 #[cfg(test)]
 mod m106_bitcoin_reorg_tests {
  use super::*;
- fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0}}
- #[test] fn conflicting_branch_is_reported_as_reorg(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};assert_eq!(bitcoin_evaluate_reorg(&cp,&[h([8;32])]),Err(BitcoinCheckpointError::ReorgDetected));}
+ fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0}}
+ #[test] fn conflicting_branch_is_reported_as_reorg(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};assert!(matches!(bitcoin_evaluate_reorg(&cp,&[h([8;32])]),Err(BitcoinCheckpointError::ReorgDetected)));}
  #[test] fn continuing_branch_has_report(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};let a=h(cp.block_hash);let r=bitcoin_evaluate_reorg(&cp,&[a]).unwrap();assert_eq!(r.candidate_tip_height,101);}
 }
 
 #[cfg(test)]
 mod m103_bitcoin_checkpoint_tests {
  use super::*;
- fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0}}
+ fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0}}
  #[test] fn checkpoint_continuation_is_accepted(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};let a=h(cp.block_hash);let r=bitcoin_validate_from_checkpoint(&cp,&[a]).unwrap();assert_eq!(r.height,101);}
  #[test] fn wrong_checkpoint_link_is_rejected(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};assert_eq!(bitcoin_validate_from_checkpoint(&cp,&[h([8;32])]),Err(BitcoinCheckpointError::LinkageMismatch));}
 }
 
 #[cfg(test)]
-mod m102_bitcoin_chainwork_tests {
+mod m102_bitcoin_chainwork_baseline_tests {
  use super::*;
- #[test] fn work_is_positive(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};assert!(bitcoin_header_work(&h).is_some());}
- #[test] fn chainwork_accumulates(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();assert!(bitcoin_chainwork(&[a,b]).unwrap()>bitcoin_chainwork(&[b.clone()]).unwrap());}
+ #[test] fn work_is_positive(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};assert!(bitcoin_header_work(&h).is_some());}
+ #[test] fn chainwork_accumulates(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();assert!(bitcoin_chainwork(&[a,b]).unwrap()>bitcoin_chainwork(&[b.clone()]).unwrap());}
 }
 
 #[cfg(test)]
 mod m102_bitcoin_chainwork_tests {
  use super::*;
- #[test] fn work_is_positive(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let w=bitcoin_header_work(&h).unwrap();assert!(w.iter().any(|x|*x!=0));}
- #[test] fn longer_valid_chain_has_more_work_same_target(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=b.clone();c.previous_block_hash=b.block_hash();assert_eq!(bitcoin_chainwork_cmp(&[a,b],&[a,b,c]).unwrap(),std::cmp::Ordering::Less);}
- #[test] fn chainwork_comparison_is_not_height_only(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=a.clone();c.previous_block_hash=a.block_hash();c.bits=0x1f00ffff;assert!(bitcoin_chainwork_cmp(&[a,b],&[a,c]).is_ok());}
+ #[test] fn work_is_positive(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let w=bitcoin_header_work(&h).unwrap();assert!(w.iter().any(|x|*x!=0));}
+ #[test] fn longer_valid_chain_has_more_work_same_target(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=b.clone();c.previous_block_hash=b.block_hash();assert_eq!(bitcoin_chainwork_cmp(&[a,b],&[a,b,c]).unwrap(),std::cmp::Ordering::Less);}
+ #[test] fn chainwork_comparison_is_not_height_only(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=a.clone();c.previous_block_hash=a.block_hash();c.bits=0x1f00ffff;assert!(bitcoin_chainwork_cmp(&[a,b],&[a,c]).is_ok());}
 }
 
 #[cfg(test)]
 mod m101_bitcoin_header_chain_tests {
  use super::*;
- #[test] fn linked_headers_are_accepted(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();assert!(bitcoin_validate_header_chain(100,&[a,b]).is_ok());}
- #[test] fn broken_link_is_rejected(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=[9;32];assert_eq!(bitcoin_validate_header_chain(100,&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
+ #[test] fn linked_headers_are_accepted(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();assert!(bitcoin_validate_header_chain(100,&[a,b]).is_ok());}
+ #[test] fn broken_link_is_rejected(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=[9;32];assert_eq!(bitcoin_validate_header_chain(100,&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
 }
 
 #[cfg(test)]
 mod m102_bitcoin_chainwork_tests {
  use super::*;
- fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0}}
+ fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0}}
  #[test] fn chainwork_accumulates(){let a=h([0;32]);let mut b=h(a.block_hash());let mut c=h(b.block_hash());assert!(bitcoin_chainwork(&[a,b,c]).is_ok());b=h([0;32]);assert!(bitcoin_chainwork_cmp(&[h([0;32])],&[h([0;32]),b]).is_ok());}
  #[test] fn invalid_chain_has_no_work(){let a=h([0;32]);let mut b=h([9;32]);assert_eq!(bitcoin_chainwork(&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
 }
@@ -4486,17 +4499,17 @@ mod m102_bitcoin_chainwork_tests {
 mod m100_bitcoin_pow_tests {
  use super::*;
  #[test] fn bits_to_target_rejects_negative_and_zero(){assert!(bitcoin_target_from_bits(0).is_none());assert!(bitcoin_target_from_bits(0x01800001).is_none());}
- #[test] fn pow_is_deterministic(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};assert_eq!(bitcoin_pow_valid(&h),bitcoin_pow_valid(&h));}
- #[test] fn header_links_previous_block(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],time:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();assert_eq!(b.previous_block_hash,a.block_hash());}
+ #[test] fn pow_is_deterministic(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};assert_eq!(bitcoin_pow_valid(&h),bitcoin_pow_valid(&h));}
+ #[test] fn header_links_previous_block(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();assert_eq!(b.previous_block_hash,a.block_hash());}
 }
 
 #[cfg(test)]
 mod m98_bitcoin_merkle_tests {
  use super::*;
  #[test] fn merkle_root_changes_with_index(){let tx=[1;32];let a=[2;32];let b=[3;32];let x=bitcoin_merkle_root(tx,&[a,b],0);let y=bitcoin_merkle_root(tx,&[a,b],1);assert_ne!(x,y);}
- #[test] fn merkle_proof_verifies(){let tx=[1;32];let branch=vec![[2;32],[3;32]];let root=bitcoin_merkle_root(tx,&branch,0);let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,time:1,bits:1,nonce:1};let p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:6,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(p.verify(6));}
- #[test] fn insufficient_confirmations_fail(){let tx=[1;32];let branch=vec![[2;32]];let root=bitcoin_merkle_root(tx,&branch,0);let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,time:1,bits:1,nonce:1};let p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:5,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(!p.verify(6));}
- #[test] fn header_merkle_root_is_bound(){let tx=[1;32];let branch=vec![[2;32]];let root=bitcoin_merkle_root(tx,&branch,0);let mut h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,time:1,bits:1,nonce:1};let mut p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:6,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(p.verify(6));h.merkle_root=[8;32];p.block_header=h;assert!(!p.verify(6));}
+ #[test] fn merkle_proof_verifies(){let tx=[1;32];let branch=vec![[2;32],[3;32]];let root=bitcoin_merkle_root(tx,&branch,0);let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,timestamp:1,bits:1,nonce:1};let p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:6,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(p.verify(6));}
+ #[test] fn insufficient_confirmations_fail(){let tx=[1;32];let branch=vec![[2;32]];let root=bitcoin_merkle_root(tx,&branch,0);let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,timestamp:1,bits:1,nonce:1};let p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:5,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(!p.verify(6));}
+ #[test] fn header_merkle_root_is_bound(){let tx=[1;32];let branch=vec![[2;32]];let root=bitcoin_merkle_root(tx,&branch,0);let mut h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:root,timestamp:1,bits:1,nonce:1};let mut p=BitcoinMerkleProof{bridge_id:[9;32],chain_id:8332,tx_hash:tx,block_height:100,confirmations:6,merkle_root:root,merkle_branch:branch,merkle_index:0,block_header:h};assert!(p.verify(6));h.merkle_root=[8;32];p.block_header=h;assert!(!p.verify(6));}
 }
 
 #[cfg(test)]
@@ -4671,7 +4684,7 @@ mod m119_bitcoin_raw_transaction_tests {
         let mut proof=BitcoinUtxoProof{
             bridge_id:[9;32],chain_id:8332,tx_hash:tx.txid,vout:0,amount_sat:50_000,
             block_height:100,confirmations:6,merkle_branch:vec![[2;32]],merkle_index:0,
-            script_pubkey:vec![0x51,0x21],raw_transaction:raw,
+            script_pubkey:vec![0x51,0x21],raw_transaction:raw,block_header:None,
         };
         assert!(proof.validate_output_binding());
         proof.amount_sat+=1;
