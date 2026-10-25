@@ -662,6 +662,35 @@ pub fn build_next_block(
 
 
 #[cfg(test)]
+fn test_state() -> ChainState {
+        let validators = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            let owner = freedom_primitives::address_from_public_key(&key);
+            let mut validator_seed = b"validator".to_vec();
+            validator_seed.push(i + 1);
+            let id = freedom_primitives::hash_bytes(&validator_seed);
+            (id, Validator {
+                validator_id: id,
+                owner,
+                consensus_key: key,
+                stake: 0,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            })
+        }).collect::<Vec<_>>();
+        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: validators.into_iter().map(|(_,v)| v).collect() };
+        let mut state = initialize(&genesis).unwrap();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]);
+        let public = signing_key.verifying_key().to_bytes();
+        state.accounts.insert(Account::new(public, 1_000).address, Account::new(public, 1_000));
+        state.supply = Supply { total: 1_000, circulating: 1_000, locked: 0, staked: 0, treasury: 0 };
+        state.assert_invariants();
+        state
+    }
+
+#[cfg(test)]
 mod m338_block_height_overflow_tests {
     use super::*;
     use freedom_types::Genesis;
@@ -680,6 +709,7 @@ mod m338_block_height_overflow_tests {
                 previous_hash: state.last_block_hash,
                 tx_root: tx_root(&[]),
                 receipts_root: receipts_root(&[]),
+                timestamp: 0,
                 state_root: state.state_root(),
                 proposer: [0; 32],
                 round: 0,
@@ -722,7 +752,7 @@ mod m240_bridge_mint_authorization_validator_set_tests {
      active_id,
      freedom_types::ValidatorSetEntry {
        validator_id: active_id,
-       owner: [0u8;20],
+       owner: [0u8;32],
        consensus_key: active_key,
        stake: 1,
      }
@@ -828,31 +858,7 @@ mod tests {
     use freedom_state::Account;
     use freedom_types::{BridgeMessage, BridgeMessageApprovalSet, BridgeMintAuthorization, BridgeMintTransactionPayload, Genesis, TransferPayload, TxKind, Validator, VerifiedDeposit};
 
-    fn test_state() -> ChainState {
-        let validators = (0u8..3).map(|i| {
-            let key = [i + 1; 32];
-            let owner = freedom_primitives::address_from_public_key(&key);
-            let id = freedom_primitives::hash_bytes(&[b"validator", &[i + 1]].concat());
-            (id, Validator {
-                validator_id: id,
-                owner,
-                consensus_key: key,
-                stake: 0,
-                unbonding_stake: 0,
-                blocks_proposed: 0,
-                blocks_finalized: 0,
-                missed_votes: 0,
-            })
-        }).collect::<Vec<_>>();
-        let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: validators.into_iter().map(|(_,v)| v).collect() };
-        let mut state = initialize(&genesis).unwrap();
-        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]);
-        let public = signing_key.verifying_key().to_bytes();
-        state.insert_account(Account::new(public, 1_000));
-        state.supply = Supply { total: 1_000, circulating: 1_000, locked: 0, staked: 0, treasury: 0 };
-        state.assert_invariants();
-        state
-    }
+
 
 
     #[test]
@@ -1311,6 +1317,7 @@ mod m161_bridge_adapter_tests {
         assert_eq!(
             match freedom_types::CrossChainAssetKind::BitcoinUtxo {
                 freedom_types::CrossChainAssetKind::BitcoinUtxo => freedom_types::BridgeAdapterKind::Bitcoin,
+                freedom_types::CrossChainAssetKind::EthereumNative => freedom_types::BridgeAdapterKind::Evm,
                 freedom_types::CrossChainAssetKind::Erc20 => freedom_types::BridgeAdapterKind::Evm,
                 freedom_types::CrossChainAssetKind::Trc20 => freedom_types::BridgeAdapterKind::Tron,
                 freedom_types::CrossChainAssetKind::TonJetton => freedom_types::BridgeAdapterKind::Ton,
@@ -1344,7 +1351,7 @@ mod m315_validator_certificate_collection_tests {
 
     #[test]
     fn certificate_collection_rejects_when_transition_is_already_committed() {
-        let mut state = ChainState::genesis(&freedom_types::Genesis::default());
+        let mut state = ChainState::genesis(&freedom_types::Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators: vec![] });
         state.validator_set_certificate = Some(freedom_types::ValidatorSetCertificate {
             from_epoch: 0,
             to_epoch: 1,
