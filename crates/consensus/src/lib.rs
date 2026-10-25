@@ -444,12 +444,7 @@ mod m332_block_nonce_sequence_tests {
 
 
 
-pub fn quorum_threshold(validator_count: usize) -> usize {
-    if validator_count == 0 { return usize::MAX; }
-    // Equivalent to floor(2*n/3) + 1, without overflowing n * 2.
-    let ceil_third = validator_count / 3 + usize::from(validator_count % 3 != 0);
-    validator_count - ceil_third + 1
-}
+pub use freedom_primitives::quorum_threshold;
 
 pub fn total_active_stake(state: &ChainState) -> u128 {
     state.active_validator_set.values()
