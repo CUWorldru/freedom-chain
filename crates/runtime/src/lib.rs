@@ -762,9 +762,13 @@ mod m240_bridge_mint_authorization_validator_set_tests {
      registry_only_id,
      freedom_types::Validator {
        validator_id: registry_only_id,
-       owner: [0u8;20],
+       owner: [0u8;32],
        consensus_key: registry_only_key,
        stake: 1,
+       unbonding_stake: 0,
+       blocks_proposed: 0,
+       blocks_finalized: 0,
+       missed_votes: 0,
      }
    );
    let keys = state.active_validator_set.iter()
@@ -788,7 +792,7 @@ mod m239_bitcoin_mint_validator_set_tests {
      validator_id,
      freedom_types::ValidatorSetEntry {
        validator_id,
-       owner: [0u8;20],
+       owner: [0u8;32],
        consensus_key: key,
        stake: 1,
      }
