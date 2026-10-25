@@ -3427,9 +3427,9 @@ mod m209_bitcoin_state_proof_chain_id_tests {
             accumulator: BitcoinUtxoAccumulator {
                 bridge_id: [7; 32],
                 chain_id: 1,
-                tip_height: 100,
-                tip_hash: [8; 32],
-                tip_chainwork: [9; 32],
+                bitcoin_tip_height: 100,
+                bitcoin_tip_hash: [8; 32],
+                bitcoin_tip_chainwork: [9; 32],
                 root: [10; 32],
                 leaf_count: 1,
             },
@@ -3465,7 +3465,7 @@ mod m209_bitcoin_state_proof_chain_id_tests {
             },
             inclusion_header: freedom_types::BitcoinBlockHeader {
                 version: 1,
-                prev_block_hash: [0; 32],
+                previous_block_hash: [0; 32],
                 merkle_root: [0; 32],
                 timestamp: 1,
                 bits: 0,
@@ -3595,7 +3595,7 @@ mod m426_bitcoin_utxo_header_binding_tests {
             raw_transaction: vec![],
             block_header: Some(BitcoinBlockHeader {
                 version: 1,
-                prev_block_hash: [0; 32],
+                previous_block_hash: [0; 32],
                 merkle_root: [99; 32],
                 timestamp: 1,
                 bits: 0,
@@ -3652,7 +3652,7 @@ mod m211_bitcoin_merkle_proof_chain_id_tests {
             merkle_index: 0,
             block_header: BitcoinBlockHeader {
                 version: 1,
-                prev_block_hash: [0; 32],
+                previous_block_hash: [0; 32],
                 merkle_root: [2; 32],
                 timestamp: 1,
                 bits: 0,
@@ -3812,7 +3812,7 @@ mod m212_bitcoin_utxo_transition_chain_id_tests {
         let block = freedom_types::BitcoinSpendScanBlock {
             height: 101,
             header: freedom_types::BitcoinBlockHeader {
-                version: 1, prev_block_hash: [8; 32], merkle_root: [14; 32],
+                version: 1, previous_block_hash: [8; 32], merkle_root: [14; 32],
                 timestamp: 1, bits: 0, nonce: 0,
             },
             raw_transactions: vec![],
@@ -3889,7 +3889,7 @@ mod m213_bitcoin_utxo_root_continuity_tests {
         let block = freedom_types::BitcoinSpendScanBlock {
             height: 101,
             header: freedom_types::BitcoinBlockHeader {
-                version: 1, prev_block_hash: [8;32], merkle_root: [16;32],
+                version: 1, previous_block_hash: [8;32], merkle_root: [16;32],
                 timestamp: 1, bits: 0, nonce: 0,
             },
             raw_transactions: vec![],
@@ -3911,7 +3911,7 @@ mod m213_bitcoin_utxo_root_continuity_tests {
         let block = freedom_types::BitcoinSpendScanBlock {
             height: 101,
             header: freedom_types::BitcoinBlockHeader {
-                version: 1, prev_block_hash: [8;32], merkle_root: [16;32],
+                version: 1, previous_block_hash: [8;32], merkle_root: [16;32],
                 timestamp: 1, bits: 0, nonce: 0,
             },
             raw_transactions: vec![],
@@ -3997,7 +3997,7 @@ mod m235_bitcoin_reorg_gate_validation_tests {
             height: 101,
             header: freedom_types::BitcoinBlockHeader {
                 version: 1,
-                prev_block_hash: [8; 32],
+                previous_block_hash: [8; 32],
                 merkle_root: [14; 32],
                 timestamp: 1,
                 bits: 0,
@@ -4029,9 +4029,9 @@ mod m235_bitcoin_reorg_gate_validation_tests {
             accumulator: freedom_types::BitcoinUtxoAccumulator {
                 bridge_id: [7; 32],
                 chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
-                tip_height: 100,
-                tip_hash: [8; 32],
-                tip_chainwork: [9; 32],
+                bitcoin_tip_height: 100,
+                bitcoin_tip_hash: [8; 32],
+                bitcoin_tip_chainwork: [9; 32],
                 root: [17; 32],
                 leaf_count: 1,
             },
@@ -4144,7 +4144,7 @@ mod m237_bitcoin_recovery_validator_identity_tests {
         let consensus_key = [9u8; 32];
         state.active_validator_set.insert(validator_id, freedom_types::ValidatorSetEntry {
             validator_id,
-            owner: [0u8; 20],
+            owner: [0u8; 32],
             consensus_key,
             stake: 1,
         });
@@ -4191,7 +4191,7 @@ mod m241_bridge_mint_execution_security_tests {
             active_id,
             freedom_types::ValidatorSetEntry {
                 validator_id: active_id,
-                owner: [0u8; 20],
+                owner: [0u8; 32],
                 consensus_key: active_key,
                 stake: 1,
             },
@@ -4441,7 +4441,7 @@ mod m260_validator_history_transition_tests {
         let mut state=ChainState::genesis(&genesis);
         state.height=1000;
         state.pending_validator_set.insert([9u8;32],freedom_types::ValidatorSetEntry {
-            validator_id:[9u8;32], owner:[8u8;20], consensus_key:[7u8;32], stake:20,
+            validator_id:[9u8;32], owner:[8u8;32], consensus_key:[7u8;32], stake:20,
         });
         state.maybe_advance_epoch();
         assert_eq!(state.epoch,1);
@@ -6449,8 +6449,9 @@ mod m288_slash_atomicity_hardening_tests {
                 validator_id: id,
                 kind: freedom_types::EquivocationKind::DoubleProposal,
                 height: 1,
-                first_block_hash: [1u8; 32],
-                second_block_hash: [2u8; 32],
+                round: 0,
+                first: vec![1u8; 32],
+                second: vec![2u8; 32],
             },
         );
 
