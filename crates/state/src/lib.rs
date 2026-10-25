@@ -2857,7 +2857,7 @@ mod m93_bridge_rate_limit_tests {
 
 #[cfg(test)]
 mod m92_bridge_approval_transition_tests {
- use super::*; use ed25519_dalek::SigningKey;
+ use super::*; use ed25519_dalek::{SigningKey, Signer};
  fn setup()->(ChainState,Hash,Hash){
   let key=SigningKey::from_bytes(&[7;32]); let pubkey=key.verifying_key().to_bytes(); let vid=freedom_primitives::hash_bytes(&pubkey);
   let v=Validator{validator_id:vid,owner:[1;32],consensus_key:pubkey,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
@@ -2876,7 +2876,7 @@ mod m79_bridge_replay_tests {
  use freedom_types::{Genesis, AssetDefinition, AssetStatus, AssetType, BridgeMessage, BRIDGE_MESSAGE_PROTOCOL_VERSION};
 
  fn setup()->(ChainState,AssetDefinition,Hash,Hash){
-  let mut state=ChainState::genesis(&Genesis::default());
+  let mut state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
   let source_chain_id=100u32;
   let bridge_id=[4u8;32];
   let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[7u8;32],bridge_id);
@@ -2922,7 +2922,7 @@ mod m80_bridge_state_machine_tests {
  use freedom_types::{Genesis, AssetDefinition, AssetStatus, AssetType, BridgeMessage, BRIDGE_MESSAGE_PROTOCOL_VERSION};
 
  fn setup()->(ChainState,Hash){
-  let mut state=ChainState::genesis(&Genesis::default());
+  let mut state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
   let source_chain_id=100u32; let bridge_id=[4u8;32];
   let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[7u8;32],bridge_id);
   state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[7u8;32],bridge_id,status:AssetStatus::Active}).unwrap();
@@ -3057,7 +3057,7 @@ mod m77_asset_registry_tests {
 
  #[test]
  fn genesis_registers_321m_as_native_asset() {
-  let state=ChainState::genesis(&Genesis::default());
+  let state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
   let native=state.asset_registry.values().find(|a| a.symbol==freedom_primitives::NATIVE_ASSET_SYMBOL).unwrap();
   assert_eq!(native.source_chain_id, freedom_primitives::CHAIN_ID);
   assert_eq!(native.asset_type, AssetType::Native);
@@ -3067,7 +3067,7 @@ mod m77_asset_registry_tests {
 
  #[test]
  fn genesis_native_asset_identity_matches_321more_metadata() {
-  let state=ChainState::genesis(&Genesis::default());
+  let state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
   let native=state.asset_registry.values().find(|a| a.asset_type==AssetType::Native).unwrap();
   assert_eq!(freedom_primitives::NETWORK_NAME, "321MORE Network");
   assert_eq!(freedom_primitives::NATIVE_ASSET_SYMBOL, "321M");
@@ -3081,7 +3081,7 @@ mod m77_asset_registry_tests {
 
  #[test]
  fn identical_symbols_on_different_chains_are_distinct_assets() {
-  let mut state=ChainState::genesis(&Genesis::default());
+  let mut state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
   let eth=bridged_asset(1, b"0xeth-usdt", [1u8;32]);
   let tron=bridged_asset(2, b"TTRONUSDT", [2u8;32]);
   assert_ne!(eth.asset_id, tron.asset_id);
@@ -3093,7 +3093,7 @@ mod m77_asset_registry_tests {
 
  #[test]
  fn asset_registration_rejects_forged_identity_and_duplicate() {
-  let mut state=ChainState::genesis(&Genesis::default());
+  let mut state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
   let mut asset=bridged_asset(1, b"0xabc", [3u8;32]);
   asset.asset_id=[9u8;32];
   assert_eq!(state.register_asset(asset.clone()), Err(StateError::InvalidAsset));
@@ -3119,7 +3119,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn outbound_withdrawal_is_chain_agnostic() {
-  let mut s=ChainState::genesis(&Genesis::default());
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
   let bridge=[4u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
   let w=withdrawal(&a,100,bridge); let id=s.request_bridge_withdrawal(w).unwrap();
   assert_eq!(s.bridge_withdrawal_status[&id],BridgeWithdrawalStatus::Requested);
@@ -3129,7 +3129,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn withdrawal_rejects_wrong_chain_or_bridge() {
-  let mut s=ChainState::genesis(&Genesis::default()); let bridge=[5u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[5u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
   let mut w=withdrawal(&a,200,bridge); w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id();
   assert_eq!(s.request_bridge_withdrawal(w),Err(StateError::InvalidBridgeWithdrawal));
   let mut w=withdrawal(&a,100,[6u8;32]); w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id();
@@ -3138,7 +3138,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn accounting_enforces_lock_mint_burn_release_conservation() {
-  let mut s=ChainState::genesis(&Genesis::default()); let bridge=[7u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[7u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
   s.record_verified_external_lock(a.asset_id,100).unwrap();
   s.record_freedom_mint(a.asset_id,100).unwrap();
   assert_eq!(s.record_freedom_mint(a.asset_id,1),Err(StateError::InvalidBridgeAccounting));
@@ -3150,7 +3150,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn finalization_cannot_release_before_burn() {
-  let mut s=ChainState::genesis(&Genesis::default()); let bridge=[8u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[8u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
   s.record_verified_external_lock(a.asset_id,100).unwrap(); s.record_freedom_mint(a.asset_id,100).unwrap();
   let id=s.request_bridge_withdrawal(withdrawal(&a,100,bridge)).unwrap();
   for next in [BridgeWithdrawalStatus::Validated,BridgeWithdrawalStatus::Approved,BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
@@ -3162,7 +3162,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn bridge_state_changes_state_root() {
-  let mut s=ChainState::genesis(&Genesis::default()); let before=s.state_root(); let bridge=[9u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let before=s.state_root(); let bridge=[9u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
   s.record_verified_external_lock(a.asset_id,100).unwrap(); let after_lock=s.state_root(); assert_ne!(before,after_lock);
   s.record_freedom_mint(a.asset_id,100).unwrap(); assert_ne!(after_lock,s.state_root());
  }
@@ -3172,7 +3172,7 @@ mod m81_bidirectional_bridge_tests {
 #[cfg(test)]
 mod m155_bridge_mint_boundary_tests {
  use super::*;
- use ed25519_dalek::SigningKey;
+ use ed25519_dalek::{SigningKey, Signer};
  use freedom_types::{
   BridgeMessageApproval, BridgeMessageApprovalSet, BridgeMintAuthorization,
   BridgeSecurityPolicy, VerifiedDeposit, AssetDefinition, AssetStatus, AssetType,
@@ -3250,7 +3250,7 @@ mod m155_bridge_mint_boundary_tests {
 #[cfg(test)]
 mod m156_bridge_mint_transaction_tests {
  use super::*;
- use ed25519_dalek::SigningKey;
+ use ed25519_dalek::{SigningKey, Signer};
  use freedom_crypto::sign;
  use freedom_types::{
   BridgeMessageApproval, BridgeMessageApprovalSet, BridgeMintAuthorization,
@@ -3927,7 +3927,7 @@ mod m213_bitcoin_utxo_root_continuity_tests {
 #[cfg(test)]
 mod m230_threshold_approval_authentication_tests {
  use super::*;
- use ed25519_dalek::SigningKey;
+ use ed25519_dalek::{SigningKey, Signer};
 
  #[test]
  fn threshold_approval_rejects_forged_signature_count() {
