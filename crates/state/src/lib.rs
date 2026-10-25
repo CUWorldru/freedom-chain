@@ -827,14 +827,14 @@ mod m339_validator_certificate_quorum_overflow_tests {
     fn persisted_certificate_quorum_is_overflow_safe() {
         let count = usize::MAX;
         let expected = count - (count / 3 + usize::from(count % 3 != 0)) + 1;
-        assert_eq!(freedom_consensus::quorum_threshold(count), expected);
+        assert_eq!(freedom_primitives::quorum_threshold(count), expected);
     }
 
     #[test]
     fn persisted_certificate_quorum_matches_small_sets() {
         let expected = [usize::MAX, 1, 2, 3, 3, 4, 5, 5, 6, 7];
         for (count, threshold) in expected.into_iter().enumerate() {
-            assert_eq!(freedom_consensus::quorum_threshold(count), threshold);
+            assert_eq!(freedom_primitives::quorum_threshold(count), threshold);
         }
     }
 }
