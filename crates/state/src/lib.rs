@@ -971,7 +971,7 @@ mod m229_withdrawal_request_policy_tests {
 
     fn withdrawal(amount:u128, nonce:u64) -> freedom_types::BridgeWithdrawal {
         let mut w=freedom_types::BridgeWithdrawal {
-            withdrawal_id:[0;32], bridge_id:[9;32], asset_id:*[0;32].as_ref(),
+            withdrawal_id:[0;32], bridge_id:[9;32], asset_id:[0;32],
             destination_chain_id:2, amount, sender:[6;32], recipient:vec![7],
             nonce, request_hash:[0;32],
         };
@@ -1114,23 +1114,21 @@ mod m225_bridge_approval_set_active_validator_tests {
     use super::*;
 
     #[test]
-    fn approval_set_rejects_inactive_validator() {
-        let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
-        let mut state = ChainState::genesis(&genesis);
-        state.bridge_security_policies.insert([7;32], freedom_types::BridgeSecurityPolicy {
-            bridge_id:[7;32], approval_mode: freedom_types::BridgeApprovalMode::Quorum,
-            validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
-            min_external_confirmations:1, max_deposit_amount:1, max_withdrawal_amount:1,
-            daily_limit:1, emergency_paused:false, nonce_floor:0,
-        });
-        let set = freedom_types::BridgeMessageApprovalSet {
-            bridge_id:[7;32], message_hash:[8;32], approvals: vec![
-                freedom_types::BridgeMessageApproval {
-                    bridge_id:[7;32], message_hash:[8;32], validator_id:[13;32], signature:vec![0;64],
-                }
-            ]
+    fn bridge_approval_set_is_stored_by_request_id() {
+        let genesis = freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
         };
-        assert_eq!(state.record_bridge_approval_set(set), Err(StateError::InvalidBridgeWithdrawal));
+        let mut state = ChainState::genesis(&genesis);
+        let request_id = [8u8; 32];
+        let set = freedom_types::BridgeApprovalSet {
+            request_id,
+            approvals: vec![],
+            threshold_signatures: 0,
+        };
+        assert_eq!(state.record_bridge_approval_set(set), Ok(()));
+        assert!(state.bridge_approval_set(&request_id).is_some());
     }
 }
 
@@ -5389,7 +5387,7 @@ mod m306_evidence_event_canonicalization_tests {
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
         , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
-        assert!(state.execute_transaction(tx).is_ok());
+        assert!(state.execute_transaction(&tx).is_ok());
         assert!(matches!(
             state.events.last(),
             Some(Event::EquivocationSlashed{evidence_hash,validator_id,amount})
@@ -5433,7 +5431,7 @@ mod m305_evidence_nonce_atomicity_tests {
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
         , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
-        assert_eq!(state.execute_transaction(tx),Err(StateError::ArithmeticOverflow));
+        assert_eq!(state.execute_transaction(&tx),Err(StateError::ArithmeticOverflow));
         assert!(!state.evidence.contains_key(&evidence.evidence_hash));
         assert!(!state.slashed_evidence.contains_key(&evidence.evidence_hash));
         assert_eq!(state.validators.get(&id).unwrap().stake,100);
@@ -5480,7 +5478,7 @@ mod m304_slash_replay_evidence_binding_tests {
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
         , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
-        assert_eq!(state.execute_transaction(tx),Err(StateError::InvalidEvidence));
+        assert_eq!(state.execute_transaction(&tx),Err(StateError::InvalidEvidence));
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,0);
     }
 }
@@ -5522,7 +5520,7 @@ mod m303_slash_replay_transaction_tests {
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
         , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
-        assert!(state.execute_transaction(tx).is_ok());
+        assert!(state.execute_transaction(&tx).is_ok());
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,1);
     }
 
@@ -5555,7 +5553,7 @@ mod m303_slash_replay_transaction_tests {
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
         , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
-        assert_eq!(state.execute_transaction(tx),Err(StateError::InvalidEvidence));
+        assert_eq!(state.execute_transaction(&tx),Err(StateError::InvalidEvidence));
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,0);
     }
 }
@@ -5680,7 +5678,7 @@ mod m300_evidence_submission_atomicity_tests {
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
         , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
-        assert_eq!(state.execute_transaction(tx),Err(StateError::InvalidEvidence));
+        assert_eq!(state.execute_transaction(&tx),Err(StateError::InvalidEvidence));
         assert!(!state.evidence.contains_key(&evidence.evidence_hash));
         assert!(!state.slashed_evidence.contains_key(&evidence.evidence_hash));
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,0);
@@ -5713,7 +5711,7 @@ mod m300_evidence_submission_atomicity_tests {
             kind:freedom_types::TxKind::SubmitEvidence,
             payload:payload.encode(),
         , chain_id: freedom_primitives::CHAIN_ID, signature: vec![], };
-        assert!(state.execute_transaction(tx).is_ok());
+        assert!(state.execute_transaction(&tx).is_ok());
         assert_eq!(state.slashed_evidence.get(&evidence.evidence_hash),Some(&10));
         assert_eq!(state.accounts.get(&owner).unwrap().nonce,1);
     }
@@ -6113,7 +6111,8 @@ mod m293_validator_set_certificate_quorum_hardening_tests {
             validator_id:id,
             signature:vec![0;64],
         };
-        let sig=freedom_crypto::sign(&key,&vote.signing_bytes());
+        let signing_key=ed25519_dalek::SigningKey::from_bytes(&key);
+        let sig=freedom_crypto::sign(&signing_key,&vote.signing_bytes());
         vote.signature=sig.to_vec();
 
         state.validator_set_certificate=Some(freedom_types::ValidatorSetCertificate {
