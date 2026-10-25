@@ -247,7 +247,7 @@ fn peer_evidence_weight(kind: &PeerEvidenceKind, severity: PeerEvidenceSeverity)
 
 fn peer_evidence_id(evidence: &PeerReputationEvidence) -> Hash {
     let bytes = serde_json::to_vec(&(
-        b"freedom/peer-reputation/evidence/v1",
+        b"freedom/peer-reputation/evidence/v1".as_slice(),
         evidence.peer,
         evidence.height,
         evidence.request_id,
@@ -598,22 +598,22 @@ mod m31_tests {
     fn snapshot_commitment_fingerprint_changes_when_state_root_changes() {
         let base = hash_bytes(
             &[
-                &7u64.to_le_bytes(),
-                &[1u8; 32],
-                &[2u8; 32],
-                &[3u8; 32],
-                &[4u8; 32],
-                &[0u8; 32],
+                7u64.to_le_bytes().as_slice(),
+                [1u8; 32].as_slice(),
+                [2u8; 32].as_slice(),
+                [3u8; 32].as_slice(),
+                [4u8; 32].as_slice(),
+                [0u8; 32].as_slice(),
             ].concat(),
         );
         let changed = hash_bytes(
             &[
-                &7u64.to_le_bytes(),
-                &[1u8; 32],
-                &[9u8; 32],
-                &[3u8; 32],
-                &[4u8; 32],
-                &[0u8; 32],
+                7u64.to_le_bytes().as_slice(),
+                [1u8; 32].as_slice(),
+                [9u8; 32].as_slice(),
+                [3u8; 32].as_slice(),
+                [4u8; 32].as_slice(),
+                [0u8; 32].as_slice(),
             ].concat(),
         );
         assert_ne!(base, changed);
@@ -1203,7 +1203,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if validator_index >= 3 { return Err("NETWORK_321MORE_VALIDATOR_INDEX must be 0..2".into()); }
 
     let consensus_key = ed25519_dalek::SigningKey::from_bytes(&[(validator_index as u8) + 1; 32]);
-    let validator_id = hash_bytes(&[b"validator", &[(validator_index as u8) + 1]].concat());
+    let mut validator_seed = b"validator".to_vec();
+    validator_seed.push((validator_index as u8) + 1);
+    let validator_id = hash_bytes(&validator_seed);
     let owner = state.validators.get(&validator_id).ok_or("validator not found")?.owner;
     let mut protocol = ValidatorProtocol::new(validator_id, consensus_key.clone());
     let mut blocks: BTreeMap<Hash, freedom_types::Block> = BTreeMap::new();
