@@ -8,7 +8,9 @@ license.workspace = true
 freedom-consensus = { path = "../consensus" }
 freedom-types = { path = "../types" }
 freedom-state = { path = "../state" }
+freedom-primitives = { path = "../primitives" }
 rocksdb.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
