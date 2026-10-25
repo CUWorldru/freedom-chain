@@ -4200,7 +4200,7 @@ mod m241_bridge_mint_execution_security_tests {
             registry_only_id,
             freedom_types::Validator {
                 validator_id: registry_only_id,
-                owner: [0u8; 20],
+                owner: [0u8; 32],
                 consensus_key: registry_only_key,
                 stake: 1,
             },
@@ -4435,7 +4435,7 @@ mod m260_validator_history_transition_tests {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
             validators:vec![freedom_types::Validator {
-                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                validator_id:[1u8;32], owner:[2u8;32], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let mut state=ChainState::genesis(&genesis);
@@ -4454,7 +4454,7 @@ mod m260_validator_history_transition_tests {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
             validators:vec![freedom_types::Validator {
-                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                validator_id:[1u8;32], owner:[2u8;32], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let mut state=ChainState::genesis(&genesis);
@@ -4535,7 +4535,7 @@ mod m263_previous_set_certificate_tests {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
             validators:vec![freedom_types::Validator {
-                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                validator_id:[1u8;32], owner:[2u8;32], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let state=ChainState::genesis(&genesis);
@@ -4554,7 +4554,7 @@ mod m264_validator_snapshot_hash_tests {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
             validators:vec![freedom_types::Validator {
-                validator_id:[1u8;32], owner:[2u8;20], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                validator_id:[1u8;32], owner:[2u8;32], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let state=ChainState::genesis(&genesis);
@@ -4576,7 +4576,7 @@ mod m265_state_commitment_finality_data_tests {
             initial_supply: 0,
             validators: vec![freedom_types::Validator {
                 validator_id: [1u8; 32],
-                owner: [2u8; 20],
+                owner: [2u8; 32],
                 consensus_key: [3u8; 32],
                 stake: 10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
