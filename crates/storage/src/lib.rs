@@ -188,7 +188,7 @@ impl ChainStore {
         snapshot: &StateSnapshot,
         checkpoint: Option<&Block>,
     ) -> Result<(), StorageError> {
-        if snapshot.chain_id != CHAIN_ID {
+        if snapshot.chain_id != u64::from(CHAIN_ID) {
             return Err(StorageError::InvalidSnapshot("chain id mismatch".into()));
         }
         if snapshot.state.height != snapshot.height {
@@ -283,7 +283,7 @@ impl ChainStore {
         finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
     ) -> StateSnapshot {
         StateSnapshot {
-            chain_id: CHAIN_ID,
+            chain_id: u64::from(CHAIN_ID),
             height: state.height,
             block_hash,
             state_root: state.state_root(),
