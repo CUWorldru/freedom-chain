@@ -72,7 +72,11 @@ fn sync_response_byte_budget_available(pending_bytes: usize, next_response_bytes
 }
 
 fn request_id(validator_id: Hash, from_height: u64) -> Hash {
-    hash_bytes(&[b"FREEDOM-SYNC-V1", &validator_id, &from_height.to_le_bytes()].concat())
+    hash_bytes(&[
+        b"FREEDOM-SYNC-V1".as_slice(),
+        validator_id.as_slice(),
+        from_height.to_le_bytes().as_slice(),
+    ].concat())
 }
 
 /// Build a peer response's validator-set transition history from canonical
@@ -152,6 +156,15 @@ struct SyncMisbehaviorEvidence {
     from_height: u64,
     request_id: Hash,
     batch_fingerprint: Hash,
+    reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SnapshotMisbehaviorEvidence {
+    peer: libp2p::PeerId,
+    height: u64,
+    request_id: Hash,
+    snapshot_fingerprint: Hash,
     reason: String,
 }
 
@@ -384,7 +397,11 @@ fn send_snapshot_request(
     validator_id: Hash,
     height: u64,
 ) -> Result<(Hash, libp2p::request_response::OutboundRequestId), String> {
-    let request_id = hash_bytes(&[b"FREEDOM-SNAPSHOT-V1", &validator_id, &height.to_le_bytes()].concat());
+    let request_id = hash_bytes(&[
+        b"FREEDOM-SNAPSHOT-V1".as_slice(),
+        validator_id.as_slice(),
+        height.to_le_bytes().as_slice(),
+    ].concat());
     let request = freedom_network::SnapshotSyncRequest { request_id, height };
     freedom_network::validate_snapshot_request(&request)?;
     freedom_network::validate_sync_wire_request_size(&SyncWireRequest::Snapshot(request.clone()))?;
@@ -964,7 +981,7 @@ mod m31_tests {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
-                validator_id: hash_bytes(&[b"validator", &[i + 1]].concat()),
+                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
                 owner: address_from_public_key(&key),
                 consensus_key: key,
                 stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -1011,7 +1028,7 @@ mod m31_tests {
         let err = replay_persisted_blocks(&mut state, &[first, second]).unwrap_err();
 
         assert!(err.contains("previous hash mismatch"));
-        assert_eq!(state, before);
+        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
     }
 
     #[test]
@@ -1121,7 +1138,7 @@ fn validate_snapshot_state_transition(
     if block_hash(&committed) != block_hash(checkpoint) {
         return Err("executed checkpoint hash differs from supplied checkpoint".into());
     }
-    if executed_state != *supplied_snapshot_state {
+    if serde_json::to_vec(&executed_state)? != serde_json::to_vec(supplied_snapshot_state)? {
         return Err("supplied snapshot state differs from locally executed checkpoint state".into());
     }
     executed_state
@@ -2283,7 +2300,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         second.header.timestamp = second.header.timestamp.saturating_add(1);
 
         assert!(replay_persisted_blocks(&mut state, &[first, second]).is_err());
-        assert_eq!(state, original);
+        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&original).unwrap());
         assert_eq!(state.height, 0);
     }
 
@@ -2301,7 +2318,7 @@ mod m471_snapshot_state_transition_tests {
             let signing_key = ed25519_dalek::SigningKey::from_bytes(&[i; 32]);
             let public_key = signing_key.verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&[b"m471-validator", &[i]].concat()),
+                validator_id: hash_bytes(&{ let mut seed = b"m471-validator".to_vec(); seed.push(i); seed }),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0,
