@@ -2125,7 +2125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                 freedom_types::EquivocationKind::DoublePrecommit,
                                                 precommit.height,precommit.round,precommit.validator_id,
                                                 existing.signing_bytes(),precommit.signing_bytes());
-                                            state.record_equivocation(evidence.clone())?;
+                                            state.record_equivocation(evidence.clone()).map_err(|e| std::io::Error::other(format!("failed to record equivocation: {e:?}")))?;
                                             let msg=make_evidence_message(&state,evidence,validator_id,&consensus_key)?;
                                             publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
                                             continue;
