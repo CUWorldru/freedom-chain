@@ -2194,7 +2194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 Ok(NetworkMessage::Evidence(msg)) => {
                                     if !protocol.remember_message(msg.message_id()) { continue; }
                                     freedom_consensus::validate_evidence_message(&state, &msg)?;
-                                    state.record_equivocation(msg.evidence.clone())?;
+                                    state.record_equivocation(msg.evidence.clone()).map_err(|e| std::io::Error::other(format!("failed to record received equivocation: {e:?}")))?;
                                     println!("EVIDENCE_RECEIVED id={}", hex::encode(msg.evidence.evidence_hash));
                                 }
                                 Ok(NetworkMessage::Timeout(timeout)) => {
@@ -2246,8 +2246,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
 
-    #[test]
-    fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
+}
+
+#[test]
+fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
             Validator {
@@ -2305,8 +2307,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&original).unwrap());
         assert_eq!(state.height, 0);
     }
-
-}
 
 
 #[cfg(test)]
