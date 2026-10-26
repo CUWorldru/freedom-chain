@@ -311,7 +311,7 @@ mod m331_transaction_auth_boundary_tests {
     use super::*;
     use freedom_crypto::generate_keypair;
     use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
-    use freedom_types::{Genesis, Transaction, TxKind, Validator};
+    use freedom_types::{Genesis, Receipt, Transaction, TxKind, Validator};
 
     fn state_and_tx() -> (ChainState, Transaction) {
         let key = generate_keypair();
@@ -406,15 +406,19 @@ mod m332_block_nonce_sequence_tests {
         };
         let tx1 = make_tx(vec![1]);
         let tx2 = make_tx(vec![2]);
+        let receipts = vec![
+            Receipt { tx_hash: tx1.hash(), success: true, gas_used: 0, events: vec![] },
+            Receipt { tx_hash: tx2.hash(), success: true, gas_used: 0, events: vec![] },
+        ];
         let block = Block {
             header: BlockHeader {
                 height: 1, round: 0, previous_hash: state.last_block_hash,
                 state_root: state.state_root(), tx_root: tx_root(&[tx1.clone(), tx2.clone()]),
-                receipts_root: receipts_root(&[]), timestamp: 0, epoch: state.epoch,
+                receipts_root: receipts_root(&receipts), timestamp: 0, epoch: state.epoch,
                 proposer: owner, epoch_transition_certificate: None,
             },
             transactions: vec![tx1, tx2],
-            receipts: vec![],
+            receipts,
         };
         assert_eq!(validate_block_commitments(&state, &block), Err("transaction nonce is not the next sender nonce".into()));
     }
@@ -541,7 +545,8 @@ mod m335_active_validator_quorum_tests {
             let mut vote = ValidatorVote {
                 validator_id: *id, block_hash: [9; 32], height: 1, round: 0, signature: vec![],
             };
-            vote.signature = freedom_crypto::sign(&keys[i], &vote.signing_bytes()).to_vec();
+            let key_index = (0..keys.len()).find(|j| hash_bytes(&[b'm', b'3', b'3', b'5', *j as u8]) == *id).unwrap();
+            vote.signature = freedom_crypto::sign(&keys[key_index], &vote.signing_bytes()).to_vec();
             vote
         }).collect();
         assert!(validate_quorum(&state, [9; 32], 1, 0, &votes).is_ok());
@@ -590,7 +595,8 @@ mod m337_certificate_active_quorum_tests {
                 validator_id: *id, from_epoch: state.epoch, to_epoch: state.epoch + 1,
                 previous_set_hash, new_set_hash, signature: vec![],
             };
-            vote.signature = sign(&keys[i], &vote.signing_bytes()).to_vec();
+            let key_index = (0..keys.len()).find(|j| hash_bytes(&[b'm', b'3', b'3', b'7', *j as u8]) == *id).unwrap();
+            vote.signature = sign(&keys[key_index], &vote.signing_bytes()).to_vec();
             cert.votes.push(vote);
         }
         state.pending_validator_set.clone_from(&pending_set);
@@ -636,7 +642,8 @@ mod m336_timeout_active_validator_quorum_tests {
             let mut timeout = ValidatorTimeout {
                 validator_id: *id, height: 1, round: 0, signature: vec![],
             };
-            timeout.signature = sign(&keys[i], &timeout.signing_bytes()).to_vec();
+            let key_index = (0..keys.len()).find(|j| hash_bytes(&[b'm', b'3', b'3', b'6', *j as u8]) == *id).unwrap();
+            timeout.signature = sign(&keys[key_index], &timeout.signing_bytes()).to_vec();
             timeout
         }).collect();
         assert!(validate_timeout_quorum(&state, 1, 0, &timeouts).is_ok());
@@ -718,11 +725,13 @@ mod quorum_tests {
     
     fn state_with_validators() -> ChainState {
         let validators = (0u8..3).map(|i| {
-            let key = [i + 1; 32];
+            let seed = [i + 1; 32];
+            let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+            let public_key = signing_key.verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&[b"validator".as_slice(), &[i + 1][..]].concat()),
-                owner: freedom_primitives::address_from_public_key(&key),
-                consensus_key: key,
+                validator_id: hash_bytes(&public_key),
+                owner: freedom_primitives::address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
@@ -730,10 +739,11 @@ mod quorum_tests {
     }
 
     fn vote(state: &ChainState, index: u8, block_hash: Hash, height: u64, round: u64) -> ValidatorVote {
-        let id = hash_bytes(&[b"validator".as_slice(), &[index + 1][..]].concat());
-        let key = [index + 1; 32];
+        let seed = [index + 1; 32];
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let id = hash_bytes(&signing_key.verifying_key().to_bytes());
         let mut v = ValidatorVote { block_hash, height, round, validator_id: id, signature: Vec::new() };
-        v.signature = sign(&ed25519_dalek::SigningKey::from_bytes(&key), &v.signing_bytes()).to_vec();
+        v.signature = sign(&signing_key, &v.signing_bytes()).to_vec();
         v
     }
 
@@ -1200,10 +1210,12 @@ mod m320_validator_certificate_admission_tests {
 
     #[test]
     fn certificate_admission_requires_strict_validator_count_quorum() {
-        let state = state();
+        let mut state = state();
         let id = *state.active_validator_set.keys().next().unwrap();
         let entry = state.active_validator_set.get(&id).unwrap();
         let previous = validator_set_hash(&state.active_validator_set);
+        let pending_id = *state.pending_validator_set.keys().next().unwrap();
+        state.pending_validator_set.get_mut(&pending_id).unwrap().stake += 1;
         let new_set = validator_set_hash(&state.pending_validator_set);
         let mut vote = freedom_types::ValidatorSetVote {
             from_epoch: 0,
