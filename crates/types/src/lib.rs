@@ -688,8 +688,10 @@ impl AssetDefinition {
     pub fn validate_external_address_format(&self) -> bool {
         match self.asset_type {
             AssetType::Native => {
-                (self.source_chain_id == BITCOIN_MAINNET_CHAIN_ID
-                    && self.contract_address.as_slice() == b"BTC")
+                (self.source_chain_id == freedom_primitives::CHAIN_ID
+                    && self.contract_address.as_slice() == freedom_primitives::NATIVE_ASSET_SYMBOL.as_bytes())
+                    || (self.source_chain_id == BITCOIN_MAINNET_CHAIN_ID
+                        && self.contract_address.as_slice() == b"BTC")
                     || (self.source_chain_id == ETHEREUM_MAINNET_CHAIN_ID
                         && self.contract_address.as_slice() == b"ETH")
             },
