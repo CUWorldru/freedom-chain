@@ -1053,7 +1053,7 @@ mod m31_tests {
         let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
 
         assert!(err.contains("previous hash mismatch"));
-        assert_eq!(state, before);
+        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
     }
 
     #[test]
@@ -1078,7 +1078,7 @@ mod m31_tests {
         let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
 
         assert!(err.contains("proposer mismatch"));
-        assert_eq!(state, before);
+        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
     }
 
     #[test]
@@ -1103,7 +1103,7 @@ mod m31_tests {
         let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
 
         assert!(err.contains("height gap"));
-        assert_eq!(state, before);
+        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
     }
 }
 
@@ -1138,7 +1138,7 @@ fn validate_snapshot_state_transition(
     if block_hash(&committed) != block_hash(checkpoint) {
         return Err("executed checkpoint hash differs from supplied checkpoint".into());
     }
-    if serde_json::to_vec(&executed_state)? != serde_json::to_vec(supplied_snapshot_state)? {
+    if serde_json::to_vec(&executed_state).map_err(|e| e.to_string())? != serde_json::to_vec(supplied_snapshot_state).map_err(|e| e.to_string())? {
         return Err("supplied snapshot state differs from locally executed checkpoint state".into());
     }
     executed_state
@@ -1455,7 +1455,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         println!("peer_disconnected={peer_id}");
                     },
-                    SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info })) => {
+                    SwarmEvent::Behaviour(freedom_network::FreedomEvent::Identify(libp2p::identify::Event::Received { peer_id, info, .. })) => {
                         for addr in info.listen_addrs {
                             let _ = swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
                         }
@@ -1464,7 +1464,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SwarmEvent::Behaviour(freedom_network::FreedomEvent::Sync(event)) => {
                         // Release the global snapshot-response slot only for the exact
                         // inbound request that finished or failed, not for block responses.
-                        if let libp2p::request_response::Event::ResponseSent { peer, request_id } = &event {
+                        if let libp2p::request_response::Event::ResponseSent { peer, request_id, .. } = &event {
                             pending_sync_responses.retain(|(pending_peer, pending_id, _, _)| pending_peer != peer || pending_id != request_id);
                             pending_sync_response_bytes = pending_sync_responses.iter()
                                 .map(|(_, _, _, bytes)| *bytes)
@@ -1475,7 +1475,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .map(|(_, _, _, bytes)| *bytes)
                                 .sum();
                         }
-                        if let libp2p::request_response::Event::Message { peer, message } = event {
+                        if let libp2p::request_response::Event::Message { peer, message, .. } = event {
                             match message {
                                 libp2p::request_response::Message::Request { request_id, request, channel } => {
                                     match request {
@@ -1583,7 +1583,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             finality_validator_set: snapshot.finality_validator_set.clone(),
                                                             epoch_transition_certificate: snapshot.epoch_transition_certificate.clone(),
                                                             validator_set_transitions,
-                                                            chain_id: freedom_primitives::CHAIN_ID,
+                                                            chain_id: freedom_primitives::CHAIN_ID as u64,
                                                             state_json,
                                                         });
                                                         if let SyncWireResponse::Snapshot(ref snapshot_response) = response {
@@ -1672,7 +1672,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             let entry = sync_candidates.entry(fingerprint).or_insert((0, response.clone()));
                                             entry.0 += 1;
                                             let required = sync_required;
-                                            if entry.0 < required {
+                                            if entry.0 < required as u64 {
                                                 continue;
                                             }
 
@@ -1781,7 +1781,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             pending_snapshot.remove(snapshot_pending_index.unwrap());
                                             if response.height <= state.height || freedom_network::validate_snapshot_response(&response).is_err() { continue; }
-                                            if response.chain_id != freedom_primitives::CHAIN_ID {
+                                            if response.chain_id != freedom_primitives::CHAIN_ID as u64 {
                                                 eprintln!("SNAPSHOT_REJECTED chain id mismatch");
                                                 continue;
                                             }
@@ -1924,9 +1924,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                             let snapshot_fingerprint = hash_bytes(
                                                 &[
-                                                    &response.height.to_le_bytes(),
-                                                    &response.block_hash,
-                                                    &response.state_root,
+                                                    response.height.to_le_bytes().as_slice(),
+                                                    response.block_hash.as_slice(),
+                                                    response.state_root.as_slice(),
                                                     &hash_bytes(&serde_json::to_vec(&response.certificate)?),
                                                     &hash_bytes(&serde_json::to_vec(&response.validator_set_transitions)?),
                                                     &freedom_consensus::validator_set_hash(&response.finality_validator_set),
@@ -1979,7 +1979,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     snapshot_candidate_count
                                                 );
                                             }
-                                            if snapshot_entry.0 < snapshot_required {
+                                            if snapshot_entry.0 < snapshot_required as u64 {
                                                 continue;
                                             }
                                             let verified_snapshot = snapshot_entry.1.clone();
@@ -2103,7 +2103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 vote.height,vote.round,vote.validator_id,
                                                 existing.signing_bytes(),vote.signing_bytes());
                                             state.record_equivocation(evidence.clone())?;
-                                            let msg=make_evidence_message(evidence,validator_id,&consensus_key);
+                                            let msg=make_evidence_message(&state,evidence,validator_id,&consensus_key)?;
                                             publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
                                             continue;
                                         }
@@ -2126,7 +2126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 precommit.height,precommit.round,precommit.validator_id,
                                                 existing.signing_bytes(),precommit.signing_bytes());
                                             state.record_equivocation(evidence.clone())?;
-                                            let msg=make_evidence_message(evidence,validator_id,&consensus_key);
+                                            let msg=make_evidence_message(&state,evidence,validator_id,&consensus_key)?;
                                             publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
                                             continue;
                                         }
