@@ -1185,7 +1185,7 @@ fn replay_persisted_blocks(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let validators: Vec<Validator> = (0u8..3).map(|i| {
         let key = [i + 1; 32];
         Validator {
@@ -2102,7 +2102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 freedom_types::EquivocationKind::DoublePrevote,
                                                 vote.height,vote.round,vote.validator_id,
                                                 existing.signing_bytes(),vote.signing_bytes());
-                                            state.record_equivocation(evidence.clone())?;
+                                            state.record_equivocation(evidence.clone()).map_err(|e| std::io::Error::other(format!("failed to record equivocation: {e:?}")))?;
                                             let msg=make_evidence_message(&state,evidence,validator_id,&consensus_key)?;
                                             publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
                                             continue;
