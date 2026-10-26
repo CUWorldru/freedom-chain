@@ -1280,7 +1280,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("restored height={} hash={}", state.height, hex::encode(state.last_block_hash));
 
-    let mut swarm = build_swarm()?;
+    let mut swarm = build_swarm().map_err(std::io::Error::other)?;
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse::<Multiaddr>()?)?;
 
     if let Ok(peers) = std::env::var("NETWORK_321MORE_PEERS").or_else(|_| std::env::var("FREEDOM_PEERS")) {
@@ -2081,7 +2081,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     freedom_types::EquivocationKind::DoubleProposal,
                                                     proposal.height,proposal.round,proposal.proposer,
                                                     existing.signing_bytes(),proposal.signing_bytes());
-                                                state.record_equivocation(evidence.clone())?;
+                                                state.record_equivocation(evidence.clone()).map_err(|e| std::io::Error::other(format!("failed to record equivocation: {e:?}")))?;
                                                 let msg=make_evidence_message(&state,evidence,validator_id,&consensus_key)?;
                                                 publish(&mut swarm,&NetworkMessage::Evidence(msg))?;
                                             }
