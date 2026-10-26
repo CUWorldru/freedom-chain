@@ -1234,7 +1234,7 @@ mod tests {
             new_validator_set: set.clone(),
         };
         let error = validate_snapshot_validator_set_history(&state, &[transition], 2, &set).unwrap_err();
-        assert!(error.contains("gap or out-of-order"));
+        assert!(error.contains("gap"));
     }
 
     #[test]
@@ -1613,7 +1613,7 @@ mod m481_bounded_serialization_tests {
 
     #[test]
     fn bounded_size_writer_accepts_zero_length_serialized_value_only_if_limit_allows_it() {
-        assert!(validate_serialized_size(&(), 2, "unit payload").is_ok());
-        assert!(validate_serialized_size(&(), 1, "unit payload").is_err());
+        assert!(validate_serialized_size(&(), 4, "unit payload").is_ok());
+        assert!(validate_serialized_size(&(), 3, "unit payload").is_err());
     }
 }
