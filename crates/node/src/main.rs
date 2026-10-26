@@ -418,7 +418,7 @@ fn build_local_proposal(
     owner: freedom_primitives::Address,
     consensus_key: &ed25519_dalek::SigningKey,
     round: u64,
-) -> Result<(freedom_types::BlockProposal, freedom_types::Block), Box<dyn std::error::Error>> {
+) -> Result<(freedom_types::BlockProposal, freedom_types::Block), Box<dyn std::error::Error + Send + Sync>> {
     let mempool = Mempool::new();
     let next_height = state.height
         .checked_add(1)
