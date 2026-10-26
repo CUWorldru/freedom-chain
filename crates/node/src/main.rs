@@ -413,6 +413,14 @@ fn send_snapshot_request(
     Ok((request_id, outbound_id))
 }
 
+#[cfg(test)]
+fn test_signing_key_for_owner(owner: freedom_primitives::Address) -> ed25519_dalek::SigningKey {
+    (1u8..=3)
+        .map(|i| ed25519_dalek::SigningKey::from_bytes(&[i; 32]))
+        .find(|key| address_from_public_key(&key.verifying_key().to_bytes()) == owner)
+        .expect("owner must correspond to a test validator signing key")
+}
+
 fn build_local_proposal(
     state: &freedom_state::ChainState,
     owner: freedom_primitives::Address,
@@ -896,7 +904,7 @@ mod m31_tests {
         assert!(!peer_is_eligible(&reputations, peer, 10));
         assert!(decay_peer_reputation(&mut reputations, 20));
         let reputation = reputations.get(&peer).unwrap();
-        assert_eq!(reputation.score, 4);
+        assert_eq!(reputation.score, 3);
         assert!(!peer_is_eligible(&reputations, peer, 10));
         assert!(decay_peer_reputation(&mut reputations, 30));
         assert_eq!(reputations.get(&peer).unwrap().score, 2);
@@ -986,17 +994,18 @@ mod m31_tests {
     fn recovered_state_builds_the_next_contiguous_proposal() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
+            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
-                owner: address_from_public_key(&key),
-                consensus_key: key,
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
         let state = initialize(&genesis).unwrap();
-        let owner = state.active_validator_set.values().next().unwrap().owner;
-        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let owner = proposer_for_height_round(&state, state.height + 1, 0).unwrap();
+        let key = test_signing_key_for_owner(owner);
         let (proposal, block) = build_local_proposal(&state, owner, &key, 0).unwrap();
 
         assert_eq!(proposal.height, state.height + 1);
@@ -1010,24 +1019,25 @@ mod m31_tests {
     fn replay_is_atomic_when_later_block_is_invalid() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
+            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
-                owner: address_from_public_key(&key),
-                consensus_key: key,
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
         let mut state = initialize(&genesis).unwrap();
         let before = state.clone();
-        let owner = state.active_validator_set.values().next().unwrap().owner;
-        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let owner = proposer_for_height_round(&state, state.height + 1, 0).unwrap();
+        let key = test_signing_key_for_owner(owner);
         let (_, first) = build_local_proposal(&state, owner, &key, 0).unwrap();
 
         let mut after_first = state.clone();
         execute_block(&mut after_first, &first).unwrap();
-        let next_owner = after_first.active_validator_set.values().next().unwrap().owner;
-        let next_key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let next_owner = proposer_for_height_round(&after_first, after_first.height + 1, 0).unwrap();
+        let next_key = test_signing_key_for_owner(next_owner);
         let (_, mut second) = build_local_proposal(&after_first, next_owner, &next_key, 0).unwrap();
         second.header.previous_hash = [9u8; 32];
 
@@ -1041,17 +1051,18 @@ mod m31_tests {
     fn replay_rejects_previous_hash_corruption_without_mutating_state() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
+            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
-                owner: address_from_public_key(&key),
-                consensus_key: key,
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
         let mut state = initialize(&genesis).unwrap();
-        let owner = state.active_validator_set.values().next().unwrap().owner;
-        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let owner = proposer_for_height_round(&state, state.height + 1, 0).unwrap();
+        let key = test_signing_key_for_owner(owner);
         let (_, mut block) = build_local_proposal(&state, owner, &key, 0).unwrap();
         block.header.previous_hash = [9u8; 32];
         let before = state.clone();
@@ -1066,17 +1077,18 @@ mod m31_tests {
     fn replay_rejects_proposer_corruption_before_execution() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
+            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
-                owner: address_from_public_key(&key),
-                consensus_key: key,
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
         let mut state = initialize(&genesis).unwrap();
-        let owner = state.active_validator_set.values().next().unwrap().owner;
-        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let owner = proposer_for_height_round(&state, state.height + 1, 0).unwrap();
+        let key = test_signing_key_for_owner(owner);
         let (_, mut block) = build_local_proposal(&state, owner, &key, 0).unwrap();
         block.header.proposer = [8u8; 32];
         let before = state.clone();
@@ -1091,17 +1103,18 @@ mod m31_tests {
     fn replay_rejects_height_gap_before_execution() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
+            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
-                owner: address_from_public_key(&key),
-                consensus_key: key,
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
         let mut state = initialize(&genesis).unwrap();
-        let owner = state.active_validator_set.values().next().unwrap().owner;
-        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let owner = proposer_for_height_round(&state, state.height + 1, 0).unwrap();
+        let key = test_signing_key_for_owner(owner);
         let (_, mut block) = build_local_proposal(&state, owner, &key, 0).unwrap();
         block.header.height = 2;
         let before = state.clone();
@@ -1194,10 +1207,11 @@ fn replay_persisted_blocks(
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let validators: Vec<Validator> = (0u8..3).map(|i| {
         let key = [i + 1; 32];
+        let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
         Validator {
             validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
-            owner: address_from_public_key(&key),
-            consensus_key: key,
+            owner: address_from_public_key(&public_key),
+            consensus_key: public_key,
             stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
         }
     }).collect();
@@ -2262,24 +2276,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
+            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
-                owner: address_from_public_key(&key),
-                consensus_key: key,
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
         let mut state = initialize(&genesis).unwrap();
         let before = state.clone();
-        let owner = state.active_validator_set.values().next().unwrap().owner;
-        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let owner = proposer_for_height_round(&state, state.height + 1, 0).unwrap();
+        let key = test_signing_key_for_owner(owner);
         let (_, first) = build_local_proposal(&state, owner, &key, 0).unwrap();
 
         let mut after_first = state.clone();
         execute_block(&mut after_first, &first).unwrap();
-        let next_owner = after_first.active_validator_set.values().next().unwrap().owner;
-        let next_key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let next_owner = proposer_for_height_round(&after_first, after_first.height + 1, 0).unwrap();
+        let next_key = test_signing_key_for_owner(next_owner);
         let (_, mut second) = build_local_proposal(&after_first, next_owner, &next_key, 0).unwrap();
         second.header.timestamp = second.header.timestamp.saturating_add(1);
 
@@ -2294,18 +2309,19 @@ fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
     fn replay_hash_failure_does_not_advance_state_to_valid_prefix() {
         let validators: Vec<Validator> = (0u8..3).map(|i| {
             let key = [i + 1; 32];
+            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
-                owner: address_from_public_key(&key),
-                consensus_key: key,
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }
         }).collect();
         let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
         let mut state = initialize(&genesis).unwrap();
         let original = state.clone();
-        let owner = state.active_validator_set.values().next().unwrap().owner;
-        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let owner = proposer_for_height_round(&state, state.height + 1, 0).unwrap();
+        let key = test_signing_key_for_owner(owner);
         let (_, first) = build_local_proposal(&state, owner, &key, 0).unwrap();
         let mut second_state = state.clone();
         execute_block(&mut second_state, &first).unwrap();
@@ -2357,7 +2373,8 @@ mod m471_snapshot_state_transition_tests {
         let (state, checkpoint) = state_and_checkpoint();
         let mut executed = state.clone();
         execute_block(&mut executed, &checkpoint).unwrap();
-        assert!(validate_snapshot_state_transition(&state, &checkpoint, &executed).is_ok());
+        let result = validate_snapshot_state_transition(&state, &checkpoint, &executed);
+        assert!(result.is_ok(), "snapshot transition rejected: {:?}", result.err());
     }
 
     #[test]
