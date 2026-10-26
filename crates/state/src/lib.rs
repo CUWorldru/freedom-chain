@@ -61,7 +61,7 @@ impl ChainState {
   Ok(())
  }
 
- pub(crate) fn record_equivocation(&mut self,evidence:freedom_types::EquivocationEvidence)->Result<bool,StateError>{
+ pub fn record_equivocation(&mut self,evidence:freedom_types::EquivocationEvidence)->Result<bool,StateError>{
   // Evidence insertion is consensus state mutation. Refuse to append new
   // evidence while the authoritative validator registry is already corrupt.
   self.validate_validator_records_integrity()?;
