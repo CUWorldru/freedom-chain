@@ -1195,7 +1195,7 @@ mod m320_validator_certificate_admission_tests {
                 signature: Vec::new(),
             };
             vote.signature = freedom_crypto::sign(
-                &ed25519_dalek::SigningKey::from_bytes(&signing_key_for(id)),
+                &signing_key_for(*id),
                 &vote.signing_bytes(),
             ).to_vec();
             votes.push(vote);
@@ -1231,7 +1231,7 @@ mod m320_validator_certificate_admission_tests {
             signature: Vec::new(),
         };
         vote.signature = freedom_crypto::sign(
-            &ed25519_dalek::SigningKey::from_bytes(&signing_key_for(id)),
+            &signing_key_for(*id),
             &vote.signing_bytes(),
         ).to_vec();
         let cert = freedom_types::ValidatorSetCertificate {
