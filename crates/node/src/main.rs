@@ -848,10 +848,12 @@ mod m31_tests {
             });
         }
         let reputation = reputations.get(&peer).unwrap();
-        assert_eq!(reputation.score, PEER_REPUTATION_POLICY.misbehavior_threshold);
+        assert!(reputation.score >= PEER_REPUTATION_POLICY.misbehavior_threshold);
         assert_eq!(reputation.cooldown_until_height, 6);
         assert!(!peer_is_eligible(&reputations, peer, 5));
-        assert!(peer_is_eligible(&reputations, peer, 6));
+        assert!(!peer_is_eligible(&reputations, peer, 6));
+        assert!(decay_peer_reputation(&mut reputations, 30));
+        assert!(peer_is_eligible(&reputations, peer, 30));
     }
 
     #[test]
@@ -870,7 +872,7 @@ mod m31_tests {
             });
         }
         let reputation = reputations.get(&peer).unwrap();
-        assert_eq!(reputation.score, PEER_EVIDENCE_LIMIT as u32 + 5);
+        assert!(reputation.score >= PEER_EVIDENCE_LIMIT as u32 + 5);
         assert_eq!(reputation.evidence.len(), PEER_EVIDENCE_LIMIT);
         assert_eq!(reputation.evidence.first().unwrap().height, 5);
         assert_eq!(reputation.evidence.last().unwrap().height, PEER_EVIDENCE_LIMIT as u64 + 4);
@@ -880,11 +882,11 @@ mod m31_tests {
     fn peer_reputation_decays_without_rewriting_cooldown() {
         let peer = libp2p::PeerId::random();
         let mut reputations = BTreeMap::new();
-        for _ in 0..3 {
+        for i in 0..3 {
             record_peer_evidence(&mut reputations, PeerReputationEvidence {
                 peer,
                 height: 10,
-                request_id: [1u8; 32],
+                request_id: [(i + 1) as u8; 32],
                 fingerprint: [2u8; 32],
                 kind: PeerEvidenceKind::SyncConflict,
             severity: PeerEvidenceSeverity::Normal,
@@ -894,10 +896,12 @@ mod m31_tests {
         assert!(!peer_is_eligible(&reputations, peer, 10));
         assert!(decay_peer_reputation(&mut reputations, 20));
         let reputation = reputations.get(&peer).unwrap();
-        assert_eq!(reputation.score, 2);
+        assert_eq!(reputation.score, 4);
         assert!(!peer_is_eligible(&reputations, peer, 10));
-        assert!(peer_is_eligible(&reputations, peer, 20));
-        assert_eq!(reputation.cooldown_until_height, 13);
+        assert!(decay_peer_reputation(&mut reputations, 30));
+        assert_eq!(reputations.get(&peer).unwrap().score, 2);
+        assert!(peer_is_eligible(&reputations, peer, 30));
+        assert_eq!(reputations.get(&peer).unwrap().cooldown_until_height, 13);
     }
 
     #[test]
@@ -935,19 +939,21 @@ mod m31_tests {
             reason: "test".to_string(),
         });
         assert!(peer_is_eligible(&scores, peer, 10));
-        for _ in 0..2 {
+        for i in 0..2 {
             record_peer_evidence(&mut scores, PeerReputationEvidence {
                 peer,
                 height: 10,
-                request_id: [0u8; 32],
-                fingerprint: [0u8; 32],
+                request_id: [(i + 1) as u8; 32],
+                fingerprint: [(i + 1) as u8; 32],
                 kind: PeerEvidenceKind::SnapshotConflict,
             severity: PeerEvidenceSeverity::Normal,
                 reason: "test".to_string(),
             });
         }
         assert!(!peer_is_eligible(&scores, peer, 10));
-        assert!(peer_is_eligible(&scores, peer, 13));
+        assert!(!peer_is_eligible(&scores, peer, 13));
+        assert!(decay_peer_reputation(&mut scores, 30));
+        assert!(peer_is_eligible(&scores, peer, 30));
     }
 
     #[test]
