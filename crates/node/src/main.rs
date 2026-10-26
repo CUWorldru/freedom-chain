@@ -1252,7 +1252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
     if stored_height >= replay_from {
         let replay_blocks = store.range(replay_from, stored_height)?;
-        replay_persisted_blocks(&mut state, &replay_blocks).map_err(|e| e.into())?;
+        replay_persisted_blocks(&mut state, &replay_blocks).map_err(std::io::Error::other)?;
     }
 
     // Validate the reconstructed state against all three persisted tip anchors:
