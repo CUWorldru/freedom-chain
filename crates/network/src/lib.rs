@@ -949,7 +949,7 @@ pub fn decode_message(bytes: &[u8]) -> Result<NetworkMessage, serde_json::Error>
 pub fn publish(
     swarm: &mut Swarm<FreedomBehaviour>,
     message: &NetworkMessage,
-) -> Result<gossipsub::MessageId, Box<dyn std::error::Error>> {
+) -> Result<gossipsub::MessageId, Box<dyn std::error::Error + Send + Sync>> {
     let (topic, bytes) = match message {
         NetworkMessage::Proposal(_) => (proposal_topic(), encode_message(message)?),
         NetworkMessage::Vote(_) => (vote_topic(), encode_message(message)?),
