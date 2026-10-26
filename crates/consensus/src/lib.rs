@@ -1150,6 +1150,11 @@ mod m26_stake_tests {
 mod m320_validator_certificate_admission_tests {
     use super::*;
 
+    fn signing_key_for(id: Hash) -> ed25519_dalek::SigningKey {
+        let byte = (1u8..=3u8).find(|byte| freedom_primitives::hash_bytes(&[*byte; 32]) == id).expect("test validator id");
+        ed25519_dalek::SigningKey::from_bytes(&[byte; 32])
+    }
+
     fn state() -> ChainState {
         let validators = (1u8..=3u8).map(|byte| {
             let key = [byte; 32];
@@ -1190,7 +1195,7 @@ mod m320_validator_certificate_admission_tests {
                 signature: Vec::new(),
             };
             vote.signature = freedom_crypto::sign(
-                &ed25519_dalek::SigningKey::from_bytes(&entry.consensus_key),
+                &ed25519_dalek::SigningKey::from_bytes(&signing_key_for(id)),
                 &vote.signing_bytes(),
             ).to_vec();
             votes.push(vote);
@@ -1226,7 +1231,7 @@ mod m320_validator_certificate_admission_tests {
             signature: Vec::new(),
         };
         vote.signature = freedom_crypto::sign(
-            &ed25519_dalek::SigningKey::from_bytes(&entry.consensus_key),
+            &ed25519_dalek::SigningKey::from_bytes(&signing_key_for(id)),
             &vote.signing_bytes(),
         ).to_vec();
         let cert = freedom_types::ValidatorSetCertificate {
