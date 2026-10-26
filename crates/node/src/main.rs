@@ -2087,7 +2087,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             continue;
                                         }
-                                        Err(e) => return Err(e),
+                                        Err(e) => return Err(std::io::Error::other(e).into()),
                                     };
                                     publish(&mut swarm, &NetworkMessage::Vote(vote))?;
                                     timeout_round_sent = None;
@@ -2274,7 +2274,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let err = replay_persisted_blocks(&mut state, &[first, second]).unwrap_err();
 
         assert!(err.contains("stored block hash mismatch at 2"));
-        assert_eq!(state, before, "failed replay must not publish its partially advanced working state");
+        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap(), "failed replay must not publish its partially advanced working state");
     }
 
 
