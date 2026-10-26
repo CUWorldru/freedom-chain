@@ -1937,11 +1937,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                 && snapshot_candidates
                                                     .keys()
                                                     .any(|candidate| *candidate != snapshot_fingerprint);
-                                            let snapshot_entry = snapshot_candidates
-                                                .entry(snapshot_fingerprint)
-                                                .or_insert((0, response.clone()));
-                                            snapshot_entry.0 += 1;
+                                            // End the mutable map-entry borrow before reading the
+                                            // candidate map for conflict and quorum statistics.
+                                            let (snapshot_entry_count, verified_snapshot) = {
+                                                let snapshot_entry = snapshot_candidates
+                                                    .entry(snapshot_fingerprint)
+                                                    .or_insert((0, response.clone()));
+                                                snapshot_entry.0 += 1;
+                                                (snapshot_entry.0, snapshot_entry.1.clone())
+                                            };
                                             let snapshot_candidate_count = snapshot_candidates.len();
+                                            let confirming_peers = snapshot_candidates
+                                                .values()
+                                                .map(|(count, _)| *count as usize)
+                                                .max()
+                                                .unwrap_or(1);
                                             if snapshot_conflict {
                                                 let evidence = PeerReputationEvidence {
                                                     peer,
@@ -1959,11 +1969,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                     snapshot_fingerprint: evidence.fingerprint,
                                                     reason: evidence.reason.clone(),
                                                 });
-                                                let confirming_peers = snapshot_candidates
-                                                    .values()
-                                                    .map(|(count, _)| *count as usize)
-                                                    .max()
-                                                    .unwrap_or(1);
                                                 record_peer_evidence_with_confirmations(
                                                     &mut peer_reputations,
                                                     evidence,
@@ -1979,10 +1984,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                     snapshot_candidate_count
                                                 );
                                             }
-                                            if snapshot_entry.0 < snapshot_required as u64 {
+                                            if snapshot_entry_count < snapshot_required as u64 {
                                                 continue;
                                             }
-                                            let verified_snapshot = snapshot_entry.1.clone();
 
                                             // Do not activate a remote checkpoint against a stale
                                             // in-memory view of the durable local chain.
