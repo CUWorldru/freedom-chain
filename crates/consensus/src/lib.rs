@@ -1157,7 +1157,7 @@ mod m320_validator_certificate_admission_tests {
             freedom_types::Validator {
                 validator_id: id,
                 owner: [byte + 10; 32],
-                consensus_key: key,
+                consensus_key: ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes(),
                 stake: 100,
                 unbonding_stake: 0,
                 blocks_proposed: 0,
