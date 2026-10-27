@@ -1043,8 +1043,8 @@ mod m31_tests {
 
         let err = replay_persisted_blocks(&mut state, &[first, second]).unwrap_err();
 
-        assert!(err.contains("previous hash mismatch"));
-        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
+        assert!(err.contains("previous hash mismatch"), "unexpected previous hash error: {err}");
+        assert_eq!(format!("{:?}", state), format!("{:?}", before));
     }
 
     #[test]
@@ -1095,7 +1095,7 @@ mod m31_tests {
 
         let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
 
-        assert!(err.contains("proposer mismatch"));
+        assert!(err.contains("proposer mismatch"), "unexpected proposer error: {err}");
         assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
     }
 
@@ -1121,7 +1121,7 @@ mod m31_tests {
 
         let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
 
-        assert!(err.contains("height gap"));
+        assert!(err.contains("height gap"), "unexpected height gap error: {err}");
         assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
     }
 }
@@ -1157,7 +1157,7 @@ fn validate_snapshot_state_transition(
     if block_hash(&committed) != block_hash(checkpoint) {
         return Err("executed checkpoint hash differs from supplied checkpoint".into());
     }
-    if serde_json::to_vec(&executed_state).map_err(|e| e.to_string())? != serde_json::to_vec(supplied_snapshot_state).map_err(|e| e.to_string())? {
+    if format!("{:?}", executed_state) != format!("{:?}", supplied_snapshot_state) {
         return Err("supplied snapshot state differs from locally executed checkpoint state".into());
     }
     executed_state
@@ -2300,7 +2300,7 @@ fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
 
         let err = replay_persisted_blocks(&mut state, &[first, second]).unwrap_err();
 
-        assert!(err.contains("stored block hash mismatch at 2"));
+        assert!(err.contains("stored block hash mismatch at 2"), "unexpected hash mismatch error: {err}");
         assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap(), "failed replay must not publish its partially advanced working state");
     }
 
@@ -2325,12 +2325,13 @@ fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
         let (_, first) = build_local_proposal(&state, owner, &key, 0).unwrap();
         let mut second_state = state.clone();
         execute_block(&mut second_state, &first).unwrap();
-        let next_owner = second_state.active_validator_set.values().next().unwrap().owner;
-        let (_, mut second) = build_local_proposal(&second_state, next_owner, &key, 0).unwrap();
+        let next_owner = proposer_for_height_round(&second_state, second_state.height + 1, 0).unwrap();
+        let next_key = test_signing_key_for_owner(next_owner);
+        let (_, mut second) = build_local_proposal(&second_state, next_owner, &next_key, 0).unwrap();
         second.header.timestamp = second.header.timestamp.saturating_add(1);
 
         assert!(replay_persisted_blocks(&mut state, &[first, second]).is_err());
-        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&original).unwrap());
+        assert_eq!(format!("{:?}", state), format!("{:?}", original));
         assert_eq!(state.height, 0);
     }
 
