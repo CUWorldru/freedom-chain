@@ -2298,7 +2298,7 @@ fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
 
         let err = replay_persisted_blocks(&mut state, &[first, second]).unwrap_err();
 
-        assert!(err.contains("stored block hash mismatch at 2"), "unexpected hash mismatch error: {err}");
+        assert!(err.contains("stored block execution rejected at 2") && err.contains("state root mismatch"), "unexpected corrupted block error: {err}");
         assert_eq!(format!("{:?}", state), format!("{:?}", before), "failed replay must not publish its partially advanced working state");
     }
 
