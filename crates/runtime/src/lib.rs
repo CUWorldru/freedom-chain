@@ -1254,7 +1254,7 @@ mod m159_bridge_mint_relay_tests {
         let bridge_id=[3;32];
         let source_chain_id=100u32;
         let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[8;32],bridge_id);
-        let validator=Validator{validator_id,owner:freedom_primitives::address_from_public_key(&validator_pub),consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+        let validator=Validator{validator_id,owner:freedom_primitives::address_from_public_key(&validator_pub),consensus_key:validator_pub,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
         let mut validators = vec![validator];
         for seed in [8u8, 9u8] {
             let key = SigningKey::from_bytes(&[seed; 32]);
