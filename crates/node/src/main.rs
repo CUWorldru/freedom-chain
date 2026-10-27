@@ -1021,7 +1021,7 @@ mod m31_tests {
             let key = [i + 1; 32];
             let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
+                validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -1053,7 +1053,7 @@ mod m31_tests {
             let key = [i + 1; 32];
             let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
+                validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -1079,7 +1079,7 @@ mod m31_tests {
             let key = [i + 1; 32];
             let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
+                validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -1105,7 +1105,7 @@ mod m31_tests {
             let key = [i + 1; 32];
             let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
+                validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -1209,7 +1209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let key = [i + 1; 32];
         let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
         Validator {
-            validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
+            validator_id: hash_bytes(&public_key),
             owner: address_from_public_key(&public_key),
             consensus_key: public_key,
             stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -2278,7 +2278,7 @@ fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
             let key = [i + 1; 32];
             let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
+                validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -2311,7 +2311,7 @@ fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
             let key = [i + 1; 32];
             let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
+                validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
