@@ -2382,6 +2382,12 @@ mod m471_snapshot_state_transition_tests {
         let mut supplied = state.clone();
         supplied.height = checkpoint.header.height;
         supplied.last_block_hash = block_hash(&checkpoint);
+        // Keep the supplied snapshot structurally valid but make its validator
+        // accounting differ from locally executing the checkpoint.
+        supplied.validators.values_mut()
+            .find(|validator| validator.owner != checkpoint.header.proposer)
+            .unwrap()
+            .blocks_proposed += 1;
         assert!(validate_snapshot_state_transition(&state, &checkpoint, &supplied)
             .unwrap_err()
             .contains("supplied snapshot state differs"));
