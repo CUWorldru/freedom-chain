@@ -983,7 +983,7 @@ mod tests {
         assert_eq!(mempool.len(), 1);
 
         let proposer = freedom_consensus::proposer_for_height(&state, 1).unwrap();
-        let block = build_next_block(&state, &mempool, proposer, 1, 1, 0, 100).unwrap();
+        let block = build_next_block(&state, &mempool, proposer, 1, state.epoch, 0, 100).unwrap();
         assert_eq!(block.transactions, vec![tx.clone()]);
         assert_eq!(block.header.tx_root, tx_root(&block.transactions));
         assert_eq!(block.header.receipts_root, receipts_root(&{
@@ -1255,7 +1255,18 @@ mod m159_bridge_mint_relay_tests {
         let source_chain_id=100u32;
         let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[8;32],bridge_id);
         let validator=Validator{validator_id,owner:[1;32],consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
-        let mut state=initialize(&Genesis{chain_id:CHAIN_ID,initial_supply:0,validators:vec![validator]}).unwrap();
+        let mut validators = vec![validator];
+        for seed in [8u8, 9u8] {
+            let key = SigningKey::from_bytes(&[seed; 32]);
+            let public_key = key.verifying_key().to_bytes();
+            let id = freedom_primitives::hash_bytes(&public_key);
+            validators.push(Validator {
+                validator_id: id, owner: freedom_primitives::address_from_public_key(&public_key),
+                consensus_key: public_key, stake: 100, unbonding_stake: 0,
+                blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+            });
+        }
+        let mut state=initialize(&Genesis{chain_id:CHAIN_ID,initial_supply:0,validators}).unwrap();
         state.asset_registry.insert(asset_id, AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active});
         state.bridge_security_policies.insert(bridge_id, BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1});
 
@@ -1488,7 +1499,7 @@ mod m321_epoch_transition_commitment_tests {
 
         assert_eq!(
             execute_block(&mut state, &block),
-            Err("epoch transition was not committed".into())
+            Err("invalid validator set certificate transition fields".into())
         );
         assert_eq!(state.epoch, 0);
         assert_eq!(state.height, 0);
