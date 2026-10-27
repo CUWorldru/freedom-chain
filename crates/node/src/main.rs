@@ -1223,9 +1223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if validator_index >= 3 { return Err("NETWORK_321MORE_VALIDATOR_INDEX must be 0..2".into()); }
 
     let consensus_key = ed25519_dalek::SigningKey::from_bytes(&[(validator_index as u8) + 1; 32]);
-    let mut validator_seed = b"validator".to_vec();
-    validator_seed.push((validator_index as u8) + 1);
-    let validator_id = hash_bytes(&validator_seed);
+    let validator_id = hash_bytes(&consensus_key.verifying_key().to_bytes());
     let owner = state.validators.get(&validator_id).ok_or("validator not found")?.owner;
     let mut protocol = ValidatorProtocol::new(validator_id, consensus_key.clone());
     let mut blocks: BTreeMap<Hash, freedom_types::Block> = BTreeMap::new();
