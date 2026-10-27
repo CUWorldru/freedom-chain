@@ -996,7 +996,7 @@ mod m31_tests {
             let key = [i + 1; 32];
             let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&{ let mut seed = b"validator".to_vec(); seed.push(i + 1); seed }),
+                validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
@@ -2347,7 +2347,7 @@ mod m471_snapshot_state_transition_tests {
             let signing_key = ed25519_dalek::SigningKey::from_bytes(&[i; 32]);
             let public_key = signing_key.verifying_key().to_bytes();
             Validator {
-                validator_id: hash_bytes(&{ let mut seed = b"m471-validator".to_vec(); seed.push(i); seed }),
+                validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
                 consensus_key: public_key,
                 stake: 0,
