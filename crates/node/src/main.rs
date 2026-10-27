@@ -1070,7 +1070,7 @@ mod m31_tests {
         let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
 
         assert!(err.contains("previous hash mismatch"));
-        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
+        assert_eq!(format!("{:?}", state), format!("{:?}", before));
     }
 
     #[test]
@@ -1096,7 +1096,7 @@ mod m31_tests {
         let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
 
         assert!(err.contains("proposer mismatch"), "unexpected proposer error: {err}");
-        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
+        assert_eq!(format!("{:?}", state), format!("{:?}", before));
     }
 
     #[test]
@@ -1122,7 +1122,7 @@ mod m31_tests {
         let err = replay_persisted_blocks(&mut state, &[block]).unwrap_err();
 
         assert!(err.contains("height gap"), "unexpected height gap error: {err}");
-        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap());
+        assert_eq!(format!("{:?}", state), format!("{:?}", before));
     }
 }
 
@@ -2294,12 +2294,12 @@ fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
         let next_owner = proposer_for_height_round(&after_first, after_first.height + 1, 0).unwrap();
         let next_key = test_signing_key_for_owner(next_owner);
         let (_, mut second) = build_local_proposal(&after_first, next_owner, &next_key, 0).unwrap();
-        second.header.timestamp = second.header.timestamp.saturating_add(1);
+        second.header.state_root = [0xA7; 32];
 
         let err = replay_persisted_blocks(&mut state, &[first, second]).unwrap_err();
 
         assert!(err.contains("stored block hash mismatch at 2"), "unexpected hash mismatch error: {err}");
-        assert_eq!(serde_json::to_vec(&state).unwrap(), serde_json::to_vec(&before).unwrap(), "failed replay must not publish its partially advanced working state");
+        assert_eq!(format!("{:?}", state), format!("{:?}", before), "failed replay must not publish its partially advanced working state");
     }
 
 
@@ -2326,9 +2326,9 @@ fn replay_later_block_hash_corruption_keeps_original_state_unchanged() {
         let next_owner = proposer_for_height_round(&second_state, second_state.height + 1, 0).unwrap();
         let next_key = test_signing_key_for_owner(next_owner);
         let (_, mut second) = build_local_proposal(&second_state, next_owner, &next_key, 0).unwrap();
-        second.header.timestamp = second.header.timestamp.saturating_add(1);
+        second.header.state_root = [0xA7; 32];
 
-        assert!(replay_persisted_blocks(&mut state, &[first, second]).is_err());
+        assert!(replay_persisted_blocks(&mut state, &[first, second]).is_err(), "tampered second block must be rejected");
         assert_eq!(format!("{:?}", state), format!("{:?}", original));
         assert_eq!(state.height, 0);
     }
