@@ -1262,7 +1262,7 @@ mod m159_bridge_mint_relay_tests {
             let id = freedom_primitives::hash_bytes(&public_key);
             validators.push(Validator {
                 validator_id: id, owner: freedom_primitives::address_from_public_key(&public_key),
-                consensus_key: public_key, stake: 100, unbonding_stake: 0,
+                consensus_key: public_key, stake: 0, unbonding_stake: 0,
                 blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             });
         }
