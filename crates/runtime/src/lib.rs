@@ -1277,8 +1277,6 @@ mod m159_bridge_mint_relay_tests {
         let approvals=BridgeMessageApprovalSet{bridge_id:message.bridge_id,message_hash:message.message_hash,approvals:vec![BridgeMessageApproval{signature:signature.to_vec(),..unsigned}]};
         let auth=BridgeMintAuthorization::from_authenticated_message(&message,&deposit,&approvals,state.bridge_security_policies.get(&bridge_id).unwrap(),&state.validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()).unwrap();
         let replay_key = message.replay_key();
-        state.processed_bridge_messages.insert(replay_key, message.clone());
-        state.bridge_message_status.insert(replay_key, freedom_types::BridgeMessageStatus::Accepted);
 
         let relayer_key=SigningKey::from_bytes(&[42;32]);
         let relayer_pub=relayer_key.verifying_key().to_bytes();
