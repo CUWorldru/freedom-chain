@@ -2901,7 +2901,7 @@ mod m79_bridge_replay_tests {
   (state,asset,bridge_id,asset_id)
  }
  fn message(bridge_id:Hash,asset_id:Hash)->BridgeMessage{
-  let mut m=BridgeMessage{protocol_version:BRIDGE_MESSAGE_PROTOCOL_VERSION,source_chain_id:100,destination_chain_id:freedom_primitives::CHAIN_ID,bridge_id,asset_id,source_tx_hash:[3u8;32],source_event_index:0,nonce:1,amount:100_000,recipient:[9u8;32],message_hash:[0u8;32]};
+  let mut m=BridgeMessage{protocol_version:BRIDGE_MESSAGE_PROTOCOL_VERSION,source_chain_id:freedom_types::ETHEREUM_MAINNET_CHAIN_ID,destination_chain_id:freedom_primitives::CHAIN_ID,bridge_id,asset_id,source_tx_hash:[3u8;32],source_event_index:0,nonce:1,amount:100_000,recipient:[9u8;32],message_hash:[0u8;32]};
   m.message_hash=m.compute_hash(); m
  }
  #[test] fn bridge_message_is_persisted_and_cannot_be_replayed(){
