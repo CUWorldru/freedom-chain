@@ -2893,10 +2893,10 @@ mod m79_bridge_replay_tests {
 
  fn setup()->(ChainState,AssetDefinition,Hash,Hash){
   let mut state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
-  let source_chain_id=100u32;
+  let source_chain_id=freedom_types::ETHEREUM_MAINNET_CHAIN_ID;
   let bridge_id=[4u8;32];
-  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[7u8;32],bridge_id);
-  let asset=AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".to_string(),decimals:6,issuer:[7u8;32],bridge_id,status:AssetStatus::Active};
+  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,&[0x11;20],[7u8;32],bridge_id);
+  let asset=AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".to_string(),decimals:6,issuer:[7u8;32],bridge_id,status:AssetStatus::Active};
   state.register_asset(asset.clone()).unwrap();
   (state,asset,bridge_id,asset_id)
  }
@@ -2939,9 +2939,9 @@ mod m80_bridge_state_machine_tests {
 
  fn setup()->(ChainState,Hash){
   let mut state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
-  let source_chain_id=100u32; let bridge_id=[4u8;32];
-  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[7u8;32],bridge_id);
-  state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[7u8;32],bridge_id,status:AssetStatus::Active}).unwrap();
+  let source_chain_id=freedom_types::ETHEREUM_MAINNET_CHAIN_ID; let bridge_id=[4u8;32];
+  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,&[0x11;20],[7u8;32],bridge_id);
+  state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".into(),decimals:6,issuer:[7u8;32],bridge_id,status:AssetStatus::Active}).unwrap();
   let mut m=BridgeMessage{protocol_version:BRIDGE_MESSAGE_PROTOCOL_VERSION,source_chain_id,destination_chain_id:freedom_primitives::CHAIN_ID,bridge_id,asset_id,source_tx_hash:[3u8;32],source_event_index:0,nonce:1,amount:100_000,recipient:[9u8;32],message_hash:[0u8;32]};
   m.message_hash=m.compute_hash();
   let key=state.record_bridge_message(m).unwrap();
@@ -3003,7 +3003,7 @@ mod m33_tests {
  use super::*;
  use freedom_types::{Genesis, Validator, Transaction, TxKind, UnstakePayload, EquivocationEvidence, EquivocationKind};
  fn validator_state() -> (ChainState, Address, Hash) {
-  let key=[7u8;32]; let owner=freedom_primitives::address_from_public_key(&key); let id=freedom_primitives::hash_bytes(b"m33-validator");
+  let key=[7u8;32]; let owner=freedom_primitives::address_from_public_key(&key); let id=freedom_primitives::hash_bytes(&key);
   let v=Validator{validator_id:id,owner,consensus_key:key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
   let g=Genesis{chain_id:1,initial_supply:0,validators:vec![v]}; let mut s=ChainState::genesis(&g); s.insert_account(Account::new(key,0));
   s.accounts.get_mut(&owner).unwrap().staked=100; (s,owner,id)
@@ -3029,7 +3029,7 @@ mod m33_tests {
 mod m34_tests {
  use super::*;
  use freedom_types::{Genesis, Validator, Transaction, TxKind, StakePayload, UnstakePayload, ValidatorLifecycle};
- fn setup()->(ChainState,Address,Hash){let key=[9u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(b"m34-validator");let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.insert_account(Account::new(key,100));(s,owner,id)}
+ fn setup()->(ChainState,Address,Hash){let key=[9u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.insert_account(Account::new(key,100));(s,owner,id)}
  fn tx(owner:Address,nonce:u64,kind:TxKind,payload:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:owner,nonce,kind,payload,fee:0,signature:vec![]}}
  #[test] fn genesis_can_bootstrap_staking(){let(mut s,o,id)=setup();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Active);s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.staking_activated);assert_eq!(s.validators.get(&id).unwrap().stake,100);}
  #[test] fn unbonding_validator_cannot_restake_before_exit(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Unbonding);assert_eq!(s.execute_transaction(&tx(o,2,TxKind::Stake,StakePayload{amount:1}.encode())),Err(StateError::InvalidValidatorLifecycle));}
@@ -3041,7 +3041,7 @@ mod m34_tests {
 #[cfg(test)]
 mod m35_tests {
  use super::*; use freedom_types::{Genesis,Validator,Transaction,TxKind,StakePayload,UnstakePayload};
- fn setup()->(ChainState,Address,Hash){let key=[8u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(b"m35-validator");let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.epoch_length=10;s.insert_account(Account::new(key,100));(s,owner,id)}
+ fn setup()->(ChainState,Address,Hash){let key=[8u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.epoch_length=10;s.insert_account(Account::new(key,100));(s,owner,id)}
  fn tx(o:Address,n:u64,k:TxKind,p:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:o,nonce:n,kind:k,payload:p,fee:0,signature:vec![]}}
  #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));}
  #[test] fn pending_new_stake_activates_next_epoch(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.pending_validator_set.contains_key(&id));s.active_validator_set.clear();s.height=9;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
@@ -3098,8 +3098,8 @@ mod m77_asset_registry_tests {
  #[test]
  fn identical_symbols_on_different_chains_are_distinct_assets() {
   let mut state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
-  let eth=bridged_asset(1, b"0xeth-usdt", [1u8;32]);
-  let tron=bridged_asset(2, b"TTRONUSDT", [2u8;32]);
+  let eth=bridged_asset(freedom_types::ETHEREUM_MAINNET_CHAIN_ID, &[0x11u8;20], [1u8;32]);
+  let tron=bridged_asset(freedom_types::TRON_MAINNET_CHAIN_ID, &[0x22u8;20], [2u8;32]);
   assert_ne!(eth.asset_id, tron.asset_id);
   state.register_asset(eth.clone()).unwrap();
   state.register_asset(tron.clone()).unwrap();
@@ -3110,10 +3110,10 @@ mod m77_asset_registry_tests {
  #[test]
  fn asset_registration_rejects_forged_identity_and_duplicate() {
   let mut state=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
-  let mut asset=bridged_asset(1, b"0xabc", [3u8;32]);
+  let mut asset=bridged_asset(freedom_types::ETHEREUM_MAINNET_CHAIN_ID, &[0x33u8;20], [3u8;32]);
   asset.asset_id=[9u8;32];
   assert_eq!(state.register_asset(asset.clone()), Err(StateError::InvalidAsset));
-  let valid=bridged_asset(1, b"0xabc", [3u8;32]);  state.register_asset(valid.clone()).unwrap();
+  let valid=bridged_asset(freedom_types::ETHEREUM_MAINNET_CHAIN_ID, &[0x33u8;20], [3u8;32]);  state.register_asset(valid.clone()).unwrap();
   assert_eq!(state.register_asset(valid), Err(StateError::DuplicateAsset));
  }
 }
@@ -3124,7 +3124,7 @@ mod m81_bidirectional_bridge_tests {
  use freedom_types::{AssetDefinition,AssetStatus,AssetType,BridgeWithdrawal,BridgeWithdrawalStatus,Genesis};
 
  fn asset(chain:u32,bridge:Hash)->AssetDefinition{
-  let issuer=[8u8;32]; let contract=format!("asset-{}",chain).into_bytes();
+  let issuer=[8u8;32]; let contract=vec![(chain as u8).max(1);20];
   let id=AssetDefinition::compute_asset_id(chain,AssetType::Bridged,&contract,issuer,bridge);
   AssetDefinition{asset_id:id,source_chain_id:chain,asset_type:AssetType::Bridged,contract_address:contract,symbol:"USDT".into(),decimals:6,issuer,bridge_id:bridge,status:AssetStatus::Active}
  }
@@ -3136,7 +3136,7 @@ mod m81_bidirectional_bridge_tests {
  #[test]
  fn outbound_withdrawal_is_chain_agnostic() {
   let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
-  let bridge=[4u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let bridge=[4u8;32]; let a=asset(freedom_types::ETHEREUM_MAINNET_CHAIN_ID,bridge); s.register_asset(a.clone()).unwrap();
   let w=withdrawal(&a,100,bridge); let id=s.request_bridge_withdrawal(w).unwrap();
   assert_eq!(s.bridge_withdrawal_status[&id],BridgeWithdrawalStatus::Requested);
   for next in [BridgeWithdrawalStatus::Validated,BridgeWithdrawalStatus::Approved,BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
@@ -3145,7 +3145,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn withdrawal_rejects_wrong_chain_or_bridge() {
-  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[5u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[5u8;32]; let a=asset(freedom_types::ETHEREUM_MAINNET_CHAIN_ID,bridge); s.register_asset(a.clone()).unwrap();
   let mut w=withdrawal(&a,200,bridge); w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id();
   assert_eq!(s.request_bridge_withdrawal(w),Err(StateError::InvalidBridgeWithdrawal));
   let mut w=withdrawal(&a,100,[6u8;32]); w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id();
@@ -3154,7 +3154,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn accounting_enforces_lock_mint_burn_release_conservation() {
-  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[7u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[7u8;32]; let a=asset(freedom_types::ETHEREUM_MAINNET_CHAIN_ID,bridge); s.register_asset(a.clone()).unwrap();
   s.record_verified_external_lock(a.asset_id,100).unwrap();
   s.record_freedom_mint(a.asset_id,100).unwrap();
   assert_eq!(s.record_freedom_mint(a.asset_id,1),Err(StateError::InvalidBridgeAccounting));
@@ -3166,7 +3166,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn finalization_cannot_release_before_burn() {
-  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[8u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[8u8;32]; let a=asset(freedom_types::ETHEREUM_MAINNET_CHAIN_ID,bridge); s.register_asset(a.clone()).unwrap();
   s.record_verified_external_lock(a.asset_id,100).unwrap(); s.record_freedom_mint(a.asset_id,100).unwrap();
   let id=s.request_bridge_withdrawal(withdrawal(&a,100,bridge)).unwrap();
   for next in [BridgeWithdrawalStatus::Validated,BridgeWithdrawalStatus::Approved,BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
@@ -3178,7 +3178,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn bridge_state_changes_state_root() {
-  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let before=s.state_root(); let bridge=[9u8;32]; let a=asset(100,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let before=s.state_root(); let bridge=[9u8;32]; let a=asset(freedom_types::ETHEREUM_MAINNET_CHAIN_ID,bridge); s.register_asset(a.clone()).unwrap();
   s.record_verified_external_lock(a.asset_id,100).unwrap(); let after_lock=s.state_root(); assert_ne!(before,after_lock);
   s.record_freedom_mint(a.asset_id,100).unwrap(); assert_ne!(after_lock,s.state_root());
  }
@@ -3200,11 +3200,11 @@ mod m155_bridge_mint_boundary_tests {
   let public_key=key.verifying_key().to_bytes();
   let validator_id=freedom_primitives::hash_bytes(&public_key);
   let bridge_id=[3;32];
-  let source_chain_id=100u32;
-  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[8;32],bridge_id);
+  let source_chain_id=freedom_types::ETHEREUM_MAINNET_CHAIN_ID;
+  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,&[0x11;20],[8;32],bridge_id);
   let validator=Validator{validator_id,owner:[1;32],consensus_key:public_key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
   let mut state=ChainState::genesis(&Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
-  state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
+  state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
   state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
 
   let deposit=VerifiedDeposit{canonical_asset_id:asset_id,representation_asset_id:[2;32],bridge_id,source_chain_id,tx_hash:[4;32],event_index:7,block_or_slot:8,confirmations:20,amount:500,recipient:vec![9;20],replay_key:[10;32],proof_hash:[11;32]};
@@ -3279,11 +3279,11 @@ mod m156_bridge_mint_transaction_tests {
   let validator_pub=validator_key.verifying_key().to_bytes();
   let validator_id=freedom_primitives::hash_bytes(&validator_pub);
   let bridge_id=[3;32];
-  let source_chain_id=100u32;
-  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,b"USDT",[8;32],bridge_id);
+  let source_chain_id=freedom_types::ETHEREUM_MAINNET_CHAIN_ID;
+  let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,&[0x11;20],[8;32],bridge_id);
   let validator=Validator{validator_id,owner:[1;32],consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
   let mut state=ChainState::genesis(&Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
-  state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:b"USDT".to_vec(),symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
+  state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
   state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
 
   let deposit=VerifiedDeposit{canonical_asset_id:asset_id,representation_asset_id:[2;32],bridge_id,source_chain_id,tx_hash:[4;32],event_index:7,block_or_slot:8,confirmations:20,amount:500,recipient:vec![9;20],replay_key:[10;32],proof_hash:[11;32]};
