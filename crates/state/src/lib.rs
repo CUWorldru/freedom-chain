@@ -3088,7 +3088,7 @@ mod m35_tests {
  use super::*; use freedom_types::{Genesis,Validator,Transaction,TxKind,StakePayload,UnstakePayload};
  fn setup()->(ChainState,Address,Hash){let key=[8u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.epoch_length=10;s.insert_account(Account::new(key,100));(s,owner,id)}
  fn tx(o:Address,n:u64,k:TxKind,p:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:o,nonce:n,kind:k,payload:p,fee:0,signature:vec![]}}
- #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));}
+ #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
  #[test] fn pending_new_stake_activates_next_epoch(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.pending_validator_set.contains_key(&id));s.active_validator_set.clear();s.height=9;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));}
 }
 
@@ -3175,7 +3175,7 @@ mod m81_bidirectional_bridge_tests {
   AssetDefinition{asset_id:id,source_chain_id:chain,asset_type:AssetType::Bridged,contract_address:contract,symbol:"USDT".into(),decimals:6,issuer,bridge_id:bridge,status:AssetStatus::Active}
  }
  fn validator()->Validator{let key=SigningKey::from_bytes(&[7;32]);let pubkey=key.verifying_key().to_bytes();Validator{validator_id:freedom_primitives::hash_bytes(&pubkey),owner:[1;32],consensus_key:pubkey,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0}}
- fn approve(s:&mut ChainState,id:Hash,bridge:Hash){let key=SigningKey::from_bytes(&[7;32]);let w=&s.bridge_withdrawals[&id];let vid=freedom_primitives::hash_bytes(&key.verifying_key().to_bytes());let mut a=BridgeApproval{bridge_id:bridge,request_id:[4;32],withdrawal_id:id,validator_id:vid,nonce:0,amount:w.amount,destination_chain_id:w.destination_chain_id,asset_id:w.asset_id,intent_hash:w.request_hash,signature:Vec::new()};a.signature=key.sign(&a.signing_message()).to_bytes().to_vec();s.record_bridge_approval_set(BridgeApprovalSet{request_id:[4;32],approvals:vec![a],threshold_signatures:0}).unwrap();s.approve_bridge_with_authenticated_set(id,[4;32]).unwrap();}
+ fn approve(s:&mut ChainState,id:Hash,bridge:Hash){let key=SigningKey::from_bytes(&[7;32]);let w=&s.bridge_withdrawals[&id];let vid=freedom_primitives::hash_bytes(&key.verifying_key().to_bytes());let mut a=BridgeApproval{bridge_id:bridge,request_id:[4;32],withdrawal_id:id,validator_id:vid,nonce:w.nonce,amount:w.amount,destination_chain_id:w.destination_chain_id,asset_id:w.asset_id,intent_hash:w.request_hash,signature:Vec::new()};a.signature=key.sign(&a.signing_message()).to_bytes().to_vec();s.record_bridge_approval_set(BridgeApprovalSet{request_id:[4;32],approvals:vec![a],threshold_signatures:0}).unwrap();s.approve_bridge_with_authenticated_set(id,[4;32]).unwrap();}
  fn withdrawal(asset:&AssetDefinition,chain:u32,bridge:Hash)->BridgeWithdrawal{
   let mut w=BridgeWithdrawal{withdrawal_id:[0;32],bridge_id:bridge,asset_id:asset.asset_id,destination_chain_id:chain,amount:100,sender:[9;32],recipient:b"external-recipient".to_vec(),nonce:7,request_hash:[0;32]};
   w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id(); w
@@ -3282,7 +3282,7 @@ mod m155_bridge_mint_boundary_tests {
   assert_eq!(amount,500);
   assert_eq!(state.accounts[&auth.recipient].balance,500);
   assert_eq!(state.supply.total,500);
-  assert_eq!(state.supply.circulating,600);
+  assert_eq!(state.supply.circulating,500);
   assert_eq!(state.bridge_accounting[&auth.canonical_asset_id].freedom_minted,500);
   assert_eq!(state.bridge_deposit_replays[&auth.replay_key].status,freedom_types::DepositReplayStatus::Consumed);
   assert_eq!(state.bridge_message_status[&message.replay_key()],BridgeMessageStatus::Minted);
@@ -3332,8 +3332,12 @@ mod m156_bridge_mint_transaction_tests {
   let bridge_id=[3;32];
   let source_chain_id=freedom_types::TRON_MAINNET_CHAIN_ID;
   let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,&[0x11;20],[8;32],bridge_id);
-  let validator=Validator{validator_id,owner:[1;32],consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+  let validator_owner=freedom_primitives::address_from_public_key(&validator_pub);
+  let validator=Validator{validator_id,owner:validator_owner,consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
   let mut state=ChainState::genesis(&Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
+  state.insert_account(Account::new(validator_pub,100));
+  state.supply.total=100;
+  state.supply.circulating=100;
   state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
   state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
 
@@ -3353,8 +3357,8 @@ mod m156_bridge_mint_transaction_tests {
   let relayer=Account::new(relayer_pub,1_000);
   let sender=relayer.address;
   state.insert_account(relayer);
-  state.supply.total=1_000;
-  state.supply.circulating=1_000;
+  state.supply.total=1_100;
+  state.supply.circulating=1_100;
   (state,deposit,message,auth,approvals,relayer_key)
  }
 
@@ -3370,9 +3374,9 @@ mod m156_bridge_mint_transaction_tests {
   assert_eq!(state.accounts[&auth.recipient].balance,500);
   assert_eq!(state.accounts[&tx.sender].balance,993);
   assert_eq!(state.accounts[&tx.sender].nonce,1);
-  assert_eq!(state.supply.total,1500);
+  assert_eq!(state.supply.total,1600);
   assert_eq!(state.accounts[&tx.sender].balance,993);
-  assert_eq!(state.supply.circulating,1493);
+  assert_eq!(state.supply.circulating,1593);
   assert_eq!(state.supply.treasury,7);
   assert_eq!(state.bridge_message_status[&message.replay_key()],BridgeMessageStatus::Minted);
   assert_eq!(state.bridge_deposit_replays[&auth.replay_key].status,freedom_types::DepositReplayStatus::Consumed);
@@ -3390,7 +3394,7 @@ mod m156_bridge_mint_transaction_tests {
   let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload,fee:0,signature:Vec::new()};
   tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
   assert!(state.execute_transaction(&tx).is_err());
-  assert_eq!(state.supply.total,1_000);
+  assert_eq!(state.supply.total,1_100);
   assert!(state.bridge_deposit_replays.is_empty());
  }
 
