@@ -2299,6 +2299,17 @@ impl ChainState {
   if self.validate_unbonding_integrity().is_err() { return; }
   let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.release_height<=self.height).map(|(id,_)|*id).collect();
 
+  // Preflight aggregate supply-bucket movement as well as every account and
+  // validator mutation before changing any part of the unbonding ledger.
+  let mut matured_total=0u128;
+  for id in &ids {
+   let Some(e)=self.unbonding.get(id) else { return; };
+   let Some(next)=matured_total.checked_add(e.amount) else { return; };
+   matured_total=next;
+  }
+  let Some(next_supply_staked)=self.supply.staked.checked_sub(matured_total) else { return; };
+  let Some(next_supply_circulating)=self.supply.circulating.checked_add(matured_total) else { return; };
+
   // Preflight every matured release before mutating any validator/account/ledger entry.
   for id in &ids {
    let Some(e)=self.unbonding.get(id) else { return; };
@@ -2325,6 +2336,8 @@ impl ChainState {
     a.balance=next_balance;
    }
   }
+  self.supply.staked=next_supply_staked;
+  self.supply.circulating=next_supply_circulating;
  }
  pub(crate) fn insert_account(&mut self,a:Account){self.accounts.insert(a.address,a);}
  pub fn drain_events(&mut self)->Vec<Event>{std::mem::take(&mut self.events)}
@@ -2445,6 +2458,8 @@ impl ChainState {
   if a.balance<p.amount{return Err(StateError::InsufficientBalance)}
   let next_balance=a.balance.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   let next_staked=a.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_circulating=self.supply.circulating.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_staked=self.supply.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   let v=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?;
   let next_validator_stake=v.stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
 
@@ -2455,6 +2470,8 @@ impl ChainState {
   self.staking_activated=true;
   let v=self.validators.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
   v.stake=next_validator_stake;
+  self.supply.circulating=next_circulating;
+  self.supply.staked=next_supply_staked;
   self.refresh_pending_validator_set();
   self.advance_nonce(tx.sender)
  }
@@ -2724,8 +2741,12 @@ impl ChainState {
   let account=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
   let next_locked=account.locked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   let next_balance=account.balance.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_locked=self.supply.locked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_circulating=self.supply.circulating.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
   a.balance=next_balance;a.locked=next_locked;a.nonce=next_nonce;
+  self.supply.locked=next_supply_locked;
+  self.supply.circulating=next_supply_circulating;
   self.billing.insert(p.billing_id,BillingRecord{billing_id:p.billing_id,buyer:tx.sender,merchant:p.merchant,product_id:p.product_id,amount:p.amount,reference:p.reference,status:2,reserved_at:self.height,captured_at:None,refunded_at:None});
   Ok(())
  }
@@ -2736,8 +2757,12 @@ impl ChainState {
   let next_locked=buyer.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
   let merchant_balance=self.accounts.get(&b.merchant).map(|a|a.balance).unwrap_or(0);
   let next_merchant_balance=merchant_balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_locked=self.supply.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_circulating=self.supply.circulating.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
   let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.locked=next_locked;
   let m=self.accounts.entry(b.merchant).or_insert(Account{address:b.merchant,public_key:[0;32],nonce:0,balance:0,locked:0,staked:0});m.balance=next_merchant_balance;
+  self.supply.locked=next_supply_locked;
+  self.supply.circulating=next_supply_circulating;
   let x=self.billing.get_mut(&billing_id).ok_or(StateError::InvalidPurchase)?;x.status=3;x.captured_at=Some(self.height);Ok(())
  }
 
@@ -2747,7 +2772,10 @@ impl ChainState {
    let buyer=self.accounts.get(&b.buyer).ok_or(StateError::AccountNotFound)?;
    let next_locked=buyer.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
    let next_balance=buyer.balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let next_supply_locked=self.supply.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let next_supply_circulating=self.supply.circulating.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
    let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.locked=next_locked;a.balance=next_balance;
+   self.supply.locked=next_supply_locked;self.supply.circulating=next_supply_circulating;
   } else {
    let merchant=self.accounts.get(&b.merchant).ok_or(StateError::AccountNotFound)?;
    if merchant.balance<b.amount{return Err(StateError::InsufficientBalanceForPurchase)}
