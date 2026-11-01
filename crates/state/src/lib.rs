@@ -1186,6 +1186,7 @@ mod m234_bitcoin_apply_reorg_gate_tests {
   let mut state=ChainState::genesis(&genesis);
   let bridge=[7;32];
   state.bitcoin_canonical_tips.insert(bridge,freedom_types::BitcoinChainCheckpoint{height:100,block_hash:[8;32],chainwork:[9;32]});
+  state.bitcoin_checkpoints.insert(bridge,freedom_types::BitcoinChainCheckpoint{height:100,block_hash:[8;32],chainwork:[9;32]});
   let evidence=freedom_types::BitcoinReorgEvidence{
    checkpoint_height:100,checkpoint_hash:[8;32],candidate_tip_height:101,candidate_tip_hash:[13;32],
    candidate_chainwork:[15;32],fingerprint:[0;32],
@@ -3062,6 +3063,7 @@ mod m33_tests {
  }
  #[test] fn pending_unbonding_stake_is_slashable() {
   let (mut s,owner,id)=validator_state(); let tx=Transaction{chain_id:1,sender:owner,nonce:0,kind:TxKind::Unstake,payload:UnstakePayload{amount:100}.encode(),fee:0,signature:vec![]}; s.unstake(&tx).unwrap();
+  s.height=1;
   let mut e=EquivocationEvidence{kind:EquivocationKind::DoublePrecommit,height:1,round:0,validator_id:id,first:vec![1],second:vec![2],evidence_hash:[0;32]}; e.evidence_hash=freedom_primitives::hash_bytes(&e.signing_bytes()); s.record_equivocation(e.clone()).unwrap();
   let expected=s.deterministic_slash_amount(&e.kind,100); assert_eq!(s.slash_evidence(e.evidence_hash,expected).unwrap(),10); assert_eq!(s.validators.get(&id).unwrap().unbonding_stake,90); assert_eq!(s.accounts.get(&owner).unwrap().staked,90); assert_eq!(s.unbonding.values().next().unwrap().amount,90);
  }
@@ -4042,6 +4044,10 @@ mod m235_bitcoin_reorg_gate_validation_tests {
             bridge_id,
             BitcoinChainCheckpoint { height: 100, block_hash: [8; 32], chainwork: [9; 32] },
         );
+        state.bitcoin_checkpoints.insert(
+            bridge_id,
+            BitcoinChainCheckpoint { height: 100, block_hash: [8; 32], chainwork: [9; 32] },
+        );
         state.bitcoin_reorg_policy.insert(
             bridge_id,
             BitcoinReorgPolicy { elevated_confirmations: 1, critical_chainwork_margin: [1; 32] },
@@ -4235,7 +4241,7 @@ mod m238_bitcoin_mint_reorg_gate_tests {
         let checkpoint = freedom_types::BitcoinChainCheckpoint { height: 100, block_hash: [1u8; 32], chainwork: [1u8; 32] };
         state.bitcoin_checkpoints.insert(bridge_id, checkpoint.clone());
         state.bitcoin_reorg_policy.insert(bridge_id, freedom_types::BitcoinReorgPolicy { elevated_confirmations: 6, critical_chainwork_margin: [1u8; 32] });
-        let mut evidence = freedom_types::BitcoinReorgEvidence { checkpoint_height: 100, checkpoint_hash: checkpoint.block_hash, candidate_tip_height: 101, candidate_tip_hash: [2u8; 32], candidate_chainwork: [2u8; 32], fingerprint: [0u8; 32] };
+        let mut evidence = freedom_types::BitcoinReorgEvidence { checkpoint_height: 100, checkpoint_hash: checkpoint.block_hash, candidate_tip_height: 101, candidate_tip_hash: [2u8; 32], candidate_chainwork: [3u8; 32], fingerprint: [0u8; 32] };
         evidence.fingerprint = evidence.compute_fingerprint();
         state.bitcoin_reorg_evidence.insert(bridge_id, vec![evidence]);
         assert_eq!(state.validate_bitcoin_bridge_safety(bridge_id), Err(StateError::BitcoinReorgDetected));
@@ -5141,8 +5147,8 @@ mod m278_validator_history_continuity_tests {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![freedom_types::Validator {
-                validator_id: [1u8; 32],
-                owner: [2u8; 32],
+                validator_id: freedom_primitives::hash_bytes(&[3u8; 32]),
+                owner: freedom_primitives::address_from_public_key(&[3u8; 32]),
                 consensus_key: [3u8; 32],
                 stake: 100, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
