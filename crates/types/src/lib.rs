@@ -2037,9 +2037,6 @@ impl BitcoinBlockHeader {
         if mantissa == 0 || exponent < 3 || (bits & 0x0080_0000) != 0 {
             return None;
         }
-        if exponent > 3 && (mantissa & 0x00ff_0000) == 0 {
-            return None;
-        }
         let mut target = [0u8; 32];
         if exponent <= 3 {
             let value = mantissa >> (8 * (3 - exponent));
@@ -2272,6 +2269,11 @@ pub struct BitcoinDifficultyWindow {
 }
 
 fn bitcoin_first_retarget_height(context_start: u64) -> Option<u64> {
+    // Bitcoin's first retarget is at height 2016; height zero is the
+    // genesis boundary, not a completed difficulty window.
+    if context_start == 0 {
+        return Some(BitcoinDifficultyWindow::INTERVAL);
+    }
     if context_start % BitcoinDifficultyWindow::INTERVAL == 0 {
         Some(context_start)
     } else {
@@ -3232,7 +3234,7 @@ pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
     current
 }
 
-fn bitcoin_target_from_bits_raw(bits:u32)->Option<[u8;32]>{let exponent=(bits>>24) as usize;let mantissa=bits&0x007f_ffff;if mantissa==0||exponent<3||exponent>32||(bits&0x0080_0000)!=0{return None;}if exponent>3&&(mantissa&0x00ff_0000)==0{return None;}let mut out=[0u8;32];let bytes=mantissa.to_be_bytes();let m=[bytes[1],bytes[2],bytes[3]];let start=32usize.checked_sub(exponent)?;out[start..start+3].copy_from_slice(&m);Some(out)}
+fn bitcoin_target_from_bits_raw(bits:u32)->Option<[u8;32]>{let exponent=(bits>>24) as usize;let mantissa=bits&0x007f_ffff;if mantissa==0||exponent<3||exponent>32||(bits&0x0080_0000)!=0{return None;}let mut out=[0u8;32];let bytes=mantissa.to_be_bytes();let m=[bytes[1],bytes[2],bytes[3]];let start=32usize.checked_sub(exponent)?;out[start..start+3].copy_from_slice(&m);Some(out)}
 pub fn bitcoin_target_from_bits(bits:u32)->Option<[u8;32]>{let target=bitcoin_target_from_bits_raw(bits)?;let pow_limit=bitcoin_target_from_bits_raw(0x1d00_ffff)?;if target.iter().rev().cmp(pow_limit.iter().rev())==std::cmp::Ordering::Greater{return None;}Some(target)}
 pub fn bitcoin_hash_leq_target_v2(hash:Hash,target:[u8;32])->bool{hash.iter().rev().cmp(target.iter().rev())!=std::cmp::Ordering::Greater}
 pub fn bitcoin_pow_valid(header:&BitcoinBlockHeader)->bool{header.validate_pow()}
@@ -6173,7 +6175,7 @@ mod m409_bitcoin_difficulty_window_boundary_tests {
 
     #[test]
     fn max_aligned_context_does_not_overflow() {
-        assert_eq!(bitcoin_first_retarget_height(u64::MAX), Some(u64::MAX));
+        assert_eq!(bitcoin_first_retarget_height(u64::MAX - 1023), Some(u64::MAX - 1023));
     }
 
     #[test]
