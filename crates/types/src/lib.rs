@@ -5895,7 +5895,11 @@ impl BitcoinUtxoSmtUpdateProof {
                 return Some(bitcoin_utxo_smt_leaf(steps[0].new_entry.as_ref()));
             }
             let bit = depth;
-            let split = steps.partition_point(|s| ((s.key[bit / 8] >> (bit % 8)) & 1) == 1);
+            // Steps are sorted with zero bits before one bits at each
+            // successive depth, so partition_point must consume the zero-bit
+            // prefix. Reversing this predicate collapses every split to an
+            // invalid subtree and produces the wrong next root.
+            let split = steps.partition_point(|s| ((s.key[bit / 8] >> (bit % 8)) & 1) == 0);
             let (left_steps, right_steps) = steps.split_at(split);
             let left = if left_steps.is_empty() {
                 right_steps.first()?.siblings[BITCOIN_UTXO_SMT_DEPTH - depth - 1]
