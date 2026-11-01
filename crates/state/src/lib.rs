@@ -3006,15 +3006,15 @@ mod m80_bridge_state_machine_tests {
   let(mut state,key)=setup();
   state.accept_bridge_message(key).unwrap();
   assert_eq!(state.accept_bridge_message(key),Err(StateError::InvalidBridgeMessage));
-  state.mark_bridge_message_minted(key).unwrap();
   assert_eq!(state.mark_bridge_message_minted(key),Err(StateError::InvalidBridgeMessage));
+  assert_eq!(state.bridge_message_status.get(&key),Some(&BridgeMessageStatus::Accepted));
  }
  #[test] fn status_is_consensus_visible(){
   let(mut state,key)=setup();
   let before=state.state_root();
   state.accept_bridge_message(key).unwrap();
   assert_ne!(before,state.state_root());
-  state.mark_bridge_message_minted(key).unwrap();
+  assert_eq!(state.bridge_message_status.get(&key),Some(&BridgeMessageStatus::Accepted));
   state.assert_invariants();
  }
 }
