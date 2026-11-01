@@ -2840,7 +2840,7 @@ impl ChainState {
   leaves.sort();
   freedom_primitives::merkle_root(&leaves)
  }
- pub fn assert_invariants(&self){assert!(self.supply.is_consistent());for (id,asset) in &self.asset_registry{assert_eq!(id,&asset.asset_id);assert!(asset.validate_identity());assert!(!asset.symbol.is_empty());}for (replay_key,message) in &self.processed_bridge_messages{assert_eq!(replay_key,&message.replay_key());assert!(message.validate_hash());assert_eq!(message.protocol_version,BRIDGE_MESSAGE_PROTOCOL_VERSION);assert_eq!(message.destination_chain_id,freedom_primitives::CHAIN_ID);}for (replay_key,status) in &self.bridge_message_status{assert!(self.processed_bridge_messages.contains_key(replay_key));assert!(*status as u8>=BridgeMessageStatus::Verified as u8&&*status as u8<=BridgeMessageStatus::Minted as u8);}for (id,p) in &self.bridge_security_policies{assert_eq!(id,&p.bridge_id);assert!(p.validate());}for (id,set) in &self.bridge_approval_sets{assert_eq!(id,&set.request_id);assert!(!set.approvals.is_empty());}for (id,u) in &self.bridge_rate_limits{assert!(self.bridge_security_policies.contains_key(id));assert!(u.used>0);}for (id,r) in &self.bridge_deposit_replays{assert_eq!(id,&r.replay_key);assert!(r.validate());assert_eq!(r.status,freedom_types::DepositReplayStatus::Consumed);}for (id,a) in &self.bridge_mint_authorizations{assert_eq!(id,&a.replay_key);assert!(a.validate());assert!(self.bridge_deposit_replays.contains_key(id));}for (id,cp) in &self.bitcoin_canonical_tips{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,r) in &self.bitcoin_reorg_recovery{assert!(*id!=[0;32]);assert!(r.validate());} for (id,p) in &self.bitcoin_reorg_policy{assert!(*id!=[0;32]);assert!(p.validate());} for (id,journal) in &self.bitcoin_reorg_evidence{assert!(*id!=[0;32]);assert!(journal.len()<=freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT);assert!(journal.iter().all(|e|e.validate()));} for (id,cp) in &self.bitcoin_checkpoints{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,nonces) in &self.bridge_nonce_registry{assert!(!nonces.is_empty());} for (id,set) in &self.bridge_pause_authorizations{assert_eq!(id,&set.bridge_id);assert!(!set.authorizations.is_empty());} for (id,p) in &self.bridge_withdrawal_rate_limit_period{assert!(self.bridge_withdrawals.contains_key(id));assert!(*p<=self.height);}for (id,w) in &self.bridge_withdrawals{assert_eq!(id,&w.withdrawal_id);assert!(w.validate_hash());assert_eq!(w.compute_id(),w.withdrawal_id);assert!(self.bridge_withdrawal_status.contains_key(id));}for (id,status) in &self.bridge_withdrawal_status{assert!(self.bridge_withdrawals.contains_key(id));assert!((*status as u8>=BridgeWithdrawalStatus::Requested as u8&&*status as u8<=BridgeWithdrawalStatus::Rejected as u8));}for id in self.bridge_accounting.keys(){assert!(self.validate_bridge_accounting(*id).is_ok());}let sum=self.accounts.values().try_fold(0u128,|s,a|{let h=a.balance.checked_add(a.locked).and_then(|v|v.checked_add(a.staked))?;s.checked_add(h)});assert!(sum.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,sum.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_native_units.checked_add(self.annual_reserve_native_units).and_then(|x|x.checked_add(self.draw_prize_pool_native_units)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
+ pub fn assert_invariants(&self){assert!(self.supply.is_consistent());for (id,asset) in &self.asset_registry{assert_eq!(id,&asset.asset_id);assert!(asset.validate_identity());assert!(!asset.symbol.is_empty());}for (replay_key,message) in &self.processed_bridge_messages{assert_eq!(replay_key,&message.replay_key());assert!(message.validate_hash());assert_eq!(message.protocol_version,BRIDGE_MESSAGE_PROTOCOL_VERSION);assert_eq!(message.destination_chain_id,freedom_primitives::CHAIN_ID);}for (replay_key,status) in &self.bridge_message_status{assert!(self.processed_bridge_messages.contains_key(replay_key));assert!(*status as u8>=BridgeMessageStatus::Verified as u8&&*status as u8<=BridgeMessageStatus::Minted as u8);}for (id,p) in &self.bridge_security_policies{assert_eq!(id,&p.bridge_id);assert!(p.validate());}for (id,set) in &self.bridge_approval_sets{assert_eq!(id,&set.request_id);assert!(!set.approvals.is_empty());}for (id,u) in &self.bridge_rate_limits{assert!(self.bridge_security_policies.contains_key(id));assert!(u.used>0);}for (id,r) in &self.bridge_deposit_replays{assert_eq!(id,&r.replay_key);assert!(r.validate());assert_eq!(r.status,freedom_types::DepositReplayStatus::Consumed);}for (id,a) in &self.bridge_mint_authorizations{assert_eq!(id,&a.replay_key);assert!(a.validate());assert!(self.bridge_deposit_replays.contains_key(id));}for (id,cp) in &self.bitcoin_canonical_tips{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,r) in &self.bitcoin_reorg_recovery{assert!(*id!=[0;32]);assert!(r.validate());} for (id,p) in &self.bitcoin_reorg_policy{assert!(*id!=[0;32]);assert!(p.validate());} for (id,journal) in &self.bitcoin_reorg_evidence{assert!(*id!=[0;32]);assert!(journal.len()<=freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT);assert!(journal.iter().all(|e|e.validate()));} for (id,cp) in &self.bitcoin_checkpoints{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,nonces) in &self.bridge_nonce_registry{assert!(!nonces.is_empty());} for (id,set) in &self.bridge_pause_authorizations{assert_eq!(id,&set.bridge_id);assert!(!set.authorizations.is_empty());} for (id,p) in &self.bridge_withdrawal_rate_limit_period{assert!(self.bridge_withdrawals.contains_key(id));assert!(*p<=self.height);}for (id,w) in &self.bridge_withdrawals{assert_eq!(id,&w.withdrawal_id);assert!(w.validate_hash());assert_eq!(w.compute_id(),w.withdrawal_id);assert!(self.bridge_withdrawal_status.contains_key(id));}for (id,status) in &self.bridge_withdrawal_status{assert!(self.bridge_withdrawals.contains_key(id));assert!((*status as u8>=BridgeWithdrawalStatus::Requested as u8&&*status as u8<=BridgeWithdrawalStatus::Rejected as u8));}for id in self.bridge_accounting.keys(){assert!(self.validate_bridge_accounting(*id).is_ok());}let circulating=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.balance));let locked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.locked));let staked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.staked));assert!(circulating.is_some()&&locked.is_some()&&staked.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,circulating.unwrap());assert_eq!(self.supply.locked,locked.unwrap());assert_eq!(self.supply.staked,staked.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_native_units.checked_add(self.annual_reserve_native_units).and_then(|x|x.checked_add(self.draw_prize_pool_native_units)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
 }
 
 
@@ -3257,7 +3257,7 @@ mod m155_bridge_mint_boundary_tests {
   let validator=Validator{validator_id,owner:validator_owner,consensus_key:public_key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
   let mut state=ChainState::genesis(&Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
   let mut validator_account=Account::new(public_key,0); validator_account.staked=100; state.insert_account(validator_account);
-  state.supply.total=100; state.supply.circulating=100; state.supply.staked=100;
+  state.supply.total=100; state.supply.circulating=0; state.supply.staked=100;
   state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
   state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
 
@@ -3284,7 +3284,7 @@ mod m155_bridge_mint_boundary_tests {
   let amount=state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
   assert_eq!(amount,500);
   assert_eq!(state.accounts[&auth.recipient].balance,500);
-  assert_eq!(state.supply.total,500);
+  assert_eq!(state.supply.total,600);
   assert_eq!(state.supply.circulating,500);
   assert_eq!(state.bridge_accounting[&auth.canonical_asset_id].freedom_minted,500);
   assert_eq!(state.bridge_deposit_replays[&auth.replay_key].status,freedom_types::DepositReplayStatus::Consumed);
@@ -3310,7 +3310,7 @@ mod m155_bridge_mint_boundary_tests {
   auth.amount=501;
   auth.authorization_hash=auth.compute_hash();
   assert_eq!(state.mint_bridge_authorized(&message,&deposit,&auth,&approvals),Err(StateError::InvalidBridgeMessage));
-  assert_eq!(state.supply.total,0);
+  assert_eq!(state.supply.total,100);
   assert!(state.bridge_deposit_replays.is_empty());
  }
 }
@@ -3340,7 +3340,7 @@ mod m156_bridge_mint_transaction_tests {
   let mut state=ChainState::genesis(&Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
   let mut validator_account=Account::new(validator_pub,0); validator_account.staked=100; state.insert_account(validator_account);
   state.supply.total=100;
-  state.supply.circulating=100;
+  state.supply.circulating=0;
   state.supply.staked=100;
   state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
   state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
@@ -3362,7 +3362,7 @@ mod m156_bridge_mint_transaction_tests {
   let sender=relayer.address;
   state.insert_account(relayer);
   state.supply.total=1_100;
-  state.supply.circulating=1_100;
+  state.supply.circulating=1_000;
   (state,deposit,message,auth,approvals,relayer_key)
  }
 
@@ -3380,7 +3380,7 @@ mod m156_bridge_mint_transaction_tests {
   assert_eq!(state.accounts[&tx.sender].nonce,1);
   assert_eq!(state.supply.total,1600);
   assert_eq!(state.accounts[&tx.sender].balance,993);
-  assert_eq!(state.supply.circulating,1593);
+  assert_eq!(state.supply.circulating,1493);
   assert_eq!(state.supply.treasury,7);
   assert_eq!(state.bridge_message_status[&message.replay_key()],BridgeMessageStatus::Minted);
   assert_eq!(state.bridge_deposit_replays[&auth.replay_key].status,freedom_types::DepositReplayStatus::Consumed);
