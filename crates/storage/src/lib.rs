@@ -495,8 +495,43 @@ mod tests {
         assert_eq!(loaded.block_hash, [0;32]);
         assert_eq!(loaded.state.last_block_hash, [0;32]);
         assert_eq!(loaded.state.state_root(), loaded.state_root);
+        // The binary snapshot codec must preserve populated fixed-size-key
+        // registries; these are not serializable as ordinary JSON map keys.
+        assert!(!loaded.state.asset_registry.is_empty());
+        assert!(!loaded.state.cross_chain_asset_registries.is_empty());
         assert!(loaded.certificate.is_none());
         assert!(loaded.epoch_transition_certificate.is_none());
+    }
+
+    #[test]
+    fn reads_legacy_json_genesis_snapshots() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        // Historical JSON snapshots could only represent empty fixed-size-key
+        // maps. Preserve compatibility for those previously serializable states.
+        state.asset_registry.clear();
+        state.cross_chain_asset_registries.clear();
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: 0,
+            block_hash: [0; 32],
+            state_root: state.state_root(),
+            state,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+        let legacy_json = serde_json::to_vec(&snapshot).unwrap();
+        store.db.put(ChainStore::snapshot_key(0), legacy_json).unwrap();
+
+        let loaded = store.load_snapshot(0).unwrap().unwrap();
+        assert_eq!(loaded.height, 0);
+        assert_eq!(loaded.state_root, loaded.state.state_root());
     }
 
     #[test]
