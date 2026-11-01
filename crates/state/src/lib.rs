@@ -5501,6 +5501,7 @@ mod m306_evidence_event_canonicalization_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -5833,6 +5834,7 @@ mod m300_evidence_submission_atomicity_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -5871,6 +5873,7 @@ mod m299_evidence_slash_basis_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=200; state.supply.circulating=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -5967,6 +5970,7 @@ mod m297_slashed_evidence_history_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=200; state.supply.circulating=100; state.supply.staked=100;
 
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -6015,6 +6019,7 @@ mod m296_slash_replay_amount_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=200; state.supply.circulating=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -6041,6 +6046,7 @@ mod m296_slash_replay_amount_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=200; state.supply.circulating=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -6104,6 +6110,7 @@ mod m295_slash_mutation_safety_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key, 10));
         state.accounts.get_mut(&owner).unwrap().staked=10;
+        state.supply.total=20; state.supply.circulating=10; state.supply.staked=10;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
