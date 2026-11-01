@@ -3216,7 +3216,7 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn finalization_cannot_release_before_burn() {
-  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() }); let bridge=[8u8;32]; let a=asset(freedom_types::TRON_MAINNET_CHAIN_ID,bridge); s.register_asset(a.clone()).unwrap();
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![validator()] }); let bridge=[8u8;32]; let a=asset(freedom_types::TRON_MAINNET_CHAIN_ID,bridge); s.register_asset(a.clone()).unwrap();
   s.record_verified_external_lock(a.asset_id,100).unwrap(); s.record_freedom_mint(a.asset_id,100).unwrap();
   s.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id:bridge,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1000,max_withdrawal_amount:1000,daily_limit:1000,emergency_paused:false,nonce_floor:0}).unwrap();
   let id=s.request_bridge_withdrawal(withdrawal(&a,freedom_types::TRON_MAINNET_CHAIN_ID,bridge)).unwrap();
@@ -3253,8 +3253,11 @@ mod m155_bridge_mint_boundary_tests {
   let bridge_id=[3;32];
   let source_chain_id=freedom_types::TRON_MAINNET_CHAIN_ID;
   let asset_id=AssetDefinition::compute_asset_id(source_chain_id,AssetType::Bridged,&[0x11;20],[8;32],bridge_id);
-  let validator=Validator{validator_id,owner:[1;32],consensus_key:public_key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
+  let validator_owner=freedom_primitives::address_from_public_key(&public_key);
+  let validator=Validator{validator_id,owner:validator_owner,consensus_key:public_key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
   let mut state=ChainState::genesis(&Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
+  let mut validator_account=Account::new(public_key,0); validator_account.staked=100; state.insert_account(validator_account);
+  state.supply.total=100; state.supply.circulating=100; state.supply.staked=100;
   state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
   state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
 
@@ -3335,9 +3338,10 @@ mod m156_bridge_mint_transaction_tests {
   let validator_owner=freedom_primitives::address_from_public_key(&validator_pub);
   let validator=Validator{validator_id,owner:validator_owner,consensus_key:validator_pub,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
   let mut state=ChainState::genesis(&Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]});
-  state.insert_account(Account::new(validator_pub,100));
+  let mut validator_account=Account::new(validator_pub,0); validator_account.staked=100; state.insert_account(validator_account);
   state.supply.total=100;
   state.supply.circulating=100;
+  state.supply.staked=100;
   state.register_asset(AssetDefinition{asset_id,source_chain_id,asset_type:AssetType::Bridged,contract_address:vec![0x11;20],symbol:"USDT".into(),decimals:6,issuer:[8;32],bridge_id,status:AssetStatus::Active}).unwrap();
   state.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1_000_000,max_withdrawal_amount:1_000_000,daily_limit:1_000_000,emergency_paused:false,nonce_floor:1}).unwrap();
 
