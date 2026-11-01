@@ -3078,7 +3078,7 @@ mod m34_tests {
  fn tx(owner:Address,nonce:u64,kind:TxKind,payload:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:owner,nonce,kind,payload,fee:0,signature:vec![]}}
  #[test] fn genesis_can_bootstrap_staking(){let(mut s,o,id)=setup();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Active);s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.staking_activated);assert_eq!(s.validators.get(&id).unwrap().stake,100);}
  #[test] fn unbonding_validator_cannot_restake_before_exit(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Unbonding);assert_eq!(s.execute_transaction(&tx(o,2,TxKind::Stake,StakePayload{amount:1}.encode())),Err(StateError::InvalidValidatorLifecycle));}
- #[test] fn exited_validator_does_not_resurrect_at_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();s.height=ChainState::UNBONDING_COOLDOWN;s.maybe_advance_epoch();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Exited);assert!(s.active_validator_set.is_empty());s.height=s.epoch_length;s.maybe_advance_epoch();assert!(s.active_validator_set.is_empty());}
+ #[test] fn exited_validator_does_not_resurrect_at_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();s.height=ChainState::UNBONDING_COOLDOWN;s.maybe_advance_epoch();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Exited);assert!(s.active_validator_set.contains_key(&id));s.height=s.epoch_length;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
  #[test] fn active_validator_with_pending_unbonding_cannot_add_stake(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:40}.encode())).unwrap();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Active);assert_eq!(s.execute_transaction(&tx(o,2,TxKind::Stake,StakePayload{amount:1}.encode())),Err(StateError::InvalidValidatorLifecycle));}
 }
 
@@ -3088,7 +3088,7 @@ mod m35_tests {
  use super::*; use freedom_types::{Genesis,Validator,Transaction,TxKind,StakePayload,UnstakePayload};
  fn setup()->(ChainState,Address,Hash){let key=[8u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.epoch_length=10;s.insert_account(Account::new(key,100));(s,owner,id)}
  fn tx(o:Address,n:u64,k:TxKind,p:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:o,nonce:n,kind:k,payload:p,fee:0,signature:vec![]}}
- #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));}
+ #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
  #[test] fn pending_new_stake_activates_next_epoch(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.pending_validator_set.contains_key(&id));s.active_validator_set.clear();s.height=9;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
 }
 
@@ -3166,6 +3166,7 @@ mod m77_asset_registry_tests {
 #[cfg(test)]
 mod m81_bidirectional_bridge_tests {
  use super::*;
+ use ed25519_dalek::{SigningKey, Signer};
  use freedom_types::{AssetDefinition,AssetStatus,AssetType,BridgeWithdrawal,BridgeWithdrawalStatus,Genesis};
 
  fn asset(chain:u32,bridge:Hash)->AssetDefinition{
@@ -3173,6 +3174,8 @@ mod m81_bidirectional_bridge_tests {
   let id=AssetDefinition::compute_asset_id(chain,AssetType::Bridged,&contract,issuer,bridge);
   AssetDefinition{asset_id:id,source_chain_id:chain,asset_type:AssetType::Bridged,contract_address:contract,symbol:"USDT".into(),decimals:6,issuer,bridge_id:bridge,status:AssetStatus::Active}
  }
+ fn validator()->Validator{let key=SigningKey::from_bytes(&[7;32]);let pubkey=key.verifying_key().to_bytes();Validator{validator_id:freedom_primitives::hash_bytes(&pubkey),owner:[1;32],consensus_key:pubkey,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0}}
+ fn approve(s:&mut ChainState,id:Hash,bridge:Hash){let key=SigningKey::from_bytes(&[7;32]);let w=&s.bridge_withdrawals[&id];let vid=freedom_primitives::hash_bytes(&key.verifying_key().to_bytes());let mut a=BridgeApproval{bridge_id:bridge,request_id:[4;32],withdrawal_id:id,validator_id:vid,nonce:w.nonce,amount:w.amount,destination_chain_id:w.destination_chain_id,asset_id:w.asset_id,intent_hash:w.request_hash,signature:Vec::new()};a.signature=key.sign(&a.signing_message()).to_bytes().to_vec();s.record_bridge_approval_set(BridgeApprovalSet{request_id:[4;32],approvals:vec![a],threshold_signatures:0}).unwrap();s.approve_bridge_with_authenticated_set(id,[4;32]).unwrap();}
  fn withdrawal(asset:&AssetDefinition,chain:u32,bridge:Hash)->BridgeWithdrawal{
   let mut w=BridgeWithdrawal{withdrawal_id:[0;32],bridge_id:bridge,asset_id:asset.asset_id,destination_chain_id:chain,amount:100,sender:[9;32],recipient:b"external-recipient".to_vec(),nonce:7,request_hash:[0;32]};
   w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id(); w
@@ -3180,12 +3183,12 @@ mod m81_bidirectional_bridge_tests {
 
  #[test]
  fn outbound_withdrawal_is_chain_agnostic() {
-  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: Vec::new() });
+  let mut s=ChainState::genesis(&Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![validator()] });
   let bridge=[4u8;32]; let a=asset(freedom_types::TRON_MAINNET_CHAIN_ID,bridge); s.register_asset(a.clone()).unwrap();
   s.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id:bridge,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1000,max_withdrawal_amount:1000,daily_limit:1000,emergency_paused:false,nonce_floor:0}).unwrap();
   let w=withdrawal(&a,freedom_types::TRON_MAINNET_CHAIN_ID,bridge); let id=s.request_bridge_withdrawal(w).unwrap();
   assert_eq!(s.bridge_withdrawal_status[&id],BridgeWithdrawalStatus::Requested);
-  for next in [BridgeWithdrawalStatus::Validated,BridgeWithdrawalStatus::Approved,BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
+  s.advance_bridge_withdrawal(id,BridgeWithdrawalStatus::Validated).unwrap(); approve(&mut s,id,bridge); for next in [BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
   assert_eq!(s.bridge_withdrawal_status[&id],BridgeWithdrawalStatus::ExternalConfirmed);
  }
 
@@ -3217,7 +3220,7 @@ mod m81_bidirectional_bridge_tests {
   s.record_verified_external_lock(a.asset_id,100).unwrap(); s.record_freedom_mint(a.asset_id,100).unwrap();
   s.register_bridge_security_policy(BridgeSecurityPolicy{bridge_id:bridge,approval_mode:freedom_types::BridgeApprovalMode::Quorum,validator_quorum:1,validator_total:1,threshold_signers:1,threshold_total:1,min_external_confirmations:1,max_deposit_amount:1000,max_withdrawal_amount:1000,daily_limit:1000,emergency_paused:false,nonce_floor:0}).unwrap();
   let id=s.request_bridge_withdrawal(withdrawal(&a,freedom_types::TRON_MAINNET_CHAIN_ID,bridge)).unwrap();
-  for next in [BridgeWithdrawalStatus::Validated,BridgeWithdrawalStatus::Approved,BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
+  s.advance_bridge_withdrawal(id,BridgeWithdrawalStatus::Validated).unwrap(); approve(&mut s,id,bridge); for next in [BridgeWithdrawalStatus::Signing,BridgeWithdrawalStatus::Broadcast,BridgeWithdrawalStatus::ExternalConfirmed] { s.advance_bridge_withdrawal(id,next).unwrap(); }
   assert_eq!(s.advance_bridge_withdrawal(id,BridgeWithdrawalStatus::Finalized),Err(StateError::InvalidBridgeAccounting));
   s.record_freedom_burn(a.asset_id,100).unwrap();
   s.advance_bridge_withdrawal(id,BridgeWithdrawalStatus::Finalized).unwrap();
