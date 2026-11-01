@@ -2843,8 +2843,43 @@ impl ChainState {
 #[cfg(test)]
 mod m96_bridge_nonce_tests {
  use super::*;
- #[test] fn outbound_nonce_is_one_time_per_bridge_asset(){let g=Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![]};let mut s=ChainState::genesis(&g);let bridge=[9;32];let asset=[8;32];s.asset_registry.insert(asset,AssetDefinition{asset_id:asset,source_chain_id:2,asset_type:AssetType::Bridged,contract_address:vec![1],symbol:"USDT".into(),decimals:6,issuer:[3;32],bridge_id:bridge,status:AssetStatus::Active});let mk=|id|BridgeWithdrawal{withdrawal_id:id,bridge_id:bridge,asset_id:asset,destination_chain_id:2,amount:1,sender:[4;32],recipient:vec![5],nonce:7,request_hash:[6;32]};s.request_bridge_withdrawal(mk([1;32])).unwrap();assert_eq!(s.request_bridge_withdrawal(mk([2;32])),Err(StateError::DuplicateBridgeNonce));}
- #[test] fn different_assets_have_independent_nonces(){let g=Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![]};let mut s=ChainState::genesis(&g);let bridge=[9;32];for (asset,symbol) in [([8;32],"USDT"),([7;32],"USDC")]{s.asset_registry.insert(asset,AssetDefinition{asset_id:asset,source_chain_id:2,asset_type:AssetType::Bridged,contract_address:vec![1],symbol:symbol.into(),decimals:6,issuer:[3;32],bridge_id:bridge,status:AssetStatus::Active});}for (id,asset) in [([1;32],[8;32]),([2;32],[7;32])]{s.request_bridge_withdrawal(BridgeWithdrawal{withdrawal_id:id,bridge_id:bridge,asset_id:asset,destination_chain_id:2,amount:1,sender:[4;32],recipient:vec![5],nonce:7,request_hash:[6;32]}).unwrap();}}
+
+ fn asset(chain: u32, bridge: Hash, contract: [u8; 20], symbol: &str) -> AssetDefinition {
+  let issuer = [3u8; 32];
+  let asset_id = AssetDefinition::compute_asset_id(chain, AssetType::Bridged, &contract, issuer, bridge);
+  AssetDefinition { asset_id, source_chain_id: chain, asset_type: AssetType::Bridged, contract_address: contract.to_vec(), symbol: symbol.into(), decimals: 6, issuer, bridge_id: bridge, status: AssetStatus::Active }
+ }
+
+ fn withdrawal(asset: &AssetDefinition, nonce: u64) -> BridgeWithdrawal {
+  let mut value = BridgeWithdrawal { withdrawal_id: [0; 32], bridge_id: asset.bridge_id, asset_id: asset.asset_id, destination_chain_id: 2, amount: 1, sender: [4; 32], recipient: b"external-recipient".to_vec(), nonce, request_hash: [0; 32] };
+  value.request_hash = value.compute_hash();
+  value.withdrawal_id = value.compute_id();
+  value
+ }
+
+ #[test]
+ fn outbound_nonce_is_one_time_per_bridge_asset() {
+  let g = Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
+  let mut s = ChainState::genesis(&g);
+  let bridge = [9; 32];
+  let a = asset(freedom_types::TRON_MAINNET_CHAIN_ID, bridge, [1; 20], "USDT");
+  s.register_asset(a.clone()).unwrap();
+  s.request_bridge_withdrawal(withdrawal(&a, 7)).unwrap();
+  assert_eq!(s.request_bridge_withdrawal(withdrawal(&a, 7)), Err(StateError::DuplicateBridgeNonce));
+ }
+
+ #[test]
+ fn different_assets_have_independent_nonces() {
+  let g = Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
+  let mut s = ChainState::genesis(&g);
+  let bridge = [9; 32];
+  let a = asset(freedom_types::TRON_MAINNET_CHAIN_ID, bridge, [1; 20], "USDT");
+  let b = asset(freedom_types::TRON_MAINNET_CHAIN_ID, bridge, [2; 20], "USDC");
+  s.register_asset(a.clone()).unwrap();
+  s.register_asset(b.clone()).unwrap();
+  s.request_bridge_withdrawal(withdrawal(&a, 7)).unwrap();
+  s.request_bridge_withdrawal(withdrawal(&b, 7)).unwrap();
+ }
 }
 
 #[cfg(test)]
@@ -4290,11 +4325,13 @@ mod m244_bridge_acceptance_boundary_tests {
         let genesis = freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply: 0, validators: vec![] };
         let mut state = ChainState::genesis(&genesis);
         let bridge = [31u8; 32];
-        let asset_id = [32u8; 32];
+        let contract = vec![0x42u8; 20];
+        let issuer = [33u8; 32];
+        let asset_id = AssetDefinition::compute_asset_id(freedom_types::BITCOIN_MAINNET_CHAIN_ID, AssetType::Bridged, &contract, issuer, bridge);
         state.register_asset(AssetDefinition {
             asset_id, source_chain_id: freedom_types::BITCOIN_MAINNET_CHAIN_ID,
-            asset_type: AssetType::Bridged, contract_address: b"BTC".to_vec(), symbol: "BTC".into(),
-            decimals: 8, issuer: [33u8; 32], bridge_id: bridge, status: AssetStatus::Active,
+            asset_type: AssetType::Bridged, contract_address: contract, symbol: "BTC".into(),
+            decimals: 8, issuer, bridge_id: bridge, status: AssetStatus::Active,
         }).unwrap();
         let mut message = BridgeMessage {
             protocol_version: freedom_types::BRIDGE_MESSAGE_PROTOCOL_VERSION,
@@ -4455,13 +4492,14 @@ mod m260_validator_history_transition_tests {
         let genesis=freedom_types::Genesis {
             chain_id:freedom_primitives::CHAIN_ID, initial_supply:0,
             validators:vec![freedom_types::Validator {
-                validator_id:[1u8;32], owner:[2u8;32], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
+                validator_id:freedom_primitives::hash_bytes(&[3u8;32]), owner:[2u8;32], consensus_key:[3u8;32], stake:10, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
             }],
         };
         let mut state=ChainState::genesis(&genesis);
         state.height=1000;
-        state.pending_validator_set.insert([9u8;32],freedom_types::ValidatorSetEntry {
-            validator_id:[9u8;32], owner:[8u8;32], consensus_key:[7u8;32], stake:20,
+        let pending_id = freedom_primitives::hash_bytes(&[7u8;32]);
+        state.pending_validator_set.insert(pending_id,freedom_types::ValidatorSetEntry {
+            validator_id:pending_id, owner:[8u8;32], consensus_key:[7u8;32], stake:20,
         });
         state.maybe_advance_epoch();
         assert_eq!(state.epoch,1);
@@ -4757,6 +4795,9 @@ mod m268_validator_set_binding_tests {
     #[test]
     fn historical_entry_mutation_changes_state_root() {
         let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] });
+        let mut entries=BTreeMap::new();
+        entries.insert([1u8;32],freedom_types::ValidatorSetEntry{validator_id:[1u8;32],owner:[2u8;32],consensus_key:[3u8;32],stake:100});
+        state.validator_set_history_entries.insert(0,entries);
         let before=state.state_root();
         state.validator_set_history_entries.get_mut(&0).unwrap().values_mut().next().unwrap().stake=101;
         assert_ne!(before,state.state_root());
