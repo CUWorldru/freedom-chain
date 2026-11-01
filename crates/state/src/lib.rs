@@ -2369,7 +2369,7 @@ impl ChainState {
   // mint_bridge_authorized() mutates bridge/accounting state, so fee supply
   // arithmetic and the sender nonce must be known to succeed first.
   let next_nonce=sender.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
-  let next_circulating=self.supply.circulating.checked_sub(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+  let next_circulating=self.supply.circulating.checked_add(payload.authorization.amount).and_then(|v|v.checked_sub(tx.fee)).ok_or(StateError::ArithmeticOverflow)?;
   let next_treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
   let policy=self.bridge_security_policies.get(&payload.message.bridge_id).ok_or(StateError::InvalidBridgeMintTransaction)?;
   if payload.message.source_chain_id == freedom_types::BITCOIN_MAINNET_CHAIN_ID {
@@ -3088,7 +3088,7 @@ mod m35_tests {
  use super::*; use freedom_types::{Genesis,Validator,Transaction,TxKind,StakePayload,UnstakePayload};
  fn setup()->(ChainState,Address,Hash){let key=[8u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.epoch_length=10;s.insert_account(Account::new(key,100));(s,owner,id)}
  fn tx(o:Address,n:u64,k:TxKind,p:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:o,nonce:n,kind:k,payload:p,fee:0,signature:vec![]}}
- #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
+ #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));}
  #[test] fn pending_new_stake_activates_next_epoch(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.pending_validator_set.contains_key(&id));s.active_validator_set.clear();s.height=9;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
 }
 
@@ -3175,7 +3175,7 @@ mod m81_bidirectional_bridge_tests {
   AssetDefinition{asset_id:id,source_chain_id:chain,asset_type:AssetType::Bridged,contract_address:contract,symbol:"USDT".into(),decimals:6,issuer,bridge_id:bridge,status:AssetStatus::Active}
  }
  fn validator()->Validator{let key=SigningKey::from_bytes(&[7;32]);let pubkey=key.verifying_key().to_bytes();Validator{validator_id:freedom_primitives::hash_bytes(&pubkey),owner:[1;32],consensus_key:pubkey,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0}}
- fn approve(s:&mut ChainState,id:Hash,bridge:Hash){let key=SigningKey::from_bytes(&[7;32]);let w=&s.bridge_withdrawals[&id];let vid=freedom_primitives::hash_bytes(&key.verifying_key().to_bytes());let mut a=BridgeApproval{bridge_id:bridge,request_id:[4;32],withdrawal_id:id,validator_id:vid,nonce:w.nonce,amount:w.amount,destination_chain_id:w.destination_chain_id,asset_id:w.asset_id,intent_hash:w.request_hash,signature:Vec::new()};a.signature=key.sign(&a.signing_message()).to_bytes().to_vec();s.record_bridge_approval_set(BridgeApprovalSet{request_id:[4;32],approvals:vec![a],threshold_signatures:0}).unwrap();s.approve_bridge_with_authenticated_set(id,[4;32]).unwrap();}
+ fn approve(s:&mut ChainState,id:Hash,bridge:Hash){let key=SigningKey::from_bytes(&[7;32]);let w=&s.bridge_withdrawals[&id];let vid=freedom_primitives::hash_bytes(&key.verifying_key().to_bytes());let mut a=BridgeApproval{bridge_id:bridge,request_id:[4;32],withdrawal_id:id,validator_id:vid,nonce:0,amount:w.amount,destination_chain_id:w.destination_chain_id,asset_id:w.asset_id,intent_hash:w.request_hash,signature:Vec::new()};a.signature=key.sign(&a.signing_message()).to_bytes().to_vec();s.record_bridge_approval_set(BridgeApprovalSet{request_id:[4;32],approvals:vec![a],threshold_signatures:0}).unwrap();s.approve_bridge_with_authenticated_set(id,[4;32]).unwrap();}
  fn withdrawal(asset:&AssetDefinition,chain:u32,bridge:Hash)->BridgeWithdrawal{
   let mut w=BridgeWithdrawal{withdrawal_id:[0;32],bridge_id:bridge,asset_id:asset.asset_id,destination_chain_id:chain,amount:100,sender:[9;32],recipient:b"external-recipient".to_vec(),nonce:7,request_hash:[0;32]};
   w.request_hash=w.compute_hash(); w.withdrawal_id=w.compute_id(); w
@@ -3281,7 +3281,7 @@ mod m155_bridge_mint_boundary_tests {
   let amount=state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
   assert_eq!(amount,500);
   assert_eq!(state.accounts[&auth.recipient].balance,500);
-  assert_eq!(state.supply.total,600);
+  assert_eq!(state.supply.total,500);
   assert_eq!(state.supply.circulating,600);
   assert_eq!(state.bridge_accounting[&auth.canonical_asset_id].freedom_minted,500);
   assert_eq!(state.bridge_deposit_replays[&auth.replay_key].status,freedom_types::DepositReplayStatus::Consumed);
@@ -3307,7 +3307,7 @@ mod m155_bridge_mint_boundary_tests {
   auth.amount=501;
   auth.authorization_hash=auth.compute_hash();
   assert_eq!(state.mint_bridge_authorized(&message,&deposit,&auth,&approvals),Err(StateError::InvalidBridgeMessage));
-  assert_eq!(state.supply.total,100);
+  assert_eq!(state.supply.total,0);
   assert!(state.bridge_deposit_replays.is_empty());
  }
 }
@@ -3371,6 +3371,7 @@ mod m156_bridge_mint_transaction_tests {
   assert_eq!(state.accounts[&tx.sender].balance,993);
   assert_eq!(state.accounts[&tx.sender].nonce,1);
   assert_eq!(state.supply.total,1500);
+  assert_eq!(state.accounts[&tx.sender].balance,993);
   assert_eq!(state.supply.circulating,1493);
   assert_eq!(state.supply.treasury,7);
   assert_eq!(state.bridge_message_status[&message.replay_key()],BridgeMessageStatus::Minted);
