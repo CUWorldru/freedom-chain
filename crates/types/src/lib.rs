@@ -4454,9 +4454,31 @@ mod m83_bitcoin_tests {
 }
 
 #[cfg(test)]
+fn mined_bitcoin_test_header(
+    previous_block_hash: Hash,
+    merkle_root: Hash,
+    timestamp: u32,
+    bits: u32,
+) -> BitcoinBlockHeader {
+    let mut header = BitcoinBlockHeader {
+        version: 1,
+        previous_block_hash,
+        merkle_root,
+        timestamp,
+        bits,
+        nonce: 0,
+    };
+    while !header.validate_pow() {
+        header.nonce = header.nonce.checked_add(1)
+            .expect("test header nonce space exhausted");
+    }
+    header
+}
+
+#[cfg(test)]
 mod m106_bitcoin_reorg_tests {
  use super::*;
- fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0}}
+ fn h(prev:Hash)->BitcoinBlockHeader{mined_bitcoin_test_header(prev,[1;32],1,0x207fffff)}
  #[test] fn conflicting_branch_is_reported_as_reorg(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};assert!(matches!(bitcoin_evaluate_reorg(&cp,&[h([8;32])]),Err(BitcoinCheckpointError::ReorgDetected)));}
  #[test] fn continuing_branch_has_report(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};let a=h(cp.block_hash);let r=bitcoin_evaluate_reorg(&cp,&[a]).unwrap();assert_eq!(r.candidate_tip_height,101);}
 }
@@ -4464,7 +4486,7 @@ mod m106_bitcoin_reorg_tests {
 #[cfg(test)]
 mod m103_bitcoin_checkpoint_tests {
  use super::*;
- fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0}}
+ fn h(prev:Hash)->BitcoinBlockHeader{mined_bitcoin_test_header(prev,[1;32],1,0x207fffff)}
  #[test] fn checkpoint_continuation_is_accepted(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};let a=h(cp.block_hash);let r=bitcoin_validate_from_checkpoint(&cp,&[a]).unwrap();assert_eq!(r.height,101);}
  #[test] fn wrong_checkpoint_link_is_rejected(){let cp=BitcoinChainCheckpoint{height:100,block_hash:[9;32],chainwork:[1;32]};assert_eq!(bitcoin_validate_from_checkpoint(&cp,&[h([8;32])]),Err(BitcoinCheckpointError::LinkageMismatch));}
 }
@@ -4473,29 +4495,29 @@ mod m103_bitcoin_checkpoint_tests {
 mod m102_bitcoin_chainwork_baseline_tests {
  use super::*;
  #[test] fn work_is_positive(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};assert!(bitcoin_header_work(&h).is_some());}
- #[test] fn chainwork_accumulates(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();assert!(bitcoin_chainwork(&[a.clone(),b.clone()]).unwrap()>bitcoin_chainwork(&[b.clone()]).unwrap());}
+ #[test] fn chainwork_accumulates(){let a=mined_bitcoin_test_header([0;32],[1;32],1,0x207fffff);let b=mined_bitcoin_test_header(a.block_hash(),[1;32],1,0x207fffff);assert!(bitcoin_chainwork(&[a.clone(),b.clone()]).unwrap()>bitcoin_chainwork(&[b.clone()]).unwrap());}
 }
 
 #[cfg(test)]
 mod m102_bitcoin_chainwork_tests {
  use super::*;
  #[test] fn work_is_positive(){let h=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let w=bitcoin_header_work(&h).unwrap();assert!(w.iter().any(|x|*x!=0));}
- #[test] fn longer_valid_chain_has_more_work_same_target(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=b.clone();c.previous_block_hash=b.block_hash();assert_eq!(bitcoin_chainwork_cmp(&[a.clone(),b.clone()],&[a,b,c]).unwrap(),std::cmp::Ordering::Less);}
- #[test] fn chainwork_comparison_is_not_height_only(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();let mut c=a.clone();c.previous_block_hash=a.block_hash();c.bits=0x1f00ffff;assert!(bitcoin_chainwork_cmp(&[a.clone(),b],&[a,c]).is_ok());}
+ #[test] fn longer_valid_chain_has_more_work_same_target(){let a=mined_bitcoin_test_header([0;32],[1;32],1,0x207fffff);let b=mined_bitcoin_test_header(a.block_hash(),[1;32],1,0x207fffff);let c=mined_bitcoin_test_header(b.block_hash(),[1;32],1,0x207fffff);assert_eq!(bitcoin_chainwork_cmp(&[a.clone(),b.clone()],&[a,b,c]).unwrap(),std::cmp::Ordering::Less);}
+ #[test] fn chainwork_comparison_is_not_height_only(){let a=mined_bitcoin_test_header([0;32],[1;32],1,0x207fffff);let b=mined_bitcoin_test_header(a.block_hash(),[1;32],1,0x207fffff);let c=mined_bitcoin_test_header(a.block_hash(),[1;32],1,0x1f00ffff);assert!(bitcoin_chainwork_cmp(&[a.clone(),b],&[a,c]).is_ok());}
 }
 
 #[cfg(test)]
 mod m101_bitcoin_header_chain_tests {
  use super::*;
- #[test] fn linked_headers_are_accepted(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=a.block_hash();assert!(bitcoin_validate_header_chain(100,&[a,b]).is_ok());}
- #[test] fn broken_link_is_rejected(){let a=BitcoinBlockHeader{version:1,previous_block_hash:[0;32],merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0};let mut b=a.clone();b.previous_block_hash=[9;32];assert_eq!(bitcoin_validate_header_chain(100,&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
+ #[test] fn linked_headers_are_accepted(){let a=mined_bitcoin_test_header([0;32],[1;32],1,0x207fffff);let b=mined_bitcoin_test_header(a.block_hash(),[1;32],1,0x207fffff);assert!(bitcoin_validate_header_chain(100,&[a,b]).is_ok());}
+ #[test] fn broken_link_is_rejected(){let a=mined_bitcoin_test_header([0;32],[1;32],1,0x207fffff);let b=mined_bitcoin_test_header([9;32],[1;32],1,0x207fffff);assert_eq!(bitcoin_validate_header_chain(100,&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
 }
 
 #[cfg(test)]
 mod m102_bitcoin_chainwork_validation_tests {
  use super::*;
- fn h(prev:Hash)->BitcoinBlockHeader{BitcoinBlockHeader{version:1,previous_block_hash:prev,merkle_root:[1;32],timestamp:1,bits:0x207fffff,nonce:0}}
- #[test] fn chainwork_accumulates(){let a=h([0;32]);let mut b=h(a.block_hash());let mut c=h(b.block_hash());assert!(bitcoin_chainwork(&[a.clone(),b.clone(),c.clone()]).is_ok());b=h([0;32]);assert!(bitcoin_chainwork_cmp(&[h([0;32])],&[h([0;32]),b]).is_ok());}
+ fn h(prev:Hash)->BitcoinBlockHeader{mined_bitcoin_test_header(prev,[1;32],1,0x207fffff)}
+ #[test] fn chainwork_accumulates(){let a=h([0;32]);let b=h(a.block_hash());let c=h(b.block_hash());assert!(bitcoin_chainwork(&[a.clone(),b.clone(),c.clone()]).is_ok());let x=h([0;32]);let y=h(x.block_hash());assert!(bitcoin_chainwork_cmp(&[x.clone()],&[x,y]).is_ok());}
  #[test] fn invalid_chain_has_no_work(){let a=h([0;32]);let mut b=h([9;32]);assert_eq!(bitcoin_chainwork(&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
 }
 
