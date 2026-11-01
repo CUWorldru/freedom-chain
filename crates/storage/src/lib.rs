@@ -775,15 +775,18 @@ mod tests {
     fn rejects_non_genesis_snapshot_without_checkpoint() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
-        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
             chain_id: 1, initial_supply: 0, validators: vec![]
         });
+        state.height = 1;
+        state.last_block_hash = [7; 32];
+        let state_root = state.state_root();
         let snapshot = StateSnapshot {
             chain_id: u64::from(CHAIN_ID),
             height: 1,
             block_hash: [7; 32],
-            state_root: genesis.state_root(),
-            state: genesis,
+            state_root,
+            state,
             certificate: None,
             finality_validator_set: std::collections::BTreeMap::new(),
             epoch_transition_certificate: None,
@@ -878,11 +881,13 @@ mod tests {
             transactions: vec![], receipts: vec![],
         };
         store.put_block(&block).unwrap();
-        let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
             chain_id: 1, initial_supply: 0, validators: vec![]
         });
+        state.height = 1;
+        state.last_block_hash = [9; 32];
         let err = store.save_snapshot(&state, block_hash(&block)).unwrap_err();
-        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "height mismatch"));
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "snapshot state last hash mismatch"));
         assert!(store.load_snapshot(0).is_ok());
     }
 
