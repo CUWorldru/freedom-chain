@@ -1586,10 +1586,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                             continue;
                                                         }
                                                     };
-                                                    if let Ok(state_json) = freedom_network::serialize_bounded_json(
+                                                    if let Ok(state_json) = freedom_network::serialize_bounded_snapshot_state(
                                                         &snapshot.state,
                                                         freedom_network::MAX_SNAPSHOT_STATE_BYTES,
-                                                        "snapshot state",
                                                     ) {
                                                         let response = SyncWireResponse::Snapshot(freedom_network::SnapshotSyncResponse {
                                                             request_id: req.request_id,
@@ -1817,7 +1816,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                 eprintln!("SNAPSHOT_REJECTED checkpoint commitment mismatch at {}", response.height);
                                                 continue;
                                             }
-                                            let snapshot_state: freedom_state::ChainState = match serde_json::from_slice(&response.state_json) {
+                                            let snapshot_state: freedom_state::ChainState = match freedom_network::deserialize_bounded_snapshot_state(
+                                                &response.state_json,
+                                                freedom_network::MAX_SNAPSHOT_STATE_BYTES,
+                                            ) {
                                                 Ok(s) => s,
                                                 Err(e) => { eprintln!("SNAPSHOT_REJECTED invalid state encoding: {e}"); continue; }
                                             };

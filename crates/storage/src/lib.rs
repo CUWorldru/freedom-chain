@@ -10,6 +10,27 @@ const META_HASH: &[u8] = b"meta:last_hash";
 const SNAPSHOT_PREFIX: &[u8] = b"snapshot:";
 const REPUTATION_KEY: &[u8] = b"meta:peer_reputation";
 
+// Versioned binary encoding supports consensus-state maps keyed by fixed-size
+// hashes and addresses, which JSON object keys cannot represent. Legacy JSON
+// snapshots remain readable for backward compatibility.
+const SNAPSHOT_MAGIC: &[u8] = b"321MSNP\x01";
+
+fn encode_snapshot(snapshot: &StateSnapshot) -> Result<Vec<u8>, StorageError> {
+    let payload = bincode::serialize(snapshot)
+        .map_err(|e| StorageError::Codec(e.to_string()))?;
+    let mut bytes = SNAPSHOT_MAGIC.to_vec();
+    bytes.extend_from_slice(&payload);
+    Ok(bytes)
+}
+
+fn decode_snapshot(bytes: &[u8]) -> Result<StateSnapshot, StorageError> {
+    if let Some(payload) = bytes.strip_prefix(SNAPSHOT_MAGIC) {
+        bincode::deserialize(payload).map_err(|e| StorageError::Codec(e.to_string()))
+    } else {
+        serde_json::from_slice(bytes).map_err(|e| StorageError::Codec(e.to_string()))
+    }
+}
+
 #[derive(Debug)]
 pub enum StorageError { Rocks(String), Codec(String), MissingBlock(u64), InvalidMetadata, InvalidSnapshot(String) }
 
@@ -303,7 +324,7 @@ impl ChainStore {
     ) -> Result<(), StorageError> {
         let snapshot = self.build_snapshot(state, block_hash, certificate, finality_validator_set);
         self.validate_snapshot_integrity(&snapshot)?;
-        let bytes = serde_json::to_vec(&snapshot).map_err(|e| StorageError::Codec(e.to_string()))?;
+        let bytes = encode_snapshot(&snapshot)?;
         self.db.put(Self::snapshot_key(state.height), bytes).map_err(|e| StorageError::Rocks(e.to_string()))?;
         Ok(())
     }
@@ -349,8 +370,7 @@ impl ChainStore {
 
         let block_bytes = serde_json::to_vec(checkpoint)
             .map_err(|e| StorageError::Codec(e.to_string()))?;
-        let snapshot_bytes = serde_json::to_vec(&snapshot)
-            .map_err(|e| StorageError::Codec(e.to_string()))?;
+        let snapshot_bytes = encode_snapshot(&snapshot)?;
 
         let mut batch = WriteBatch::default();
         batch.put(Self::height_key(checkpoint.header.height), block_bytes);
@@ -363,7 +383,7 @@ impl ChainStore {
 
     pub fn load_snapshot(&self, height: u64) -> Result<Option<StateSnapshot>, StorageError> {
         let Some(bytes) = self.db.get(Self::snapshot_key(height)).map_err(|e| StorageError::Rocks(e.to_string()))? else { return Ok(None); };
-        let snapshot: StateSnapshot = serde_json::from_slice(&bytes).map_err(|e| StorageError::Codec(e.to_string()))?;
+        let snapshot = decode_snapshot(&bytes)?;
         if snapshot.height != height {
             return Err(StorageError::InvalidSnapshot("height mismatch".into()));
         }
@@ -475,8 +495,43 @@ mod tests {
         assert_eq!(loaded.block_hash, [0;32]);
         assert_eq!(loaded.state.last_block_hash, [0;32]);
         assert_eq!(loaded.state.state_root(), loaded.state_root);
+        // The binary snapshot codec must preserve populated fixed-size-key
+        // registries; these are not serializable as ordinary JSON map keys.
+        assert!(!loaded.state.asset_registry.is_empty());
+        assert!(!loaded.state.cross_chain_asset_registries.is_empty());
         assert!(loaded.certificate.is_none());
         assert!(loaded.epoch_transition_certificate.is_none());
+    }
+
+    #[test]
+    fn reads_legacy_json_genesis_snapshots() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        // Historical JSON snapshots could only represent empty fixed-size-key
+        // maps. Preserve compatibility for those previously serializable states.
+        state.asset_registry.clear();
+        state.cross_chain_asset_registries.clear();
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: 0,
+            block_hash: [0; 32],
+            state_root: state.state_root(),
+            state,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+        let legacy_json = serde_json::to_vec(&snapshot).unwrap();
+        store.db.put(ChainStore::snapshot_key(0), legacy_json).unwrap();
+
+        let loaded = store.load_snapshot(0).unwrap().unwrap();
+        assert_eq!(loaded.height, 0);
+        assert_eq!(loaded.state_root, loaded.state.state_root());
     }
 
     #[test]
@@ -720,20 +775,23 @@ mod tests {
     fn rejects_non_genesis_snapshot_without_checkpoint() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
-        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
             chain_id: 1, initial_supply: 0, validators: vec![]
         });
+        state.height = 1;
+        state.last_block_hash = [7; 32];
+        let state_root = state.state_root();
         let snapshot = StateSnapshot {
             chain_id: u64::from(CHAIN_ID),
             height: 1,
             block_hash: [7; 32],
-            state_root: genesis.state_root(),
-            state: genesis,
+            state_root,
+            state,
             certificate: None,
             finality_validator_set: std::collections::BTreeMap::new(),
             epoch_transition_certificate: None,
         };
-        store.db.put(ChainStore::snapshot_key(1), serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        store.db.put(ChainStore::snapshot_key(1), encode_snapshot(&snapshot).unwrap()).unwrap();
         let err = store.load_snapshot(1).unwrap_err();
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "checkpoint block missing"));
     }
@@ -823,11 +881,13 @@ mod tests {
             transactions: vec![], receipts: vec![],
         };
         store.put_block(&block).unwrap();
-        let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
             chain_id: 1, initial_supply: 0, validators: vec![]
         });
+        state.height = 1;
+        state.last_block_hash = [9; 32];
         let err = store.save_snapshot(&state, block_hash(&block)).unwrap_err();
-        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "height mismatch"));
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "snapshot state last hash mismatch"));
         assert!(store.load_snapshot(0).is_ok());
     }
 
@@ -864,7 +924,7 @@ mod tests {
             epoch_transition_certificate: None,
         };
         snapshot.block_hash = [9; 32];
-        store.db.put(ChainStore::snapshot_key(0), serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        store.db.put(ChainStore::snapshot_key(0), encode_snapshot(&snapshot).unwrap()).unwrap();
         let err = store.load_snapshot(0).unwrap_err();
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message == "genesis snapshot hash linkage mismatch"));
     }

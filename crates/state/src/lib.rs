@@ -659,7 +659,19 @@ impl ChainState {
     if *id != entry.validator_id { return Err(StateError::InvalidBridgeWithdrawal); }
     bytes.extend_from_slice(id); bytes.extend_from_slice(&entry.owner); bytes.extend_from_slice(&entry.consensus_key); bytes.extend_from_slice(&entry.stake.to_le_bytes());
    }
-   if entries.is_empty() || freedom_primitives::hash_bytes(&bytes) != expected_hash { return Err(StateError::InvalidBridgeWithdrawal); }
+   let entries_hash = freedom_primitives::hash_bytes(&bytes);
+   // A zero-validator chain may legitimately start from an empty genesis set.
+   // Keep this exception strictly limited to epoch zero and require every
+   // genesis validator-set representation to agree on the empty set.
+   let empty_genesis = *epoch == 0
+     && self.epoch == 0
+     && self.active_validator_set.is_empty()
+     && self.validators.is_empty()
+     && self.validator_set_history_sets.get(epoch).is_some_and(|set| set.is_empty())
+     && self.validator_set_history_key_hashes.get(epoch).copied() == Some(entries_hash);
+   if (entries.is_empty() && !empty_genesis) || entries_hash != expected_hash {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
   }
   self.validate_validator_records_integrity()?;
   self.validate_unbonding_integrity()?;
@@ -2287,6 +2299,17 @@ impl ChainState {
   if self.validate_unbonding_integrity().is_err() { return; }
   let ids:Vec<Hash>=self.unbonding.iter().filter(|(_,e)|e.release_height<=self.height).map(|(id,_)|*id).collect();
 
+  // Preflight aggregate supply-bucket movement as well as every account and
+  // validator mutation before changing any part of the unbonding ledger.
+  let mut matured_total=0u128;
+  for id in &ids {
+   let Some(e)=self.unbonding.get(id) else { return; };
+   let Some(next)=matured_total.checked_add(e.amount) else { return; };
+   matured_total=next;
+  }
+  let Some(next_supply_staked)=self.supply.staked.checked_sub(matured_total) else { return; };
+  let Some(next_supply_circulating)=self.supply.circulating.checked_add(matured_total) else { return; };
+
   // Preflight every matured release before mutating any validator/account/ledger entry.
   for id in &ids {
    let Some(e)=self.unbonding.get(id) else { return; };
@@ -2313,6 +2336,8 @@ impl ChainState {
     a.balance=next_balance;
    }
   }
+  self.supply.staked=next_supply_staked;
+  self.supply.circulating=next_supply_circulating;
  }
  pub(crate) fn insert_account(&mut self,a:Account){self.accounts.insert(a.address,a);}
  pub fn drain_events(&mut self)->Vec<Event>{std::mem::take(&mut self.events)}
@@ -2433,6 +2458,8 @@ impl ChainState {
   if a.balance<p.amount{return Err(StateError::InsufficientBalance)}
   let next_balance=a.balance.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   let next_staked=a.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_circulating=self.supply.circulating.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_staked=self.supply.staked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   let v=self.validators.get(&id).ok_or(StateError::InvalidEvidence)?;
   let next_validator_stake=v.stake.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
 
@@ -2443,6 +2470,8 @@ impl ChainState {
   self.staking_activated=true;
   let v=self.validators.get_mut(&id).ok_or(StateError::InvalidEvidence)?;
   v.stake=next_validator_stake;
+  self.supply.circulating=next_circulating;
+  self.supply.staked=next_supply_staked;
   self.refresh_pending_validator_set();
   self.advance_nonce(tx.sender)
  }
@@ -2712,8 +2741,12 @@ impl ChainState {
   let account=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
   let next_locked=account.locked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   let next_balance=account.balance.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_locked=self.supply.locked.checked_add(p.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_circulating=self.supply.circulating.checked_sub(p.amount).ok_or(StateError::ArithmeticOverflow)?;
   let a=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
   a.balance=next_balance;a.locked=next_locked;a.nonce=next_nonce;
+  self.supply.locked=next_supply_locked;
+  self.supply.circulating=next_supply_circulating;
   self.billing.insert(p.billing_id,BillingRecord{billing_id:p.billing_id,buyer:tx.sender,merchant:p.merchant,product_id:p.product_id,amount:p.amount,reference:p.reference,status:2,reserved_at:self.height,captured_at:None,refunded_at:None});
   Ok(())
  }
@@ -2724,8 +2757,12 @@ impl ChainState {
   let next_locked=buyer.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
   let merchant_balance=self.accounts.get(&b.merchant).map(|a|a.balance).unwrap_or(0);
   let next_merchant_balance=merchant_balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_locked=self.supply.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+  let next_supply_circulating=self.supply.circulating.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
   let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.locked=next_locked;
   let m=self.accounts.entry(b.merchant).or_insert(Account{address:b.merchant,public_key:[0;32],nonce:0,balance:0,locked:0,staked:0});m.balance=next_merchant_balance;
+  self.supply.locked=next_supply_locked;
+  self.supply.circulating=next_supply_circulating;
   let x=self.billing.get_mut(&billing_id).ok_or(StateError::InvalidPurchase)?;x.status=3;x.captured_at=Some(self.height);Ok(())
  }
 
@@ -2735,7 +2772,10 @@ impl ChainState {
    let buyer=self.accounts.get(&b.buyer).ok_or(StateError::AccountNotFound)?;
    let next_locked=buyer.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
    let next_balance=buyer.balance.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let next_supply_locked=self.supply.locked.checked_sub(b.amount).ok_or(StateError::ArithmeticOverflow)?;
+   let next_supply_circulating=self.supply.circulating.checked_add(b.amount).ok_or(StateError::ArithmeticOverflow)?;
    let a=self.accounts.get_mut(&b.buyer).ok_or(StateError::AccountNotFound)?;a.locked=next_locked;a.balance=next_balance;
+   self.supply.locked=next_supply_locked;self.supply.circulating=next_supply_circulating;
   } else {
    let merchant=self.accounts.get(&b.merchant).ok_or(StateError::AccountNotFound)?;
    if merchant.balance<b.amount{return Err(StateError::InsufficientBalanceForPurchase)}
@@ -3050,7 +3090,7 @@ mod m33_tests {
   let key=[7u8;32]; let owner=freedom_primitives::address_from_public_key(&key); let id=freedom_primitives::hash_bytes(&key);
   let v=Validator{validator_id:id,owner,consensus_key:key,stake:100,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};
   let g=Genesis{chain_id:1,initial_supply:0,validators:vec![v]}; let mut s=ChainState::genesis(&g); s.insert_account(Account::new(key,0));
-  s.accounts.get_mut(&owner).unwrap().staked=100; s.staking_activated=true; (s,owner,id)
+  s.accounts.get_mut(&owner).unwrap().staked=100; s.supply.total=100; s.supply.staked=100; s.staking_activated=true; (s,owner,id)
  }
  #[test] fn unstake_enters_cooldown_without_returning_balance() {
   let (mut s,owner,id)=validator_state(); let tx=Transaction{chain_id:1,sender:owner,nonce:0,kind:TxKind::Unstake,payload:UnstakePayload{amount:40}.encode(),fee:0,signature:vec![]}; s.unstake(&tx).unwrap();
@@ -3074,7 +3114,7 @@ mod m33_tests {
 mod m34_tests {
  use super::*;
  use freedom_types::{Genesis, Validator, Transaction, TxKind, StakePayload, UnstakePayload, ValidatorLifecycle};
- fn setup()->(ChainState,Address,Hash){let key=[9u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.insert_account(Account::new(key,100));(s,owner,id)}
+ fn setup()->(ChainState,Address,Hash){let key=[9u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.insert_account(Account::new(key,100));s.supply.total=100;s.supply.circulating=100;(s,owner,id)}
  fn tx(owner:Address,nonce:u64,kind:TxKind,payload:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:owner,nonce,kind,payload,fee:0,signature:vec![]}}
  #[test] fn genesis_can_bootstrap_staking(){let(mut s,o,id)=setup();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Active);s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.staking_activated);assert_eq!(s.validators.get(&id).unwrap().stake,100);}
  #[test] fn unbonding_validator_cannot_restake_before_exit(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert_eq!(s.validator_lifecycle(id).unwrap(),ValidatorLifecycle::Unbonding);assert_eq!(s.execute_transaction(&tx(o,2,TxKind::Stake,StakePayload{amount:1}.encode())),Err(StateError::InvalidValidatorLifecycle));}
@@ -3086,7 +3126,7 @@ mod m34_tests {
 #[cfg(test)]
 mod m35_tests {
  use super::*; use freedom_types::{Genesis,Validator,Transaction,TxKind,StakePayload,UnstakePayload};
- fn setup()->(ChainState,Address,Hash){let key=[8u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.epoch_length=10;s.insert_account(Account::new(key,100));(s,owner,id)}
+ fn setup()->(ChainState,Address,Hash){let key=[8u8;32];let owner=freedom_primitives::address_from_public_key(&key);let id=freedom_primitives::hash_bytes(&key);let v=Validator{validator_id:id,owner,consensus_key:key,stake:0,unbonding_stake:0,blocks_proposed:0,blocks_finalized:0,missed_votes:0};let mut s=ChainState::genesis(&Genesis{chain_id:1,initial_supply:0,validators:vec![v]});s.epoch_length=10;s.insert_account(Account::new(key,100));s.supply.total=100;s.supply.circulating=100;(s,owner,id)}
  fn tx(o:Address,n:u64,k:TxKind,p:Vec<u8>)->Transaction{Transaction{chain_id:1,sender:o,nonce:n,kind:k,payload:p,fee:0,signature:vec![]}}
  #[test] fn stake_change_is_pending_until_epoch_boundary(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));s.execute_transaction(&tx(o,1,TxKind::Unstake,UnstakePayload{amount:100}.encode())).unwrap();assert!(s.active_validator_set.contains_key(&id));assert!(!s.pending_validator_set.contains_key(&id));s.height=9;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(s.active_validator_set.contains_key(&id));}
  #[test] fn pending_new_stake_activates_next_epoch(){let(mut s,o,id)=setup();s.execute_transaction(&tx(o,0,TxKind::Stake,StakePayload{amount:100}.encode())).unwrap();assert!(s.pending_validator_set.contains_key(&id));s.active_validator_set.clear();s.height=9;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));s.height=10;s.maybe_advance_epoch();assert!(!s.active_validator_set.contains_key(&id));}

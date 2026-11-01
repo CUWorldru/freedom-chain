@@ -42,7 +42,8 @@ pub const MAX_SNAPSHOT_VALIDATORS_PER_SET: usize = 4096;
 pub const MAX_SNAPSHOT_TOTAL_VALIDATOR_ENTRIES: usize = 16_384;
 pub const MAX_SNAPSHOT_CERTIFICATE_VOTES: usize = 4096;
 pub const MAX_SNAPSHOT_TOTAL_CERTIFICATE_VOTES: usize = 65_536;
-pub const SYNC_PROTOCOL: &str = "/freedom/1/sync/1";
+// Version 2 uses a bounded binary codec for snapshot state payloads.
+pub const SYNC_PROTOCOL: &str = "/freedom/1/sync/2";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SyncRequest { pub request_id: Hash, pub from_height: u64, pub to_height: u64 }
@@ -175,6 +176,50 @@ pub fn serialize_bounded_json<T: Serialize>(
         return Err(format!("{label} serialization failed: {error}"));
     }
     Ok(writer.bytes)
+}
+
+// Snapshot state contains maps keyed by fixed-size hashes and addresses.
+// JSON cannot encode those keys as object members, so sync protocol v2 carries
+// a versioned, size-bounded binary payload. Legacy JSON payloads remain
+// readable during the transition.
+const SNAPSHOT_STATE_MAGIC: &[u8] = b"321MSTATE\\x01";
+
+pub fn serialize_bounded_snapshot_state(
+    state: &ChainState,
+    maximum: usize,
+) -> Result<Vec<u8>, String> {
+    let mut writer = BoundedVecWriter::new(maximum);
+    if writer.write_all(SNAPSHOT_STATE_MAGIC).is_err() {
+        return Err("snapshot state exceeds maximum encoded size".into());
+    }
+    if let Err(error) = bincode::serialize_into(&mut writer, state) {
+        if writer.exceeded {
+            return Err("snapshot state exceeds maximum encoded size".into());
+        }
+        return Err(format!("snapshot state serialization failed: {error}"));
+    }
+    Ok(writer.bytes)
+}
+
+pub fn deserialize_bounded_snapshot_state(
+    bytes: &[u8],
+    maximum: usize,
+) -> Result<ChainState, String> {
+    if bytes.len() > maximum {
+        return Err("snapshot state exceeds maximum encoded size".into());
+    }
+    if let Some(payload) = bytes.strip_prefix(SNAPSHOT_STATE_MAGIC) {
+        use bincode::Options;
+        bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .allow_trailing_bytes()
+            .with_limit(maximum as u64)
+            .deserialize(payload)
+            .map_err(|error| format!("snapshot state deserialization failed: {error}"))
+    } else {
+        serde_json::from_slice(bytes)
+            .map_err(|error| format!("legacy snapshot state deserialization failed: {error}"))
+    }
 }
 
 fn serialized_size_bounded<T: Serialize>(value: &T, maximum: usize, label: &str) -> Result<usize, String> {
@@ -976,6 +1021,35 @@ pub fn send_sync_request(swarm: &mut Swarm<FreedomBehaviour>, peer: PeerId, requ
 mod tests {
     use super::*;
     use freedom_primitives::hash_bytes;
+
+    #[test]
+    fn snapshot_state_binary_codec_round_trips_fixed_hash_keyed_registries() {
+        let state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let encoded = serialize_bounded_snapshot_state(&state, MAX_SNAPSHOT_STATE_BYTES).unwrap();
+        let decoded = deserialize_bounded_snapshot_state(&encoded, MAX_SNAPSHOT_STATE_BYTES).unwrap();
+
+        assert_eq!(decoded.state_root(), state.state_root());
+        assert_eq!(decoded.asset_registry, state.asset_registry);
+        assert_eq!(decoded.cross_chain_asset_registries, state.cross_chain_asset_registries);
+    }
+
+    #[test]
+    fn snapshot_state_codec_reads_legacy_json_payloads() {
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.asset_registry.clear();
+        state.cross_chain_asset_registries.clear();
+        let legacy = serde_json::to_vec(&state).unwrap();
+        let decoded = deserialize_bounded_snapshot_state(&legacy, MAX_SNAPSHOT_STATE_BYTES).unwrap();
+        assert_eq!(decoded.state_root(), state.state_root());
+    }
 
     fn ancestry_block(height: u64, previous_hash: freedom_primitives::Hash) -> freedom_types::Block {
         freedom_types::Block {
