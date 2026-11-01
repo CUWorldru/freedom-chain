@@ -659,7 +659,19 @@ impl ChainState {
     if *id != entry.validator_id { return Err(StateError::InvalidBridgeWithdrawal); }
     bytes.extend_from_slice(id); bytes.extend_from_slice(&entry.owner); bytes.extend_from_slice(&entry.consensus_key); bytes.extend_from_slice(&entry.stake.to_le_bytes());
    }
-   if entries.is_empty() || freedom_primitives::hash_bytes(&bytes) != expected_hash { return Err(StateError::InvalidBridgeWithdrawal); }
+   let entries_hash = freedom_primitives::hash_bytes(&bytes);
+   // A zero-validator chain may legitimately start from an empty genesis set.
+   // Keep this exception strictly limited to epoch zero and require every
+   // genesis validator-set representation to agree on the empty set.
+   let empty_genesis = *epoch == 0
+     && self.epoch == 0
+     && self.active_validator_set.is_empty()
+     && self.validators.is_empty()
+     && self.validator_set_history_sets.get(epoch).is_some_and(|set| set.is_empty())
+     && self.validator_set_history_key_hashes.get(epoch).copied() == Some(entries_hash);
+   if (entries.is_empty() && !empty_genesis) || entries_hash != expected_hash {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
   }
   self.validate_validator_records_integrity()?;
   self.validate_unbonding_integrity()?;
