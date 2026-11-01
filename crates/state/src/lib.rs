@@ -7166,3 +7166,104 @@ mod m451_persisted_bitcoin_bridge_integrity_tests {
         assert_eq!(state.validate_finality_state_integrity(), Err(StateError::InvalidBridgeWithdrawal));
     }
 }
+
+
+#[cfg(test)]
+mod m453_slashing_supply_allocation_tests {
+    use super::*;
+
+    #[test]
+    fn odd_slash_unit_is_split_with_remainder_to_treasury() {
+        let key = [101u8; 32];
+        let owner = freedom_primitives::address_from_public_key(&key);
+        let id = freedom_primitives::hash_bytes(&key);
+        let validator = freedom_types::Validator {
+            validator_id: id,
+            owner,
+            consensus_key: key,
+            stake: 220,
+            unbonding_stake: 0,
+            blocks_proposed: 0,
+            blocks_finalized: 0,
+            missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![validator],
+        });
+        state.staking_activated = true;
+        state.insert_account(Account::new(key, 0));
+        state.accounts.get_mut(&owner).unwrap().staked = 220;
+        state.supply.total = 220;
+        state.supply.staked = 220;
+
+        let mut evidence = freedom_types::EquivocationEvidence {
+            kind: freedom_types::EquivocationKind::DoubleProposal,
+            height: 0,
+            round: 0,
+            validator_id: id,
+            first: vec![1],
+            second: vec![2],
+            evidence_hash: [0; 32],
+        };
+        evidence.evidence_hash = freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.record_equivocation(evidence.clone()).unwrap();
+
+        assert_eq!(state.slash_evidence(evidence.evidence_hash, 11), Ok(11));
+        assert_eq!(state.supply.total, 215);
+        assert_eq!(state.supply.staked, 209);
+        assert_eq!(state.supply.treasury, 6);
+        assert!(state.supply.is_consistent());
+    }
+
+    #[test]
+    fn insufficient_supply_stake_rejects_slash_without_partial_mutation() {
+        let key = [102u8; 32];
+        let owner = freedom_primitives::address_from_public_key(&key);
+        let id = freedom_primitives::hash_bytes(&key);
+        let validator = freedom_types::Validator {
+            validator_id: id,
+            owner,
+            consensus_key: key,
+            stake: 100,
+            unbonding_stake: 0,
+            blocks_proposed: 0,
+            blocks_finalized: 0,
+            missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![validator],
+        });
+        state.staking_activated = true;
+        state.insert_account(Account::new(key, 0));
+        state.accounts.get_mut(&owner).unwrap().staked = 100;
+        state.supply.total = 100;
+        state.supply.staked = 9;
+
+        let mut evidence = freedom_types::EquivocationEvidence {
+            kind: freedom_types::EquivocationKind::DoublePrecommit,
+            height: 0,
+            round: 0,
+            validator_id: id,
+            first: vec![1],
+            second: vec![2],
+            evidence_hash: [0; 32],
+        };
+        evidence.evidence_hash = freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.record_equivocation(evidence.clone()).unwrap();
+
+        assert_eq!(
+            state.slash_evidence(evidence.evidence_hash, 10),
+            Err(StateError::InvalidEvidence)
+        );
+        assert_eq!(state.validators.get(&id).unwrap().stake, 100);
+        assert_eq!(state.accounts.get(&owner).unwrap().staked, 100);
+        assert_eq!(state.supply.total, 100);
+        assert_eq!(state.supply.staked, 9);
+        assert_eq!(state.supply.treasury, 0);
+        assert!(!state.slashed_evidence.contains_key(&evidence.evidence_hash));
+    }
+}
