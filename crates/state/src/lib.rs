@@ -2871,7 +2871,8 @@ mod m96_bridge_nonce_tests {
   let a = asset(freedom_types::TRON_MAINNET_CHAIN_ID, bridge, [1; 20], "USDT");
   s.register_asset(a.clone()).unwrap();
   s.request_bridge_withdrawal(withdrawal(&a, 7)).unwrap();
-  assert_eq!(s.request_bridge_withdrawal(withdrawal(&a, 7)), Err(StateError::DuplicateBridgeNonce));
+  let mut replay=withdrawal(&a,7); replay.sender=[5;32]; replay.request_hash=replay.compute_hash(); replay.withdrawal_id=replay.compute_id();
+  assert_eq!(s.request_bridge_withdrawal(replay), Err(StateError::DuplicateBridgeNonce));
  }
 
  #[test]
@@ -3356,7 +3357,8 @@ mod m156_bridge_mint_transaction_tests {
  fn bridge_mint_executes_as_signed_transaction() {
   let (mut state,deposit,message,auth,approvals,relayer_key)=setup();
   let payload=BridgeMintTransactionPayload{message:message.clone(),deposit:deposit.clone(),authorization:auth.clone(),approvals:approvals.clone()}.encode().unwrap();
-  let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender:state.accounts.values().next().unwrap().address,nonce:0,kind:TxKind::BridgeMint,payload,fee:7,signature:Vec::new()};
+  let relayer_address=freedom_primitives::address_from_public_key(&relayer_key.verifying_key().to_bytes());
+  let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender:relayer_address,nonce:0,kind:TxKind::BridgeMint,payload,fee:7,signature:Vec::new()};
   tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
 
   state.execute_transaction(&tx).unwrap();
@@ -3378,7 +3380,7 @@ mod m156_bridge_mint_transaction_tests {
   auth.amount=501;
   auth.authorization_hash=auth.compute_hash();
   let payload=BridgeMintTransactionPayload{message,deposit,authorization:auth,approvals}.encode().unwrap();
-  let sender=state.accounts.values().next().unwrap().address;
+  let sender=freedom_primitives::address_from_public_key(&relayer_key.verifying_key().to_bytes());
   let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload,fee:0,signature:Vec::new()};
   tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
   assert!(state.execute_transaction(&tx).is_err());
@@ -6924,7 +6926,7 @@ mod m423_ticket_allocation_order_tests {
         state.insert_account(Account::new(key,0));
         let draw_id=[7u8;32];
         state.create_draw(DrawConfig{draw_id,draw_type:freedom_types::DrawType::Daily,starts_at:0,ends_at:u64::MAX,ticket_price_native_units:10_000,winner_count:1,seed_block:0}).unwrap();
-        let quantity=1_000_000u64;
+        let quantity=1_000u64;
         let tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender:owner,nonce:0,kind:TxKind::CreateTicket,payload:CreateTicketPayload{draw_id,quantity}.encode(),fee:0,signature:vec![]};
         assert_eq!(state.create_ticket(&tx),Err(StateError::InsufficientBalanceForPurchase));
     }
