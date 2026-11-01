@@ -1795,6 +1795,12 @@ impl ChainState {
   if stored != message {
     return Err(StateError::InvalidBridgeMessage);
   }
+  if let Some(existing) = self.bridge_deposit_replays.get(&authorization.replay_key) {
+    if existing.validate() && existing.status == freedom_types::DepositReplayStatus::Consumed {
+      return Err(StateError::DuplicateBridgeMessage);
+    }
+    return Err(StateError::InvalidBridgeMessage);
+  }
   if self.bridge_message_status.get(&replay_key) != Some(&BridgeMessageStatus::Accepted) {
     return Err(StateError::InvalidBridgeMessage);
   }
@@ -1860,13 +1866,6 @@ impl ChainState {
     || approvals.message_hash != message.message_hash
     || authorization.approval_count != approvals.authenticated_count(&keys)
   {
-    return Err(StateError::InvalidBridgeMessage);
-  }
-
-  if let Some(existing) = self.bridge_deposit_replays.get(&authorization.replay_key) {
-    if existing.validate() && existing.status == freedom_types::DepositReplayStatus::Consumed {
-      return Err(StateError::DuplicateBridgeMessage);
-    }
     return Err(StateError::InvalidBridgeMessage);
   }
 
@@ -2649,11 +2648,11 @@ impl ChainState {
   let next_global_prize=self.draw_prize_pool_native_units.checked_add(prize).ok_or(StateError::ArithmeticOverflow)?;
   let next_global_fund=self.cu_fund_native_units.checked_add(fund).ok_or(StateError::ArithmeticOverflow)?;
   let next_global_reserve=self.annual_reserve_native_units.checked_add(reserve).ok_or(StateError::ArithmeticOverflow)?;
+  let balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance;
+  if balance<cost{return Err(StateError::InsufficientBalanceForPurchase)}
   let next_circulating=self.supply.circulating.checked_sub(cost).ok_or(StateError::ArithmeticOverflow)?;
   let next_treasury=self.supply.treasury.checked_add(cost).ok_or(StateError::ArithmeticOverflow)?;
   let next_nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
-  let balance=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.balance;
-  if balance<cost{return Err(StateError::InsufficientBalanceForPurchase)}
   let mut new_ids=Vec::with_capacity(p.quantity as usize);
   let start=draw.total_tickets+1;
   for n in start..=new_total { let id=freedom_primitives::hash_bytes(&[b"FREEDOM-TICKET-V1".as_slice(),&tx.sender,&p.draw_id,&n.to_le_bytes()].concat()); if self.tickets.contains_key(&id){return Err(StateError::DuplicateTicket)} new_ids.push(id); }
@@ -3394,7 +3393,7 @@ mod m156_bridge_mint_transaction_tests {
  fn bridge_mint_transaction_rejects_replay_after_nonce_update() {
   let (mut state,deposit,message,auth,approvals,relayer_key)=setup();
   let payload=BridgeMintTransactionPayload{message:message.clone(),deposit:deposit.clone(),authorization:auth.clone(),approvals:approvals.clone()}.encode().unwrap();
-  let sender=state.accounts.values().next().unwrap().address;
+  let sender=freedom_primitives::address_from_public_key(&relayer_key.verifying_key().to_bytes());
   let mut tx=Transaction{chain_id:freedom_primitives::CHAIN_ID,sender,nonce:0,kind:TxKind::BridgeMint,payload:payload.clone(),fee:0,signature:Vec::new()};
   tx.signature=sign(&relayer_key,&tx.signing_bytes()).to_vec();
   state.execute_transaction(&tx).unwrap();
