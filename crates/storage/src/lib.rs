@@ -13,7 +13,7 @@ const REPUTATION_KEY: &[u8] = b"meta:peer_reputation";
 // Versioned binary encoding supports consensus-state maps keyed by fixed-size
 // hashes and addresses, which JSON object keys cannot represent. Legacy JSON
 // snapshots remain readable for backward compatibility.
-const SNAPSHOT_MAGIC: &[u8] = b"321MSNP\\x01";
+const SNAPSHOT_MAGIC: &[u8] = b"321MSNP\x01";
 
 fn encode_snapshot(snapshot: &StateSnapshot) -> Result<Vec<u8>, StorageError> {
     let payload = bincode::serialize(snapshot)
