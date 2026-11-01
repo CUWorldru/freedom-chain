@@ -144,8 +144,19 @@ impl ChainState {
     return Err(StateError::InvalidEvidence);
   }
 
-  // All slash accounting is now fully planned and validated. Only after this
-  // point may validator, account, and unbonding state be mutated.
+  // Approved slash allocation: 50% is burned and 50% is credited to
+  // treasury. For odd native-unit amounts, the indivisible remainder goes
+  // to treasury so the allocation is deterministic and sums to the full slash.
+  let burned=slash/2;
+  let treasury_credit=slash.checked_sub(burned).ok_or(StateError::InvalidEvidence)?;
+  let next_staked=self.supply.staked.checked_sub(slash)
+    .ok_or(StateError::InvalidEvidence)?;
+  let next_total=self.supply.total.checked_sub(burned)
+    .ok_or(StateError::InvalidEvidence)?;
+  let next_treasury=self.supply.treasury.checked_add(treasury_credit)
+    .ok_or(StateError::InvalidEvidence)?;
+
+  // All slash and monetary accounting is fully planned before any mutation.
   {
     let v=self.validators.get_mut(&evidence.validator_id)
       .ok_or(StateError::InvalidEvidence)?;
@@ -158,6 +169,10 @@ impl ChainState {
   } else {
     return Err(StateError::AccountNotFound);
   }
+
+  self.supply.staked=next_staked;
+  self.supply.total=next_total;
+  self.supply.treasury=next_treasury;
 
   for (id,cut) in slash_plan {
     let remove={
