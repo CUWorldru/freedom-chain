@@ -7561,3 +7561,88 @@ mod m456_bridge_rejected_reservation_release_tests {
         assert_eq!(state.bridge_rate_limits.values().next().unwrap().used, 20);
     }
 }
+
+
+#[cfg(test)]
+mod m456_persisted_withdrawal_reservation_integrity_tests {
+    use super::*;
+
+    fn state_with_withdrawal(status: BridgeWithdrawalStatus, reservation: bool) -> ChainState {
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.height = 10;
+        let bridge_id = [41; 32];
+        let policy = BridgeSecurityPolicy {
+            bridge_id,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000,
+            max_withdrawal_amount: 1_000,
+            daily_limit: 1_000,
+            emergency_paused: false,
+            nonce_floor: 0,
+        };
+        state.bridge_security_policies.insert(bridge_id, policy);
+        let mut withdrawal = BridgeWithdrawal {
+            withdrawal_id: [0; 32],
+            bridge_id,
+            asset_id: [42; 32],
+            destination_chain_id: 2,
+            amount: 25,
+            sender: [43; 32],
+            recipient: vec![44],
+            nonce: 1,
+            request_hash: [0; 32],
+        };
+        withdrawal.request_hash = withdrawal.compute_hash();
+        withdrawal.withdrawal_id = withdrawal.compute_id();
+        let id = withdrawal.withdrawal_id;
+        state.bridge_withdrawals.insert(id, withdrawal);
+        state.bridge_withdrawal_status.insert(id, status);
+        if reservation {
+            state.bridge_withdrawal_rate_limit_period.insert(id, 10);
+            state.bridge_rate_limits.insert(bridge_id, BridgeRateLimitUsage {
+                period: 10,
+                used: 25,
+            });
+        }
+        state
+    }
+
+    #[test]
+    fn persisted_withdrawal_reservation_must_match_lifecycle_status() {
+        for status in [
+            BridgeWithdrawalStatus::Requested,
+            BridgeWithdrawalStatus::Validated,
+            BridgeWithdrawalStatus::Rejected,
+        ] {
+            assert!(state_with_withdrawal(status, false)
+                .validate_persisted_bridge_state_integrity().is_ok());
+            assert_eq!(
+                state_with_withdrawal(status, true).validate_persisted_bridge_state_integrity(),
+                Err(StateError::InvalidBridgeWithdrawal)
+            );
+        }
+        for status in [
+            BridgeWithdrawalStatus::Approved,
+            BridgeWithdrawalStatus::Signing,
+            BridgeWithdrawalStatus::Broadcast,
+            BridgeWithdrawalStatus::ExternalConfirmed,
+            BridgeWithdrawalStatus::Finalized,
+        ] {
+            assert!(state_with_withdrawal(status, true)
+                .validate_persisted_bridge_state_integrity().is_ok());
+            assert_eq!(
+                state_with_withdrawal(status, false).validate_persisted_bridge_state_integrity(),
+                Err(StateError::InvalidBridgeWithdrawal)
+            );
+        }
+    }
+}
