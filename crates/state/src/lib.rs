@@ -7622,7 +7622,7 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
             threshold_total: 1,
             min_external_confirmations: 1,
             max_deposit_amount: 1_000,
-            max_withdrawal_amount: 1_000,
+            max_withdrawal_amount: 24,
             daily_limit: 1_000,
             emergency_paused: false,
             nonce_floor: 0,
