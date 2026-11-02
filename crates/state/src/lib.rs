@@ -2200,6 +2200,18 @@ impl ChainState {
        || (*status as u8) > (BridgeWithdrawalStatus::Rejected as u8)) {
     return Err(StateError::InvalidBridgeWithdrawal);
    }
+   let has_reservation=self.bridge_withdrawal_rate_limit_period.contains_key(id);
+   let reservation_required=matches!(
+    status,
+    BridgeWithdrawalStatus::Approved
+     | BridgeWithdrawalStatus::Signing
+     | BridgeWithdrawalStatus::Broadcast
+     | BridgeWithdrawalStatus::ExternalConfirmed
+     | BridgeWithdrawalStatus::Finalized
+   );
+   if has_reservation!=reservation_required {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
   }
   for (id,period) in &self.bridge_withdrawal_rate_limit_period {
    if !self.bridge_withdrawals.contains_key(id) || *period>self.height {
