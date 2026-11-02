@@ -2226,12 +2226,19 @@ impl ChainState {
   for (id,period) in &self.bridge_withdrawal_rate_limit_period {
    let withdrawal=self.bridge_withdrawals.get(id).ok_or(StateError::InvalidBridgeWithdrawal)?;
    let status=self.bridge_withdrawal_status.get(id).ok_or(StateError::InvalidBridgeWithdrawal)?;
-   if matches!(status,BridgeWithdrawalStatus::Approved
+   if !matches!(status,BridgeWithdrawalStatus::Approved
      | BridgeWithdrawalStatus::Signing
      | BridgeWithdrawalStatus::Broadcast
      | BridgeWithdrawalStatus::ExternalConfirmed
-     | BridgeWithdrawalStatus::Finalized)
-     && self.bridge_rate_limits.get(&withdrawal.bridge_id).map(|usage|usage.period)==Some(*period) {
+     | BridgeWithdrawalStatus::Finalized) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   let usage=self.bridge_rate_limits.get(&withdrawal.bridge_id)
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if usage.period<*period {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   if usage.period==*period {
     let total=reserved_by_bridge.entry(withdrawal.bridge_id).or_default();
     *total=total.checked_add(withdrawal.amount).ok_or(StateError::BridgeRateLimitExceeded)?;
    }
