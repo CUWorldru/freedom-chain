@@ -2140,6 +2140,74 @@ impl ChainState {
   self.bridge_accounting.insert(asset_id,next_accounting);
   Ok(())
  }
+ pub fn validate_persisted_bridge_state_integrity(&self)->Result<(),StateError>{
+  for (id,asset) in &self.asset_registry {
+   if *id!=asset.asset_id || !asset.validate_identity() || asset.symbol.is_empty() { return Err(StateError::InvalidAsset); }
+  }
+  for (id,policy) in &self.bridge_security_policies {
+   if *id!=policy.bridge_id || !policy.validate() { return Err(StateError::InvalidBridgeWithdrawal); }
+  }
+  for (id,message) in &self.processed_bridge_messages {
+   if *id!=message.replay_key() || !message.validate_hash()
+     || message.protocol_version!=BRIDGE_MESSAGE_PROTOCOL_VERSION
+     || message.destination_chain_id!=freedom_primitives::CHAIN_ID {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  for (id,status) in &self.bridge_message_status {
+   if !self.processed_bridge_messages.contains_key(id)
+     || (*status as u8<BridgeMessageStatus::Verified as u8 || *status as u8>BridgeMessageStatus::Minted as u8) {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  for (id,set) in &self.bridge_approval_sets {
+   if *id!=set.request_id || set.approvals.is_empty() { return Err(StateError::InvalidBridgeWithdrawal); }
+  }
+  for (id,set) in &self.bridge_pause_authorizations {
+   if *id!=set.bridge_id || set.authorizations.is_empty() { return Err(StateError::InvalidBridgePauseAuthorization); }
+  }
+  for (id,usage) in &self.bridge_rate_limits {
+   if !self.bridge_security_policies.contains_key(id) || usage.used==0 { return Err(StateError::BridgeRateLimitExceeded); }
+  }
+  for (id,replay) in &self.bridge_deposit_replays {
+   if *id!=replay.replay_key || !replay.validate()
+     || replay.status!=freedom_types::DepositReplayStatus::Consumed {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  for (id,authorization) in &self.bridge_mint_authorizations {
+   if *id!=authorization.replay_key || !authorization.validate()
+     || !self.bridge_deposit_replays.contains_key(id) {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  for (id,withdrawal) in &self.bridge_withdrawals {
+   if *id!=withdrawal.withdrawal_id || !withdrawal.validate_hash()
+     || withdrawal.compute_id()!=withdrawal.withdrawal_id
+     || !self.bridge_withdrawal_status.contains_key(id) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (id,status) in &self.bridge_withdrawal_status {
+   if !self.bridge_withdrawals.contains_key(id)
+     || (*status as u8<BridgeWithdrawalStatus::Requested as u8
+       || *status as u8>BridgeWithdrawalStatus::Rejected as u8) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (id,period) in &self.bridge_withdrawal_rate_limit_period {
+   if !self.bridge_withdrawals.contains_key(id) || *period>self.height {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (id,nonces) in &self.bridge_nonce_registry {
+   if nonces.is_empty() { return Err(StateError::DuplicateBridgeNonce); }
+   let _=id;
+  }
+  for id in self.bridge_accounting.keys() { self.validate_bridge_accounting(*id)?; }
+  Ok(())
+ }
+
  pub fn validate_bridge_accounting(&self,asset_id:Hash)->Result<(),StateError>{
   let a=self.bridge_accounting.get(&asset_id).cloned().unwrap_or_default();
   if a.freedom_minted>a.verified_external_locked || a.freedom_burned>a.freedom_minted || a.external_released>a.freedom_burned { return Err(StateError::InvalidBridgeAccounting); }
