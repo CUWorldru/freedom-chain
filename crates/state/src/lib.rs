@@ -2424,6 +2424,7 @@ impl ChainState {
   // mint_bridge_authorized() mutates bridge/accounting state, so fee supply
   // arithmetic and the sender nonce must be known to succeed first.
   let next_nonce=sender.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let next_sender_balance=sender.balance.checked_sub(tx.fee).ok_or(StateError::InsufficientBalance)?;
   let next_circulating=self.supply.circulating.checked_add(payload.authorization.amount).and_then(|v|v.checked_sub(tx.fee)).ok_or(StateError::ArithmeticOverflow)?;
   let next_treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
   let policy=self.bridge_security_policies.get(&payload.message.bridge_id).ok_or(StateError::InvalidBridgeMintTransaction)?;
@@ -2463,7 +2464,7 @@ impl ChainState {
   self.supply.circulating=next_circulating;
   self.supply.treasury=next_treasury;
   let sender=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
-  sender.balance=sender.balance.checked_sub(tx.fee).ok_or(StateError::InsufficientBalance)?;
+  sender.balance=next_sender_balance;
   sender.nonce=next_nonce;
   self.events.push(Event::BridgeMinted{
    replay_key:payload.authorization.replay_key,
