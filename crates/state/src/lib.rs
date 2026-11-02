@@ -2218,6 +2218,34 @@ impl ChainState {
     return Err(StateError::InvalidBridgeWithdrawal);
    }
   }
+  // The per-withdrawal reservation journal and the aggregate daily usage
+  // must describe the same amount for the active period. Older reservations
+  // remain attached to their withdrawals for auditability, but have expired
+  // and therefore must not contribute to the current period's usage.
+  let mut reserved_by_bridge:BTreeMap<Hash,u128>=BTreeMap::new();
+  for (id,period) in &self.bridge_withdrawal_rate_limit_period {
+   let withdrawal=self.bridge_withdrawals.get(id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+   let status=self.bridge_withdrawal_status.get(id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if matches!(status,BridgeWithdrawalStatus::Approved
+     | BridgeWithdrawalStatus::Signing
+     | BridgeWithdrawalStatus::Broadcast
+     | BridgeWithdrawalStatus::ExternalConfirmed
+     | BridgeWithdrawalStatus::Finalized)
+     && self.bridge_rate_limits.get(&withdrawal.bridge_id).map(|usage|usage.period)==Some(*period) {
+    let total=reserved_by_bridge.entry(withdrawal.bridge_id).or_default();
+    *total=total.checked_add(withdrawal.amount).ok_or(StateError::BridgeRateLimitExceeded)?;
+   }
+  }
+  for (bridge_id,usage) in &self.bridge_rate_limits {
+   if reserved_by_bridge.get(bridge_id).copied().unwrap_or(0)!=usage.used {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (bridge_id,reserved) in &reserved_by_bridge {
+   if self.bridge_rate_limits.get(bridge_id).map(|usage|usage.used)!=Some(*reserved) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
   for (id,nonces) in &self.bridge_nonce_registry {
    if nonces.is_empty() { return Err(StateError::DuplicateBridgeNonce); }
    let _=id;
@@ -7614,6 +7642,47 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
             });
         }
         state
+    }
+
+    #[test]
+    fn persisted_withdrawal_reservation_must_match_aggregate_daily_usage() {
+        let (mut missing, id) = {
+            let state = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+            let id = *state.bridge_withdrawal_status.keys().next().unwrap();
+            (state, id)
+        };
+        missing.bridge_rate_limits.clear();
+        assert_eq!(
+            missing.validate_persisted_bridge_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+
+        for used in [0, 24, 26] {
+            let mut inconsistent = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+            let bridge_id = inconsistent.bridge_withdrawals[&id].bridge_id;
+            inconsistent.bridge_rate_limits.get_mut(&bridge_id).unwrap().used = used;
+            assert_eq!(
+                inconsistent.validate_persisted_bridge_state_integrity(),
+                Err(StateError::InvalidBridgeWithdrawal)
+            );
+        }
+
+        let mut consistent = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+        let bridge_id = consistent.bridge_withdrawals[&id].bridge_id;
+        consistent.bridge_withdrawal_rate_limit_period.insert([45; 32], 10);
+        let mut second = consistent.bridge_withdrawals[&id].clone();
+        second.withdrawal_id = [45; 32];
+        second.amount = 15;
+        second.request_hash = second.compute_hash();
+        second.withdrawal_id = second.compute_id();
+        // Use the recomputed identifier in both persisted indexes.
+        let second_id = second.withdrawal_id;
+        consistent.bridge_withdrawal_rate_limit_period.remove(&[45; 32]);
+        consistent.bridge_withdrawals.insert(second_id, second);
+        consistent.bridge_withdrawal_status.insert(second_id, BridgeWithdrawalStatus::Finalized);
+        consistent.bridge_withdrawal_rate_limit_period.insert(second_id, 10);
+        consistent.bridge_rate_limits.get_mut(&bridge_id).unwrap().used = 40;
+        assert!(consistent.validate_persisted_bridge_state_integrity().is_ok());
     }
 
     #[test]
