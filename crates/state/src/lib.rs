@@ -2718,20 +2718,32 @@ impl ChainState {
   let next_treasury=self.supply.treasury.checked_sub(draw.prize_pool_native_units).ok_or(StateError::InsufficientPrizePool)?;
   let next_circulating=self.supply.circulating.checked_add(draw.prize_pool_native_units).ok_or(StateError::ArithmeticOverflow)?;
   let next_draw_pool=self.draw_prize_pool_native_units.checked_sub(draw.prize_pool_native_units).ok_or(StateError::InsufficientPrizePool)?;
-  let mut payouts=Vec::with_capacity(winners.len());
+  // Aggregate by owner before preflighting balances. One account may own
+  // multiple winning tickets; calculating each payout from the same initial
+  // balance would otherwise overwrite earlier winnings.
+  let mut owner_payouts:BTreeMap<Address,u128>=BTreeMap::new();
+  let mut ticket_payouts=Vec::with_capacity(winners.len());
   for (i,id) in winners.iter().enumerate(){
    let owner=self.tickets.get(id).ok_or(StateError::InvalidDraw)?.owner;
    let amount=per.checked_add(if i==0{remainder}else{0}).ok_or(StateError::ArithmeticOverflow)?;
-   let balance=self.accounts.get(&owner).ok_or(StateError::AccountNotFound)?.balance;
-   let next_balance=balance.checked_add(amount).ok_or(StateError::ArithmeticOverflow)?;
-   payouts.push((*id,owner,amount,next_balance));
+   let aggregate=owner_payouts.get(&owner).copied().unwrap_or(0)
+    .checked_add(amount).ok_or(StateError::ArithmeticOverflow)?;
+   owner_payouts.insert(owner,aggregate);
+   ticket_payouts.push((*id,owner,amount));
+  }
+  let mut next_balances=BTreeMap::new();
+  for (owner,amount) in &owner_payouts {
+   let balance=self.accounts.get(owner).ok_or(StateError::AccountNotFound)?.balance;
+   next_balances.insert(*owner,balance.checked_add(*amount).ok_or(StateError::ArithmeticOverflow)?);
   }
   // Preflight every winner/account and global monetary mutation before paying anyone.
   let d=self.draws.get(&draw_id).ok_or(StateError::InvalidDraw)?;
   if d.prize_pool_native_units!=draw.prize_pool_native_units || d.executed { return Err(StateError::DrawAlreadyExecuted); }
-  for (id,owner,amount,next_balance) in payouts {
+  for (owner,next_balance) in next_balances {
    let a=self.accounts.get_mut(&owner).ok_or(StateError::AccountNotFound)?;
    a.balance=next_balance;
+  }
+  for (id,owner,amount) in ticket_payouts {
    self.events.push(Event::PrizePaid{draw_id,ticket_id:id,winner:owner,amount});
   }
   self.supply.treasury=next_treasury;
@@ -7265,5 +7277,66 @@ mod m453_slashing_supply_allocation_tests {
         assert_eq!(state.supply.staked, 9);
         assert_eq!(state.supply.treasury, 0);
         assert!(!state.slashed_evidence.contains_key(&evidence.evidence_hash));
+    }
+}
+
+
+
+#[cfg(test)]
+mod m454_draw_multi_ticket_owner_payout_tests {
+    use super::*;
+
+    #[test]
+    fn multiple_winning_tickets_owned_by_same_account_are_all_paid() {
+        let key = [111u8; 32];
+        let owner = freedom_primitives::address_from_public_key(&key);
+        let draw_id = [112u8; 32];
+        let first_ticket = [113u8; 32];
+        let second_ticket = [114u8; 32];
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.height = 10;
+        state.insert_account(Account::new(key, 0));
+        state.supply.total = 100;
+        state.supply.treasury = 100;
+        state.draw_prize_pool_native_units = 100;
+        state.draws.insert(draw_id, DrawState {
+            config: DrawConfig {
+                draw_id,
+                draw_type: freedom_types::DrawType::Special,
+                ticket_price_native_units: 10_000,
+                winner_count: 2,
+                starts_at: 0,
+                ends_at: 10,
+                seed_block: 0,
+            },
+            total_tickets: 2,
+            prize_pool_native_units: 100,
+            cu_fund_native_units: 0,
+            annual_reserve_native_units: 0,
+            executed: false,
+        });
+        state.tickets.insert(first_ticket, Ticket {
+            ticket_id: first_ticket, owner, draw_id, created_at: 1,
+        });
+        state.tickets.insert(second_ticket, Ticket {
+            ticket_id: second_ticket, owner, draw_id, created_at: 1,
+        });
+
+        let result = state.execute_draw(draw_id).unwrap();
+
+        assert_eq!(result.winners.len(), 2);
+        assert_eq!(state.accounts.get(&owner).unwrap().balance, 100);
+        assert_eq!(state.supply.total, 100);
+        assert_eq!(state.supply.circulating, 100);
+        assert_eq!(state.supply.treasury, 0);
+        assert!(state.supply.is_consistent());
+        assert_eq!(
+            state.events.iter().filter(|event| matches!(event, Event::PrizePaid { .. })).count(),
+            2
+        );
     }
 }
