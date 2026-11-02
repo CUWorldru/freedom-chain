@@ -7340,3 +7340,59 @@ mod m454_draw_multi_ticket_owner_payout_tests {
         );
     }
 }
+
+
+
+#[cfg(test)]
+mod m455_ticket_fund_supply_conservation_tests {
+    use super::*;
+
+    #[test]
+    fn ticket_purchase_allocates_all_cost_without_changing_total_supply() {
+        let key = [121u8; 32];
+        let owner = freedom_primitives::address_from_public_key(&key);
+        let draw_id = [122u8; 32];
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 10_000,
+            validators: vec![],
+        });
+        state.insert_account(Account::new(key, 10_000));
+        state.supply.total = 10_000;
+        state.supply.circulating = 10_000;
+
+        state.create_draw(DrawConfig {
+            draw_id,
+            draw_type: freedom_types::DrawType::Special,
+            ticket_price_native_units: 10_000,
+            winner_count: 1,
+            starts_at: 0,
+            ends_at: 100,
+            seed_block: 0,
+        }).unwrap();
+
+        let tx = Transaction {
+            chain_id: freedom_primitives::CHAIN_ID,
+            sender: owner,
+            nonce: 0,
+            kind: TxKind::CreateTicket,
+            payload: CreateTicketPayload { draw_id, quantity: 1 }.encode(),
+            fee: 0,
+            signature: vec![],
+        };
+        state.create_ticket(&tx).unwrap();
+
+        assert_eq!(state.accounts.get(&owner).unwrap().balance, 0);
+        assert_eq!(state.supply.total, 10_000);
+        assert_eq!(state.supply.circulating, 0);
+        assert_eq!(state.supply.treasury, 10_000);
+        assert_eq!(state.draw_prize_pool_native_units, 6_000);
+        assert_eq!(state.cu_fund_native_units, 3_000);
+        assert_eq!(state.annual_reserve_native_units, 1_000);
+        assert_eq!(state.draws.get(&draw_id).unwrap().prize_pool_native_units, 6_000);
+        assert_eq!(state.draws.get(&draw_id).unwrap().cu_fund_native_units, 3_000);
+        assert_eq!(state.draws.get(&draw_id).unwrap().annual_reserve_native_units, 1_000);
+        assert_eq!(state.tickets.len(), 1);
+        assert!(state.supply.is_consistent());
+    }
+}
