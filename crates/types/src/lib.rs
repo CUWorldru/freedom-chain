@@ -3237,7 +3237,7 @@ pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
 }
 
 fn bitcoin_target_from_bits_raw(bits:u32)->Option<[u8;32]>{let exponent=(bits>>24) as usize;let mantissa=bits&0x007f_ffff;if mantissa==0||exponent<3||exponent>32||(bits&0x0080_0000)!=0{return None;}let mut out=[0u8;32];let bytes=mantissa.to_be_bytes();let m=[bytes[1],bytes[2],bytes[3]];let start=32usize.checked_sub(exponent)?;out[start..start+3].copy_from_slice(&m);Some(out)}
-fn bitcoin_target_from_bits_with_limit(bits:u32,pow_limit_bits:u32)->Option<[u8;32]>{let target=bitcoin_target_from_bits_raw(bits)?;let pow_limit=bitcoin_target_from_bits_raw(pow_limit_bits)?;if target.iter().rev().cmp(pow_limit.iter().rev())==std::cmp::Ordering::Greater{return None;}Some(target)}
+fn bitcoin_target_from_bits_with_limit(bits:u32,pow_limit_bits:u32)->Option<[u8;32]>{let target=bitcoin_target_from_bits_raw(bits)?;let pow_limit=bitcoin_target_from_bits_raw(pow_limit_bits)?;if target.cmp(&pow_limit)==std::cmp::Ordering::Greater{return None;}Some(target)}
 pub fn bitcoin_target_from_bits(bits:u32)->Option<[u8;32]>{
     // Unit tests use regtest difficulty so synthetic headers can be mined quickly.
     // Non-test builds always enforce Bitcoin mainnet's proof-of-work limit.
