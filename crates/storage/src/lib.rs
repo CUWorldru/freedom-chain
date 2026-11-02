@@ -1136,4 +1136,28 @@ mod tests {
         assert!(store.get_block(2).unwrap().is_none());
     }
 
+    #[test]
+    fn rejects_snapshot_with_orphaned_bridge_withdrawal_rate_limit_period() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![]
+        });
+        state.bridge_withdrawal_rate_limit_period.insert([9u8; 32], 0);
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: 0,
+            block_hash: [0; 32],
+            state_root: state.state_root(),
+            state,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+        store.db.put(ChainStore::snapshot_key(0), encode_snapshot(&snapshot).unwrap()).unwrap();
+
+        let err = store.load_snapshot(0).unwrap_err();
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message.contains("persisted bridge state integrity failure")));
+    }
+
 }
