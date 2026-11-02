@@ -7669,15 +7669,12 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
 
         let mut consistent = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
         let bridge_id = consistent.bridge_withdrawals[&id].bridge_id;
-        consistent.bridge_withdrawal_rate_limit_period.insert([45; 32], 10);
         let mut second = consistent.bridge_withdrawals[&id].clone();
-        second.withdrawal_id = [45; 32];
+        second.nonce = 2;
         second.amount = 15;
         second.request_hash = second.compute_hash();
         second.withdrawal_id = second.compute_id();
-        // Use the recomputed identifier in both persisted indexes.
         let second_id = second.withdrawal_id;
-        consistent.bridge_withdrawal_rate_limit_period.remove(&[45; 32]);
         consistent.bridge_withdrawals.insert(second_id, second);
         consistent.bridge_withdrawal_status.insert(second_id, BridgeWithdrawalStatus::Finalized);
         consistent.bridge_withdrawal_rate_limit_period.insert(second_id, 10);
