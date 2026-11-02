@@ -2150,13 +2150,19 @@ impl ChainState {
   for (id,message) in &self.processed_bridge_messages {
    if *id!=message.replay_key() || !message.validate_hash()
      || message.protocol_version!=BRIDGE_MESSAGE_PROTOCOL_VERSION
-     || message.destination_chain_id!=freedom_primitives::CHAIN_ID {
+     || message.destination_chain_id!=freedom_primitives::CHAIN_ID
+     || self.validate_bridge_message(message)? != *id {
     return Err(StateError::InvalidBridgeMessage);
    }
   }
   for (id,status) in &self.bridge_message_status {
    if !self.processed_bridge_messages.contains_key(id)
      || ((*status as u8) < (BridgeMessageStatus::Verified as u8) || (*status as u8) > (BridgeMessageStatus::Minted as u8)) {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+   if *status==BridgeMessageStatus::Minted
+     && (!self.bridge_mint_authorizations.contains_key(id)
+       || !self.bridge_deposit_replays.contains_key(id)) {
     return Err(StateError::InvalidBridgeMessage);
    }
   }
@@ -2167,7 +2173,7 @@ impl ChainState {
    if *id!=set.bridge_id || set.authorizations.is_empty() { return Err(StateError::InvalidBridgePauseAuthorization); }
   }
   for (id,usage) in &self.bridge_rate_limits {
-   if !self.bridge_security_policies.contains_key(id) || usage.used==0 { return Err(StateError::BridgeRateLimitExceeded); }
+   if !self.bridge_security_policies.contains_key(id) { return Err(StateError::BridgeRateLimitExceeded); }
   }
   for (id,replay) in &self.bridge_deposit_replays {
    if *id!=replay.replay_key || !replay.validate()
