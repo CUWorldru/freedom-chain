@@ -7354,7 +7354,7 @@ mod m455_ticket_fund_supply_conservation_tests {
         let draw_id = [122u8; 32];
         let mut state = ChainState::genesis(&freedom_types::Genesis {
             chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 10_000,
+            initial_supply: GENESIS_SUPPLY,
             validators: vec![],
         });
         state.insert_account(Account::new(key, 10_000));
