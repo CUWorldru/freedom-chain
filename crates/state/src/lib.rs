@@ -2074,6 +2074,21 @@ impl ChainState {
    if a.external_released.checked_add(w.amount).ok_or(StateError::InvalidBridgeAccounting)?>a.freedom_burned { return Err(StateError::InvalidBridgeAccounting); }
    self.record_external_release(w.asset_id,w.amount)?;
   }
+  // An approved withdrawal reserves daily bridge capacity. If it is rejected
+  // before signing/broadcast, return that capacity when the reservation still
+  // belongs to the current period. A reservation from an older period has
+  // already expired and must not reduce the new period's usage.
+  if current==BridgeWithdrawalStatus::Approved && next==BridgeWithdrawalStatus::Rejected {
+   let w=self.bridge_withdrawals.get(&id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if let Some(period)=self.bridge_withdrawal_rate_limit_period.get(&id).copied() {
+    if self.bridge_rate_limits.get(&w.bridge_id).map(|usage|usage.period)==Some(period) {
+     let usage=self.bridge_rate_limits.get(&w.bridge_id).ok_or(StateError::BridgeRateLimitExceeded)?;
+     if w.amount>usage.used { return Err(StateError::BridgeRateLimitExceeded); }
+     self.release_bridge_withdrawal_limit(w.bridge_id,period,w.amount)?;
+    }
+    self.bridge_withdrawal_rate_limit_period.remove(&id);
+   }
+  }
   self.bridge_withdrawal_status.insert(id,next); Ok(())
  }
  pub fn validate_bitcoin_utxo_deposit(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoProof,expected_tx:Hash,expected_vout:u32,expected_amount:u64,expected_script:&[u8])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id
@@ -7394,5 +7409,68 @@ mod m455_ticket_fund_supply_conservation_tests {
         assert_eq!(state.draws.get(&draw_id).unwrap().annual_reserve_native_units, 1_000);
         assert_eq!(state.tickets.len(), 1);
         assert!(state.supply.is_consistent());
+    }
+}
+
+
+#[cfg(test)]
+mod m456_bridge_rejected_reservation_release_tests {
+    use super::*;
+
+    fn state_with_approved_withdrawal(period: u64, usage_period: u64, used: u128) -> (ChainState, Hash) {
+        let bridge = [201u8; 32];
+        let asset_id = [202u8; 32];
+        let withdrawal_id = [203u8; 32];
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.bridge_withdrawals.insert(withdrawal_id, BridgeWithdrawal {
+            withdrawal_id,
+            bridge_id: bridge,
+            asset_id,
+            destination_chain_id: freedom_types::TRON_MAINNET_CHAIN_ID,
+            amount: 30,
+            sender: [204u8; 32],
+            recipient: vec![1],
+            nonce: 1,
+            request_hash: [205u8; 32],
+        });
+        state.bridge_withdrawal_status.insert(withdrawal_id, BridgeWithdrawalStatus::Approved);
+        state.bridge_withdrawal_rate_limit_period.insert(withdrawal_id, period);
+        state.bridge_rate_limits.insert(bridge, BridgeRateLimitUsage {
+            period: usage_period,
+            used,
+        });
+        (state, withdrawal_id)
+    }
+
+    #[test]
+    fn rejecting_approved_withdrawal_releases_current_period_capacity() {
+        let (mut state, id) = state_with_approved_withdrawal(7, 7, 80);
+        state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected).unwrap();
+        assert_eq!(state.bridge_rate_limits.values().next().unwrap().used, 50);
+        assert!(!state.bridge_withdrawal_rate_limit_period.contains_key(&id));
+        assert_eq!(state.bridge_withdrawal_status[&id], BridgeWithdrawalStatus::Rejected);
+    }
+
+    #[test]
+    fn rejecting_old_approved_withdrawal_does_not_reduce_new_period_capacity() {
+        let (mut state, id) = state_with_approved_withdrawal(7, 8, 40);
+        state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected).unwrap();
+        assert_eq!(state.bridge_rate_limits.values().next().unwrap().used, 40);
+        assert!(!state.bridge_withdrawal_rate_limit_period.contains_key(&id));
+    }
+
+    #[test]
+    fn rejected_withdrawal_without_reserved_capacity_remains_supported() {
+        let (mut state, id) = state_with_approved_withdrawal(7, 7, 20);
+        assert_eq!(
+            state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected),
+            Err(StateError::BridgeRateLimitExceeded)
+        );
+        assert_eq!(state.bridge_withdrawal_status[&id], BridgeWithdrawalStatus::Approved);
+        assert_eq!(state.bridge_rate_limits.values().next().unwrap().used, 20);
     }
 }
