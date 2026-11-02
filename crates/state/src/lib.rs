@@ -2173,7 +2173,10 @@ impl ChainState {
    if *id!=set.bridge_id || set.authorizations.is_empty() { return Err(StateError::InvalidBridgePauseAuthorization); }
   }
   for (id,usage) in &self.bridge_rate_limits {
-   if !self.bridge_security_policies.contains_key(id) { return Err(StateError::BridgeRateLimitExceeded); }
+   let policy=self.bridge_security_policies.get(id).ok_or(StateError::BridgeRateLimitExceeded)?;
+   if usage.period>self.height || usage.used==0 || usage.used>policy.daily_limit {
+    return Err(StateError::BridgeRateLimitExceeded);
+   }
   }
   for (id,replay) in &self.bridge_deposit_replays {
    if *id!=replay.replay_key || !replay.validate()
@@ -7670,9 +7673,24 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
             inconsistent.bridge_rate_limits.get_mut(&bridge_id).unwrap().used = used;
             assert_eq!(
                 inconsistent.validate_persisted_bridge_state_integrity(),
-                Err(StateError::InvalidBridgeWithdrawal)
+                Err(if used == 0 { StateError::BridgeRateLimitExceeded } else { StateError::InvalidBridgeWithdrawal })
             );
         }
+
+        let mut over_limit = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+        let bridge_id = over_limit.bridge_withdrawals[&id].bridge_id;
+        over_limit.bridge_security_policies.get_mut(&bridge_id).unwrap().daily_limit = 24;
+        assert_eq!(
+            over_limit.validate_persisted_bridge_state_integrity(),
+            Err(StateError::BridgeRateLimitExceeded)
+        );
+
+        let mut future_period = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+        future_period.bridge_rate_limits.get_mut(&bridge_id).unwrap().period = 11;
+        assert_eq!(
+            future_period.validate_persisted_bridge_state_integrity(),
+            Err(StateError::BridgeRateLimitExceeded)
+        );
 
         let mut consistent = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
         let bridge_id = consistent.bridge_withdrawals[&id].bridge_id;
