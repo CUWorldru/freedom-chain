@@ -2156,7 +2156,7 @@ impl ChainState {
   }
   for (id,status) in &self.bridge_message_status {
    if !self.processed_bridge_messages.contains_key(id)
-     || (*status as u8<BridgeMessageStatus::Verified as u8 || *status as u8>BridgeMessageStatus::Minted as u8) {
+     || ((*status as u8) < (BridgeMessageStatus::Verified as u8) || (*status as u8) > (BridgeMessageStatus::Minted as u8)) {
     return Err(StateError::InvalidBridgeMessage);
    }
   }
@@ -2190,8 +2190,8 @@ impl ChainState {
   }
   for (id,status) in &self.bridge_withdrawal_status {
    if !self.bridge_withdrawals.contains_key(id)
-     || (*status as u8<BridgeWithdrawalStatus::Requested as u8
-       || *status as u8>BridgeWithdrawalStatus::Rejected as u8) {
+     || ((*status as u8) < (BridgeWithdrawalStatus::Requested as u8)
+       || (*status as u8) > (BridgeWithdrawalStatus::Rejected as u8)) {
     return Err(StateError::InvalidBridgeWithdrawal);
    }
   }
