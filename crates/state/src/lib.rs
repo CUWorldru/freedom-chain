@@ -712,6 +712,22 @@ impl ChainState {
    if *bridge_id == [0;32] || !checkpoint.validate() {
     return Err(StateError::InvalidBridgeWithdrawal);
    }
+   // When the bootstrap checkpoint is present, the persisted canonical tip
+   // must never move behind it or contradict it at the same height/work.
+   if let Some(anchor)=self.bitcoin_checkpoints.get(bridge_id) {
+    if checkpoint.height<anchor.height
+      || checkpoint.chainwork<anchor.chainwork
+      || checkpoint.height==anchor.height
+        && (checkpoint.block_hash!=anchor.block_hash
+          || checkpoint.chainwork!=anchor.chainwork) {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+   }
+   if self.bridge_security_policies.get(bridge_id)
+     .map(|policy| policy.bridge_id!=*bridge_id || !policy.validate())
+     .unwrap_or(false) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
   }
   for (bridge_id,attestation) in &self.bitcoin_utxo_attestations {
    if *bridge_id==[0;32] || attestation.bridge_id!=*bridge_id || !attestation.validate_structure() { return Err(StateError::InvalidBridgeWithdrawal); }
@@ -8246,6 +8262,80 @@ mod m460_persisted_withdrawal_nonce_floor_tests {
     #[test]
     fn persisted_withdrawal_nonce_at_policy_floor_is_valid() {
         let state = state_with_nonce_floor(17);
+        assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+    }
+}
+
+
+#[cfg(test)]
+mod m461_persisted_bitcoin_tip_binding_tests {
+    use super::*;
+
+    fn state_with_bitcoin_anchor() -> (ChainState, Hash) {
+        let bridge_id=[221u8;32];
+        let mut state=ChainState::genesis(&Genesis {
+            chain_id:freedom_primitives::CHAIN_ID,
+            initial_supply:0,
+            validators:vec![],
+        });
+        state.bridge_security_policies.insert(bridge_id,BridgeSecurityPolicy {
+            bridge_id,
+            approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1,
+            validator_total:1,
+            threshold_signers:1,
+            threshold_total:1,
+            min_external_confirmations:1,
+            max_deposit_amount:1_000,
+            max_withdrawal_amount:1_000,
+            daily_limit:1_000,
+            emergency_paused:false,
+            nonce_floor:0,
+        });
+        state.bitcoin_checkpoints.insert(bridge_id,BitcoinChainCheckpoint {
+            height:100,
+            block_hash:[222u8;32],
+            chainwork:[223u8;32],
+        });
+        (state,bridge_id)
+    }
+
+    #[test]
+    fn canonical_tip_cannot_precede_persisted_checkpoint() {
+        let (mut state,bridge_id)=state_with_bitcoin_anchor();
+        state.bitcoin_canonical_tips.insert(bridge_id,BitcoinChainCheckpoint {
+            height:99,
+            block_hash:[224u8;32],
+            chainwork:[225u8;32],
+        });
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn canonical_tip_at_checkpoint_height_must_match_anchor() {
+        let (mut state,bridge_id)=state_with_bitcoin_anchor();
+        state.bitcoin_canonical_tips.insert(bridge_id,BitcoinChainCheckpoint {
+            height:100,
+            block_hash:[226u8;32],
+            chainwork:[223u8;32],
+        });
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn canonical_tip_may_advance_beyond_checkpoint() {
+        let (mut state,bridge_id)=state_with_bitcoin_anchor();
+        state.bitcoin_canonical_tips.insert(bridge_id,BitcoinChainCheckpoint {
+            height:101,
+            block_hash:[226u8;32],
+            chainwork:[227u8;32],
+        });
         assert!(state.validate_persisted_bridge_state_integrity().is_ok());
     }
 }
