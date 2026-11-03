@@ -2231,6 +2231,17 @@ impl ChainState {
      || replay.amount!=authorization.amount {
     return Err(StateError::InvalidBridgeMessage);
    }
+   // Every durable mint authorization must point back to exactly one
+   // processed bridge message, and that message must remain in Minted state.
+   let mut messages=self.processed_bridge_messages.iter()
+    .filter(|(_,message)| authorization.matches_message(message)
+      && authorization.canonical_asset_id==message.asset_id);
+   let (message_key,message)=messages.next().ok_or(StateError::InvalidBridgeMessage)?;
+   if messages.next().is_some()
+     || *message_key!=message.replay_key()
+     || self.bridge_message_status.get(message_key)!=Some(&BridgeMessageStatus::Minted) {
+    return Err(StateError::InvalidBridgeMessage);
+   }
   }
   for (id,withdrawal) in &self.bridge_withdrawals {
    if *id!=withdrawal.withdrawal_id || !withdrawal.validate_hash()
@@ -3599,6 +3610,21 @@ mod m155_bridge_mint_boundary_tests {
   assert_eq!(
    state.validate_persisted_bridge_state_integrity(),
    Err(StateError::InvalidBridgeAccounting)
+  );
+ }
+
+ #[test]
+ fn persisted_mint_authorization_requires_minted_message_status() {
+  let (mut state,deposit,message,auth,approvals)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+
+  state.processed_bridge_messages.remove(&message.replay_key());
+  state.bridge_message_status.remove(&message.replay_key());
+
+  assert_eq!(
+   state.validate_persisted_bridge_state_integrity(),
+   Err(StateError::InvalidBridgeMessage)
   );
  }
 
