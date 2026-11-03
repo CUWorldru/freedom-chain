@@ -2330,9 +2330,31 @@ impl ChainState {
     return Err(StateError::InvalidBridgeWithdrawal);
    }
   }
+  // The nonce journal and durable outbound withdrawals must be a bijection:
+  // missing entries could reopen a consumed nonce after snapshot restoration,
+  // while orphan entries could reserve nonces unrelated to any request.
   for (id,nonces) in &self.bridge_nonce_registry {
-   if nonces.is_empty() { return Err(StateError::DuplicateBridgeNonce); }
-   let _=id;
+   if nonces.is_empty()
+     || nonces.iter().any(|nonce| !self.bridge_withdrawals.values().any(|withdrawal| {
+       BridgeNonceKey {
+        bridge_id:withdrawal.bridge_id,
+        asset_id:withdrawal.asset_id,
+        direction:BridgeDirection::Outbound,
+       }.key_hash()==*id && withdrawal.nonce==*nonce
+     })) {
+    return Err(StateError::DuplicateBridgeNonce);
+   }
+  }
+  for withdrawal in self.bridge_withdrawals.values() {
+   let nonce_key=BridgeNonceKey {
+    bridge_id:withdrawal.bridge_id,
+    asset_id:withdrawal.asset_id,
+    direction:BridgeDirection::Outbound,
+   }.key_hash();
+   if !self.bridge_nonce_registry.get(&nonce_key)
+     .map(|nonces|nonces.contains(&withdrawal.nonce)).unwrap_or(false) {
+    return Err(StateError::DuplicateBridgeNonce);
+   }
   }
   // Persisted mint authorizations are the durable source of truth for
   // cumulative bridge mints. Keep their per-asset total bound to accounting
