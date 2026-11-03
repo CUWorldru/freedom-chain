@@ -2002,15 +2002,8 @@ impl ChainState {
  pub(crate) fn mark_bridge_message_minted(&mut self,replay_key:Hash)->Result<(),StateError>{
   let status=self.bridge_message_status.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
   if *status != BridgeMessageStatus::Accepted { return Err(StateError::InvalidBridgeMessage); }
-  if !self.processed_bridge_messages.contains_key(&replay_key) { return Err(StateError::InvalidBridgeMessage); }
-  let authorization=self.bridge_mint_authorizations.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
-  let replay=self.bridge_deposit_replays.get(&authorization.replay_key).ok_or(StateError::InvalidBridgeMessage)?;
   let message=self.processed_bridge_messages.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
-  if replay.status != freedom_types::DepositReplayStatus::Consumed
-    || !authorization.validate()
-    || !authorization.matches_message(message) {
-    return Err(StateError::InvalidBridgeMessage);
-  }
+  self.validate_minted_bridge_message_binding(message)?;
   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Minted);
   Ok(())
  }
@@ -2147,6 +2140,30 @@ impl ChainState {
   self.bridge_accounting.insert(asset_id,next_accounting);
   Ok(())
  }
+ fn validate_minted_bridge_message_binding(&self,message:&BridgeMessage)->Result<(),StateError>{
+  let mut matches=self.bridge_mint_authorizations.iter()
+   .filter(|(_,authorization)|authorization.matches_message(message));
+  let (key,authorization)=matches.next().ok_or(StateError::InvalidBridgeMessage)?;
+  if matches.next().is_some() || *key!=authorization.replay_key {
+   return Err(StateError::InvalidBridgeMessage);
+  }
+  let replay=self.bridge_deposit_replays.get(&authorization.replay_key)
+   .ok_or(StateError::InvalidBridgeMessage)?;
+  if !replay.validate()
+   || replay.status!=freedom_types::DepositReplayStatus::Consumed
+   || replay.replay_key!=authorization.replay_key
+   || replay.bridge_id!=authorization.bridge_id
+   || replay.canonical_asset_id!=authorization.canonical_asset_id
+   || replay.representation_asset_id!=authorization.representation_asset_id
+   || replay.source_chain_id!=authorization.source_chain_id
+   || replay.tx_hash!=authorization.source_tx_hash
+   || replay.event_index!=authorization.source_event_index
+   || replay.amount!=authorization.amount {
+   return Err(StateError::InvalidBridgeMessage);
+  }
+  Ok(())
+ }
+
  pub fn validate_persisted_bridge_state_integrity(&self)->Result<(),StateError>{
   for (id,asset) in &self.asset_registry {
    if *id!=asset.asset_id || !asset.validate_identity() || asset.symbol.is_empty() { return Err(StateError::InvalidAsset); }
@@ -2155,10 +2172,16 @@ impl ChainState {
    if *id!=policy.bridge_id || !policy.validate() { return Err(StateError::InvalidBridgeWithdrawal); }
   }
   for (id,message) in &self.processed_bridge_messages {
+   let asset=self.asset_registry.get(&message.asset_id).ok_or(StateError::InvalidBridgeMessage)?;
    if *id!=message.replay_key() || !message.validate_hash()
      || message.protocol_version!=BRIDGE_MESSAGE_PROTOCOL_VERSION
      || message.destination_chain_id!=freedom_primitives::CHAIN_ID
-     || self.validate_bridge_message(message)? != *id {
+     || message.source_chain_id==freedom_primitives::CHAIN_ID
+     || message.amount==0
+     || asset.asset_type!=AssetType::Bridged
+     || asset.status!=AssetStatus::Active
+     || asset.source_chain_id!=message.source_chain_id
+     || asset.bridge_id!=message.bridge_id {
     return Err(StateError::InvalidBridgeMessage);
    }
   }
@@ -2167,10 +2190,9 @@ impl ChainState {
      || ((*status as u8) < (BridgeMessageStatus::Verified as u8) || (*status as u8) > (BridgeMessageStatus::Minted as u8)) {
     return Err(StateError::InvalidBridgeMessage);
    }
-   if *status==BridgeMessageStatus::Minted
-     && (!self.bridge_mint_authorizations.contains_key(id)
-       || !self.bridge_deposit_replays.contains_key(id)) {
-    return Err(StateError::InvalidBridgeMessage);
+   if *status==BridgeMessageStatus::Minted {
+    let message=self.processed_bridge_messages.get(id).ok_or(StateError::InvalidBridgeMessage)?;
+    self.validate_minted_bridge_message_binding(message)?;
    }
   }
   for (id,set) in &self.bridge_approval_sets {
@@ -2192,8 +2214,18 @@ impl ChainState {
    }
   }
   for (id,authorization) in &self.bridge_mint_authorizations {
+   let replay=self.bridge_deposit_replays.get(id).ok_or(StateError::InvalidBridgeMessage)?;
    if *id!=authorization.replay_key || !authorization.validate()
-     || !self.bridge_deposit_replays.contains_key(id) {
+     || !replay.validate()
+     || replay.status!=freedom_types::DepositReplayStatus::Consumed
+     || replay.replay_key!=authorization.replay_key
+     || replay.bridge_id!=authorization.bridge_id
+     || replay.canonical_asset_id!=authorization.canonical_asset_id
+     || replay.representation_asset_id!=authorization.representation_asset_id
+     || replay.source_chain_id!=authorization.source_chain_id
+     || replay.tx_hash!=authorization.source_tx_hash
+     || replay.event_index!=authorization.source_event_index
+     || replay.amount!=authorization.amount {
     return Err(StateError::InvalidBridgeMessage);
    }
   }
@@ -3505,6 +3537,7 @@ mod m155_bridge_mint_boundary_tests {
   assert_eq!(state.bridge_message_status[&message.replay_key()],BridgeMessageStatus::Minted);
   assert_ne!(before,state.state_root());
   state.assert_invariants();
+  assert!(state.validate_persisted_bridge_state_integrity().is_ok());
  }
 
  #[test]
