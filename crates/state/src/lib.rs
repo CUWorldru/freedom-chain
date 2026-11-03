@@ -7869,6 +7869,7 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
         });
         state.height = 10;
         let bridge_id = [41; 32];
+        let asset_id = [42; 32];
         let policy = BridgeSecurityPolicy {
             bridge_id,
             approval_mode: freedom_types::BridgeApprovalMode::Quorum,
@@ -7887,7 +7888,7 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
         let mut withdrawal = BridgeWithdrawal {
             withdrawal_id: [0; 32],
             bridge_id,
-            asset_id: [42; 32],
+            asset_id,
             destination_chain_id: 2,
             amount: 25,
             sender: [43; 32],
