@@ -2144,7 +2144,9 @@ impl ChainState {
   let mut matches=self.bridge_mint_authorizations.iter()
    .filter(|(_,authorization)|authorization.matches_message(message));
   let (key,authorization)=matches.next().ok_or(StateError::InvalidBridgeMessage)?;
-  if matches.next().is_some() || *key!=authorization.replay_key {
+  if matches.next().is_some()
+   || *key!=authorization.replay_key
+   || authorization.canonical_asset_id!=message.asset_id {
    return Err(StateError::InvalidBridgeMessage);
   }
   let replay=self.bridge_deposit_replays.get(&authorization.replay_key)
@@ -3538,6 +3540,22 @@ mod m155_bridge_mint_boundary_tests {
   assert_ne!(before,state.state_root());
   state.assert_invariants();
   assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+ }
+
+ #[test]
+ fn persisted_mint_authorization_must_match_message_asset() {
+  let (mut state,deposit,message,auth,approvals)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  let mut tampered_auth=state.bridge_mint_authorizations[&auth.replay_key].clone();
+  tampered_auth.canonical_asset_id=[99;32];
+  tampered_auth.authorization_hash=tampered_auth.compute_hash();
+  state.bridge_mint_authorizations.insert(auth.replay_key,tampered_auth);
+  let mut tampered_replay=state.bridge_deposit_replays[&auth.replay_key].clone();
+  tampered_replay.canonical_asset_id=[99;32];
+  tampered_replay.record_hash=tampered_replay.compute_hash();
+  state.bridge_deposit_replays.insert(auth.replay_key,tampered_replay);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
  }
 
  #[test]
