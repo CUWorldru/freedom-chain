@@ -2199,7 +2199,27 @@ impl ChainState {
    }
   }
   for (id,set) in &self.bridge_approval_sets {
-   if *id!=set.request_id || set.approvals.is_empty() { return Err(StateError::InvalidBridgeWithdrawal); }
+   if *id!=set.request_id || set.approvals.is_empty()
+     || !set.approvals.windows(2).all(|pair| pair[0].validator_id < pair[1].validator_id) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   // Approval evidence must remain bound to one durable withdrawal. A valid
+   // signature set detached from its request must not survive snapshot loading.
+   let first=set.approvals.first().ok_or(StateError::InvalidBridgeWithdrawal)?;
+   let withdrawal=self.bridge_withdrawals.get(&first.withdrawal_id)
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if set.approvals.iter().any(|approval|
+     !approval.structurally_valid()
+       || approval.request_id!=*id
+       || approval.withdrawal_id!=withdrawal.withdrawal_id
+       || approval.bridge_id!=withdrawal.bridge_id
+       || approval.nonce!=withdrawal.nonce
+       || approval.amount!=withdrawal.amount
+       || approval.destination_chain_id!=withdrawal.destination_chain_id
+       || approval.asset_id!=withdrawal.asset_id
+       || approval.intent_hash!=withdrawal.request_hash) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
   }
   for (id,set) in &self.bridge_pause_authorizations {
    if *id!=set.bridge_id || set.authorizations.is_empty() { return Err(StateError::InvalidBridgePauseAuthorization); }
@@ -7754,6 +7774,54 @@ mod m456_bridge_rejected_reservation_release_tests {
     }
 }
 
+
+#[cfg(test)]
+mod m457_persisted_bridge_approval_binding_tests {
+ use super::*;
+  #[test]
+  fn persisted_bridge_approval_set_requires_matching_withdrawal() {
+   let mut state=ChainState::genesis(&Genesis {
+    chain_id:freedom_primitives::CHAIN_ID,
+    initial_supply:0,
+    validators:vec![],
+   });
+   let bridge_id=[71u8;32];
+   let asset_id=[72u8;32];
+   let mut withdrawal=BridgeWithdrawal {
+    withdrawal_id:[0;32], bridge_id, asset_id,
+    destination_chain_id:freedom_types::TRON_MAINNET_CHAIN_ID,
+    amount:25, sender:[73u8;32], recipient:vec![74],
+    nonce:9, request_hash:[0;32],
+   };
+   withdrawal.request_hash=withdrawal.compute_hash();
+   withdrawal.withdrawal_id=withdrawal.compute_id();
+   let withdrawal_id=withdrawal.withdrawal_id;
+   state.bridge_withdrawals.insert(withdrawal_id,withdrawal.clone());
+   state.bridge_withdrawal_status.insert(withdrawal_id,BridgeWithdrawalStatus::Requested);
+   let validator_id=[75u8;32];
+   let mut approval=BridgeApproval {
+    bridge_id, request_id:[76u8;32], withdrawal_id, validator_id,
+    nonce:withdrawal.nonce, amount:withdrawal.amount,
+    destination_chain_id:withdrawal.destination_chain_id,
+    asset_id, intent_hash:withdrawal.request_hash, signature:vec![1;64],
+   };
+   assert!(approval.structurally_valid());
+   state.bridge_approval_sets.insert(approval.request_id,BridgeApprovalSet {
+    request_id:approval.request_id, approvals:vec![approval.clone()],
+    threshold_signatures:0,
+   });
+   assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+
+   approval.withdrawal_id=[77u8;32];
+   state.bridge_approval_sets.get_mut(&approval.request_id).unwrap().approvals[0]=approval;
+   assert_eq!(
+    state.validate_persisted_bridge_state_integrity(),
+    Err(StateError::InvalidBridgeWithdrawal)
+   );
+  }
+
+
+}
 
 #[cfg(test)]
 mod m456_persisted_withdrawal_reservation_integrity_tests {
