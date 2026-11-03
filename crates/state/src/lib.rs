@@ -7552,14 +7552,13 @@ mod m456_bridge_rejected_reservation_release_tests {
     fn state_with_approved_withdrawal(period: u64, usage_period: u64, used: u128) -> (ChainState, Hash) {
         let bridge = [201u8; 32];
         let asset_id = [202u8; 32];
-        let withdrawal_id = [203u8; 32];
         let mut state = ChainState::genesis(&Genesis {
             chain_id: freedom_primitives::CHAIN_ID,
             initial_supply: 0,
             validators: vec![],
         });
-        state.bridge_withdrawals.insert(withdrawal_id, BridgeWithdrawal {
-            withdrawal_id,
+        let mut withdrawal = BridgeWithdrawal {
+            withdrawal_id: [0; 32],
             bridge_id: bridge,
             asset_id,
             destination_chain_id: freedom_types::TRON_MAINNET_CHAIN_ID,
@@ -7567,8 +7566,12 @@ mod m456_bridge_rejected_reservation_release_tests {
             sender: [204u8; 32],
             recipient: vec![1],
             nonce: 1,
-            request_hash: [205u8; 32],
-        });
+            request_hash: [0; 32],
+        };
+        withdrawal.request_hash = withdrawal.compute_hash();
+        withdrawal.withdrawal_id = withdrawal.compute_id();
+        let withdrawal_id = withdrawal.withdrawal_id;
+        state.bridge_withdrawals.insert(withdrawal_id, withdrawal);
         state.bridge_withdrawal_status.insert(withdrawal_id, BridgeWithdrawalStatus::Approved);
         state.bridge_withdrawal_rate_limit_period.insert(withdrawal_id, period);
         state.bridge_rate_limits.insert(bridge, BridgeRateLimitUsage {
