@@ -7987,3 +7987,75 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
         }
     }
 }
+
+
+#[cfg(test)]
+mod m458_persisted_bridge_nonce_binding_tests {
+    use super::*;
+
+    fn state_with_withdrawal() -> (ChainState, Hash, Hash, u64) {
+        let mut state=ChainState::genesis(&Genesis {
+            chain_id:freedom_primitives::CHAIN_ID,
+            initial_supply:0,
+            validators:vec![],
+        });
+        let bridge_id=[181u8;32];
+        let asset_id=[182u8;32];
+        let nonce=17u64;
+        let mut withdrawal=BridgeWithdrawal {
+            withdrawal_id:[0;32],
+            bridge_id,
+            asset_id,
+            destination_chain_id:freedom_types::TRON_MAINNET_CHAIN_ID,
+            amount:50,
+            sender:[183u8;32],
+            recipient:vec![184],
+            nonce,
+            request_hash:[0;32],
+        };
+        withdrawal.request_hash=withdrawal.compute_hash();
+        withdrawal.withdrawal_id=withdrawal.compute_id();
+        let id=withdrawal.withdrawal_id;
+        let nonce_key=BridgeNonceKey {
+            bridge_id,
+            asset_id,
+            direction:BridgeDirection::Outbound,
+        }.key_hash();
+        state.bridge_withdrawals.insert(id,withdrawal);
+        state.bridge_withdrawal_status.insert(id,BridgeWithdrawalStatus::Requested);
+        state.bridge_nonce_registry.entry(nonce_key).or_default().insert(nonce);
+        (state,nonce_key,id,nonce)
+    }
+
+    #[test]
+    fn persisted_withdrawal_requires_its_nonce_journal_entry() {
+        let (mut state,nonce_key,_,nonce)=state_with_withdrawal();
+        assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+        state.bridge_nonce_registry.get_mut(&nonce_key).unwrap().remove(&nonce);
+        state.bridge_nonce_registry.remove(&nonce_key);
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::DuplicateBridgeNonce)
+        );
+    }
+
+    #[test]
+    fn persisted_nonce_journal_rejects_orphaned_nonce() {
+        let (mut state,nonce_key,_,_)=state_with_withdrawal();
+        state.bridge_nonce_registry.get_mut(&nonce_key).unwrap().insert(18);
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::DuplicateBridgeNonce)
+        );
+    }
+
+    #[test]
+    fn persisted_nonce_journal_rejects_unknown_key() {
+        let (mut state,_,_,_)=state_with_withdrawal();
+        state.bridge_nonce_registry.insert([185u8;32],BTreeSet::from([19]));
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::DuplicateBridgeNonce)
+        );
+    }
+}
