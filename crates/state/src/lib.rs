@@ -7813,7 +7813,8 @@ mod m457_persisted_bridge_approval_binding_tests {
    assert!(state.validate_persisted_bridge_state_integrity().is_ok());
 
    approval.withdrawal_id=[77u8;32];
-   state.bridge_approval_sets.get_mut(&approval.request_id).unwrap().approvals[0]=approval;
+   let request_id=approval.request_id;
+   state.bridge_approval_sets.get_mut(&request_id).unwrap().approvals[0]=approval;
    assert_eq!(
     state.validate_persisted_bridge_state_integrity(),
     Err(StateError::InvalidBridgeWithdrawal)
