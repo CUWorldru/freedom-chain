@@ -701,6 +701,39 @@ impl ChainState {
   self.validate_slashed_evidence_integrity()?;
   self.validate_validator_set_certificate_integrity()?;
   self.validate_current_validator_set_history_binding()?;
+  // Reorg policy and evidence are persisted safety inputs. Validate their
+  // map-key bindings and journal structure without rebinding historical
+  // evidence to the latest checkpoint (the checkpoint may advance later).
+  for (bridge_id, policy) in &self.bitcoin_reorg_policy {
+   if *bridge_id == [0;32] || !policy.validate() {
+    return Err(StateError::BitcoinReorgDetected);
+   }
+  }
+  for (bridge_id, journal) in &self.bitcoin_reorg_evidence {
+   let policy = self.bitcoin_reorg_policy.get(bridge_id)
+    .ok_or(StateError::BitcoinReorgDetected)?;
+   if *bridge_id == [0;32]
+     || !policy.validate()
+     || journal.is_empty()
+     || journal.len() > freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT {
+    return Err(StateError::BitcoinReorgDetected);
+   }
+   let mut fingerprints = std::collections::BTreeSet::new();
+   for evidence in journal {
+    if !evidence.validate() || !fingerprints.insert(evidence.fingerprint) {
+     return Err(StateError::BitcoinReorgDetected);
+    }
+   }
+  }
+  for (bridge_id, recovery) in &self.bitcoin_reorg_recovery {
+   if *bridge_id == [0;32]
+     || recovery.bridge_id != *bridge_id
+     || !recovery.validate()
+     || !self.bitcoin_reorg_policy.get(bridge_id)
+       .is_some_and(|policy| policy.validate()) {
+    return Err(StateError::BitcoinReorgDetected);
+   }
+  }
   // Persisted Bitcoin checkpoints are consensus-critical inputs. Validate both
   // maps after deserialization and bind every entry to its bridge key.
   for (bridge_id, checkpoint) in &self.bitcoin_checkpoints {
