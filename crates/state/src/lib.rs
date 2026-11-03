@@ -7820,6 +7820,8 @@ mod m457_persisted_bridge_approval_binding_tests {
    let withdrawal_id=withdrawal.withdrawal_id;
    state.bridge_withdrawals.insert(withdrawal_id,withdrawal.clone());
    state.bridge_withdrawal_status.insert(withdrawal_id,BridgeWithdrawalStatus::Requested);
+   let nonce_key=BridgeNonceKey{bridge_id,asset_id,direction:BridgeDirection::Outbound}.key_hash();
+   state.bridge_nonce_registry.entry(nonce_key).or_default().insert(withdrawal.nonce);
    let validator_id=[75u8;32];
    let mut approval=BridgeApproval {
     bridge_id, request_id:[76u8;32], withdrawal_id, validator_id,
@@ -7887,6 +7889,8 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
         withdrawal.request_hash = withdrawal.compute_hash();
         withdrawal.withdrawal_id = withdrawal.compute_id();
         let id = withdrawal.withdrawal_id;
+        let nonce_key=BridgeNonceKey{bridge_id,asset_id,direction:BridgeDirection::Outbound}.key_hash();
+        state.bridge_nonce_registry.entry(nonce_key).or_default().insert(withdrawal.nonce);
         state.bridge_withdrawals.insert(id, withdrawal);
         state.bridge_withdrawal_status.insert(id, status);
         if reservation {
@@ -7945,6 +7949,7 @@ mod m456_persisted_withdrawal_reservation_integrity_tests {
         second.request_hash = second.compute_hash();
         second.withdrawal_id = second.compute_id();
         let second_id = second.withdrawal_id;
+        consistent.bridge_nonce_registry.values_mut().next().unwrap().insert(second.nonce);
         consistent.bridge_withdrawals.insert(second_id, second);
         consistent.bridge_withdrawal_status.insert(second_id, BridgeWithdrawalStatus::Finalized);
         consistent.bridge_withdrawal_rate_limit_period.insert(second_id, 10);
