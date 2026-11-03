@@ -2175,7 +2175,8 @@ impl ChainState {
   }
   for (id,message) in &self.processed_bridge_messages {
    let asset=self.asset_registry.get(&message.asset_id).ok_or(StateError::InvalidBridgeMessage)?;
-   if *id!=message.replay_key() || !message.validate_hash()
+   if !self.bridge_message_status.contains_key(id)
+     || *id!=message.replay_key() || !message.validate_hash()
      || message.protocol_version!=BRIDGE_MESSAGE_PROTOCOL_VERSION
      || message.destination_chain_id!=freedom_primitives::CHAIN_ID
      || message.source_chain_id==freedom_primitives::CHAIN_ID
@@ -3569,6 +3570,17 @@ mod m155_bridge_mint_boundary_tests {
   assert_ne!(before,state.state_root());
   state.assert_invariants();
   assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+ }
+
+ #[test]
+ fn processed_bridge_message_requires_persisted_status() {
+  let (mut state,deposit,message,_,_)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.bridge_message_status.remove(&message.replay_key());
+  assert_eq!(
+   state.validate_persisted_bridge_state_integrity(),
+   Err(StateError::InvalidBridgeMessage)
+  );
  }
 
  #[test]
