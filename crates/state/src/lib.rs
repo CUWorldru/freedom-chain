@@ -7755,6 +7755,12 @@ mod m456_bridge_rejected_reservation_release_tests {
         withdrawal.request_hash = withdrawal.compute_hash();
         withdrawal.withdrawal_id = withdrawal.compute_id();
         let withdrawal_id = withdrawal.withdrawal_id;
+        let nonce_key = BridgeNonceKey {
+            bridge_id: bridge,
+            asset_id,
+            direction: BridgeDirection::Outbound,
+        }.key_hash();
+        state.bridge_nonce_registry.entry(nonce_key).or_default().insert(withdrawal.nonce);
         state.bridge_withdrawals.insert(withdrawal_id, withdrawal);
         state.bridge_withdrawal_status.insert(withdrawal_id, BridgeWithdrawalStatus::Approved);
         state.bridge_withdrawal_rate_limit_period.insert(withdrawal_id, period);
