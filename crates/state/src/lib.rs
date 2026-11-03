@@ -2285,6 +2285,13 @@ impl ChainState {
      || !self.bridge_withdrawal_status.contains_key(id) {
     return Err(StateError::InvalidBridgeWithdrawal);
    }
+   // The request and approval paths both enforce the bridge nonce floor.
+   // Preserve that policy binding when validating a restored snapshot too.
+   if self.bridge_security_policies.get(&withdrawal.bridge_id)
+     .map(|policy| !policy.nonce_allowed(withdrawal.nonce))
+     .unwrap_or(false) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
   }
   for (id,status) in &self.bridge_withdrawal_status {
    if !self.bridge_withdrawals.contains_key(id)
@@ -8173,4 +8180,72 @@ mod m459_persisted_bridge_pause_authorization_integrity_tests {
   state.bridge_security_policies.remove(&[9;32]);
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
  }
+}
+
+
+#[cfg(test)]
+mod m460_persisted_withdrawal_nonce_floor_tests {
+    use super::*;
+
+    fn state_with_nonce_floor(floor: u64) -> ChainState {
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let bridge_id = [211u8; 32];
+        let asset_id = [212u8; 32];
+        state.bridge_security_policies.insert(bridge_id, BridgeSecurityPolicy {
+            bridge_id,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000,
+            max_withdrawal_amount: 1_000,
+            daily_limit: 1_000,
+            emergency_paused: false,
+            nonce_floor: floor,
+        });
+        let mut withdrawal = BridgeWithdrawal {
+            withdrawal_id: [0; 32],
+            bridge_id,
+            asset_id,
+            destination_chain_id: freedom_types::TRON_MAINNET_CHAIN_ID,
+            amount: 50,
+            sender: [213u8; 32],
+            recipient: vec![214],
+            nonce: 17,
+            request_hash: [0; 32],
+        };
+        withdrawal.request_hash = withdrawal.compute_hash();
+        withdrawal.withdrawal_id = withdrawal.compute_id();
+        let id = withdrawal.withdrawal_id;
+        let nonce_key = BridgeNonceKey {
+            bridge_id,
+            asset_id,
+            direction: BridgeDirection::Outbound,
+        }.key_hash();
+        state.bridge_withdrawals.insert(id, withdrawal);
+        state.bridge_withdrawal_status.insert(id, BridgeWithdrawalStatus::Requested);
+        state.bridge_nonce_registry.entry(nonce_key).or_default().insert(17);
+        state
+    }
+
+    #[test]
+    fn persisted_withdrawal_nonce_must_meet_policy_floor() {
+        let state = state_with_nonce_floor(18);
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn persisted_withdrawal_nonce_at_policy_floor_is_valid() {
+        let state = state_with_nonce_floor(17);
+        assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+    }
 }
