@@ -299,9 +299,16 @@ impl ChainState {
   usage.used=next; Ok(())
  }
  pub(crate) fn release_bridge_withdrawal_limit(&mut self,bridge_id:Hash,period:u64,amount:u128)->Result<(),StateError>{
-  let usage=self.bridge_rate_limits.get_mut(&bridge_id).ok_or(StateError::BridgeRateLimitExceeded)?;
-  if usage.period!=period||amount>usage.used{return Err(StateError::BridgeRateLimitExceeded);}
-  usage.used-=amount; Ok(())
+  let remove={
+   let usage=self.bridge_rate_limits.get_mut(&bridge_id).ok_or(StateError::BridgeRateLimitExceeded)?;
+   if usage.period!=period||amount>usage.used{return Err(StateError::BridgeRateLimitExceeded);}
+   usage.used-=amount;
+   usage.used==0
+  };
+  // Zero-usage entries are not valid persisted rate-limit records. Remove
+  // the aggregate entry when its final reservation is released.
+  if remove { self.bridge_rate_limits.remove(&bridge_id); }
+  Ok(())
  }
  pub(crate) fn apply_bridge_emergency_pause(&mut self,bridge_id:Hash,auth_set:BridgePauseAuthorizationSet)->Result<(),StateError>{
   let policy=self.bridge_security_policies.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgePauseAuthorization)?;
@@ -7586,6 +7593,17 @@ mod m456_bridge_rejected_reservation_release_tests {
         state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected).unwrap();
         assert_eq!(state.bridge_rate_limits.values().next().unwrap().used, 40);
         assert!(!state.bridge_withdrawal_rate_limit_period.contains_key(&id));
+    }
+
+    #[test]
+    fn releasing_final_reservation_removes_zero_usage_entry() {
+        let (mut state, id) = state_with_approved_withdrawal(7, 7, 30);
+        state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected).unwrap();
+        let bridge_id = state.bridge_withdrawals[&id].bridge_id;
+        assert!(!state.bridge_rate_limits.contains_key(&bridge_id));
+        assert!(!state.bridge_withdrawal_rate_limit_period.contains_key(&id));
+        assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+        state.assert_invariants();
     }
 
     #[test]
