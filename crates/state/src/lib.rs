@@ -2421,6 +2421,31 @@ impl ChainState {
    }
    self.validate_bridge_accounting(*asset_id)?;
   }
+  // Snapshot validation must include Bitcoin anchor/tip consistency as well;
+  // validate_finality_state_integrity is also called independently by finality APIs.
+  for (bridge_id, checkpoint) in &self.bitcoin_checkpoints {
+   if *bridge_id == [0;32] || !checkpoint.validate() {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (bridge_id, tip) in &self.bitcoin_canonical_tips {
+   if *bridge_id == [0;32] || !tip.validate() {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   if let Some(anchor) = self.bitcoin_checkpoints.get(bridge_id) {
+    if tip.height < anchor.height
+      || tip.chainwork < anchor.chainwork
+      || (tip.height == anchor.height
+        && (tip.block_hash != anchor.block_hash || tip.chainwork != anchor.chainwork)) {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+   }
+   if self.bridge_security_policies.get(bridge_id)
+     .map(|policy| policy.bridge_id != *bridge_id || !policy.validate())
+     .unwrap_or(false) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
   Ok(())
  }
 
