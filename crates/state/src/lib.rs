@@ -2222,7 +2222,22 @@ impl ChainState {
    }
   }
   for (id,set) in &self.bridge_pause_authorizations {
-   if *id!=set.bridge_id || set.authorizations.is_empty() { return Err(StateError::InvalidBridgePauseAuthorization); }
+   if *id!=set.bridge_id || set.nonce==0 || set.authorizations.is_empty()
+     || !set.authorizations.windows(2).all(|pair| pair[0].validator_id < pair[1].validator_id) {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+   let paused=set.authorizations.first().ok_or(StateError::InvalidBridgePauseAuthorization)?.paused;
+   if set.authorizations.iter().any(|authorization|
+     !authorization.structurally_valid()
+       || authorization.bridge_id!=set.bridge_id
+       || authorization.nonce!=set.nonce
+       || authorization.paused!=paused) {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+   let policy=self.bridge_security_policies.get(id).ok_or(StateError::InvalidBridgePauseAuthorization)?;
+   if policy.emergency_paused!=paused {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
   }
   for (id,usage) in &self.bridge_rate_limits {
    let policy=self.bridge_security_policies.get(id).ok_or(StateError::BridgeRateLimitExceeded)?;
@@ -8074,4 +8089,88 @@ mod m458_persisted_bridge_nonce_binding_tests {
             Err(StateError::DuplicateBridgeNonce)
         );
     }
+}
+
+
+#[cfg(test)]
+mod m459_persisted_bridge_pause_authorization_integrity_tests {
+ use super::*;
+
+ fn state_with_pause(paused:bool)->ChainState {
+  let genesis=Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![]};
+  let mut state=ChainState::genesis(&genesis);
+  let bridge=[9;32];
+  state.register_bridge_security_policy(BridgeSecurityPolicy{
+   bridge_id:bridge,
+   approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+   validator_quorum:1,
+   validator_total:1,
+   threshold_signers:1,
+   threshold_total:1,
+   min_external_confirmations:1,
+   max_deposit_amount:1_000,
+   max_withdrawal_amount:1_000,
+   daily_limit:1_000,
+   emergency_paused:paused,
+   nonce_floor:0,
+  }).unwrap();
+  state.bridge_pause_authorizations.insert(bridge,BridgePauseAuthorizationSet{
+   bridge_id:bridge,
+   nonce:1,
+   authorizations:vec![BridgePauseAuthorization{
+    bridge_id:bridge,
+    paused,
+    nonce:1,
+    validator_id:[13;32],
+    signature:vec![0;64],
+   }],
+  });
+  state
+ }
+
+ #[test]
+ fn consistent_pause_authorization_survives_snapshot_validation() {
+  let state=state_with_pause(true);
+  assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+ }
+
+ #[test]
+ fn pause_authorization_rejects_duplicate_signers() {
+  let mut state=state_with_pause(true);
+  let mut duplicate=state.bridge_pause_authorizations[&[9;32]].authorizations[0].clone();
+  duplicate.signature=vec![1;64];
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations.push(duplicate);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+
+ #[test]
+ fn pause_authorization_rejects_mixed_pause_values() {
+  let mut state=state_with_pause(true);
+  let mut conflicting=state.bridge_pause_authorizations[&[9;32]].authorizations[0].clone();
+  conflicting.validator_id=[14;32];
+  conflicting.paused=false;
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations.push(conflicting);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+
+ #[test]
+ fn pause_authorization_rejects_nonce_mismatch() {
+  let mut state=state_with_pause(true);
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations[0].nonce=2;
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+
+ #[test]
+ fn pause_authorization_requires_matching_policy_state() {
+  let mut state=state_with_pause(true);
+  state.bridge_security_policies.get_mut(&[9;32]).unwrap().emergency_paused=false;
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+
+ #[test]
+ fn pause_authorization_requires_persisted_policy() {
+  let mut state=state_with_pause(true);
+  state.bridge_security_policies.remove(&[9;32]);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
 }
