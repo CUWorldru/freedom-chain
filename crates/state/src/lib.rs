@@ -2302,7 +2302,24 @@ impl ChainState {
    if nonces.is_empty() { return Err(StateError::DuplicateBridgeNonce); }
    let _=id;
   }
-  for id in self.bridge_accounting.keys() { self.validate_bridge_accounting(*id)?; }
+  // Persisted mint authorizations are the durable source of truth for
+  // cumulative bridge mints. Keep their per-asset total bound to accounting
+  // so a self-consistent but understated accounting record cannot pass.
+  let mut authorized_mints_by_asset=BTreeMap::<Hash,u128>::new();
+  for authorization in self.bridge_mint_authorizations.values() {
+   let total=authorized_mints_by_asset.entry(authorization.canonical_asset_id).or_default();
+   *total=total.checked_add(authorization.amount).ok_or(StateError::InvalidBridgeAccounting)?;
+  }
+  for (asset_id,total) in &authorized_mints_by_asset {
+   let accounting=self.bridge_accounting.get(asset_id).cloned().unwrap_or_default();
+   if accounting.freedom_minted!=*total { return Err(StateError::InvalidBridgeAccounting); }
+  }
+  for (asset_id,accounting) in &self.bridge_accounting {
+   if accounting.freedom_minted!=authorized_mints_by_asset.get(asset_id).copied().unwrap_or(0) {
+    return Err(StateError::InvalidBridgeAccounting);
+   }
+   self.validate_bridge_accounting(*asset_id)?;
+  }
   Ok(())
  }
 
@@ -3566,6 +3583,23 @@ mod m155_bridge_mint_boundary_tests {
   state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
   state.bridge_mint_authorizations.remove(&auth.replay_key);
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
+ fn persisted_bridge_accounting_must_match_authorized_mint_total() {
+  let (mut state,deposit,message,auth,approvals)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+
+  // Keep the accounting internally conserved while understating both sides.
+  // The persisted authorization total must still detect the discrepancy.
+  let accounting=state.bridge_accounting.get_mut(&auth.canonical_asset_id).unwrap();
+  accounting.verified_external_locked=499;
+  accounting.freedom_minted=499;
+  assert_eq!(
+   state.validate_persisted_bridge_state_integrity(),
+   Err(StateError::InvalidBridgeAccounting)
+  );
  }
 
  #[test]
