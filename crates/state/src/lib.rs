@@ -2211,7 +2211,8 @@ impl ChainState {
   }
   for (id,replay) in &self.bridge_deposit_replays {
    if *id!=replay.replay_key || !replay.validate()
-     || replay.status!=freedom_types::DepositReplayStatus::Consumed {
+     || replay.status!=freedom_types::DepositReplayStatus::Consumed
+     || !self.bridge_mint_authorizations.contains_key(id) {
     return Err(StateError::InvalidBridgeMessage);
    }
   }
@@ -3555,6 +3556,15 @@ mod m155_bridge_mint_boundary_tests {
   tampered_replay.canonical_asset_id=[99;32];
   tampered_replay.record_hash=tampered_replay.compute_hash();
   state.bridge_deposit_replays.insert(auth.replay_key,tampered_replay);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
+ fn consumed_deposit_replay_requires_persisted_mint_authorization() {
+  let (mut state,deposit,message,auth,approvals)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  state.bridge_mint_authorizations.remove(&auth.replay_key);
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
  }
 
