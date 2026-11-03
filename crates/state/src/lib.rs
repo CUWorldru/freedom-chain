@@ -2351,8 +2351,17 @@ impl ChainState {
     asset_id:withdrawal.asset_id,
     direction:BridgeDirection::Outbound,
    }.key_hash();
+   let matching_withdrawals=self.bridge_withdrawals.values().filter(|candidate| {
+    candidate.nonce==withdrawal.nonce
+      && BridgeNonceKey {
+       bridge_id:candidate.bridge_id,
+       asset_id:candidate.asset_id,
+       direction:BridgeDirection::Outbound,
+      }.key_hash()==nonce_key
+   }).count();
    if !self.bridge_nonce_registry.get(&nonce_key)
-     .map(|nonces|nonces.contains(&withdrawal.nonce)).unwrap_or(false) {
+     .map(|nonces|nonces.contains(&withdrawal.nonce)).unwrap_or(false)
+     || matching_withdrawals!=1 {
     return Err(StateError::DuplicateBridgeNonce);
    }
   }
