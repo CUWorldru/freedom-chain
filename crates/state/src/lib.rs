@@ -3961,6 +3961,23 @@ mod m156_bridge_mint_transaction_tests {
  }
 
  #[test]
+ fn persisted_mint_requires_durable_authenticated_approval_set() {
+  let (mut state,deposit,message,auth,approvals,_)=setup();
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+  state.bridge_message_approval_sets.remove(&message.replay_key());
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
+ fn persisted_mint_rejects_tampered_approval_signature() {
+  let (mut state,deposit,message,auth,approvals,_)=setup();
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  state.bridge_message_approval_sets.get_mut(&message.replay_key()).unwrap().approvals[0].signature=vec![0;64];
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
  fn bridge_mint_transaction_rejects_tampered_authorization() {
   let (mut state,deposit,message,mut auth,approvals,relayer_key)=setup();
   auth.amount=501;
