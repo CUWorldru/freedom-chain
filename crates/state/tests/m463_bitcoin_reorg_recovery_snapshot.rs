@@ -91,3 +91,17 @@ fn persisted_reorg_recovery_accepts_authenticated_recovery_with_evidence() {
     let state = state_with_recovery(true, true);
     assert!(state.validate_finality_state_integrity().is_ok());
 }
+
+#[test]
+fn persisted_reorg_recovery_rejects_unknown_validator_ids() {
+    let mut state = state_with_recovery(true, true);
+    let recovery = state.bitcoin_reorg_recovery.get_mut(&BRIDGE_ID).unwrap();
+    let unknown_id = [99; 32];
+    recovery.validator_ids.push(unknown_id);
+    recovery.signatures.push(BitcoinReorgRecoverySignature {
+        validator_id: unknown_id,
+        signature: vec![0; 64],
+    });
+    recovery.recovery_hash = recovery.compute_hash();
+    assert!(state.validate_finality_state_integrity().is_err());
+}
