@@ -16,7 +16,7 @@ fn state_with_recovery(valid_signature: bool, include_evidence: bool) -> ChainSt
         validator_id,
         owner: [8; 32],
         consensus_key,
-        stake: 100,
+        stake: 0,
         unbonding_stake: 0,
         blocks_proposed: 0,
         blocks_finalized: 0,
@@ -24,7 +24,7 @@ fn state_with_recovery(valid_signature: bool, include_evidence: bool) -> ChainSt
     };
     let mut state = ChainState::genesis(&Genesis {
         chain_id: freedom_primitives::CHAIN_ID,
-        initial_supply: 100,
+        initial_supply: 0,
         validators: vec![validator],
     });
 
