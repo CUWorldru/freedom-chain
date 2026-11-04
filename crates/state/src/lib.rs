@@ -2319,7 +2319,24 @@ impl ChainState {
     return Err(StateError::InvalidBridgePauseAuthorization);
    }
    let policy=self.bridge_security_policies.get(id).ok_or(StateError::InvalidBridgePauseAuthorization)?;
-   if policy.emergency_paused!=paused {
+   if policy.bridge_id!=*id || !policy.validate() || policy.emergency_paused!=paused {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+   // A persisted pause set represents an applied governance action.
+   // Authenticate every signer and enforce the runtime quorum on snapshot load.
+   let keys=self.active_validator_set.iter()
+    .map(|(validator_id,entry)|(*validator_id,entry.consensus_key))
+    .collect::<BTreeMap<Hash,[u8;32]>>();
+   if set.authorizations.iter().any(|authorization| {
+     keys.get(&authorization.validator_id)
+      .map(|key| !authorization.verify_authenticated(key))
+      .unwrap_or(true)
+   }) {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+   let authenticated=set.authenticated_count(&keys);
+   if usize::from(authenticated)!=set.authorizations.len()
+     || authenticated<policy.validator_quorum {
     return Err(StateError::InvalidBridgePauseAuthorization);
    }
   }
