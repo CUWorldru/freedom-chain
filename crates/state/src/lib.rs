@@ -8397,3 +8397,105 @@ mod m461_persisted_bitcoin_tip_binding_tests {
         assert!(state.validate_persisted_bridge_state_integrity().is_ok());
     }
 }
+
+
+#[cfg(test)]
+mod m462_persisted_bitcoin_reorg_integrity_tests {
+    use super::*;
+
+    fn state() -> ChainState {
+        ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        })
+    }
+
+    fn policy() -> freedom_types::BitcoinReorgPolicy {
+        freedom_types::BitcoinReorgPolicy {
+            elevated_confirmations: 6,
+            critical_chainwork_margin: [1; 32],
+        }
+    }
+
+    fn evidence() -> BitcoinReorgEvidence {
+        let mut evidence = BitcoinReorgEvidence {
+            checkpoint_height: 100,
+            checkpoint_hash: [2; 32],
+            candidate_tip_height: 107,
+            candidate_tip_hash: [3; 32],
+            candidate_chainwork: [4; 32],
+            fingerprint: [0; 32],
+        };
+        evidence.fingerprint = evidence.compute_fingerprint();
+        evidence
+    }
+
+    #[test]
+    fn persisted_reorg_policy_rejects_invalid_parameters() {
+        let mut state = state();
+        state.bitcoin_reorg_policy.insert([1; 32], freedom_types::BitcoinReorgPolicy {
+            elevated_confirmations: 0,
+            critical_chainwork_margin: [1; 32],
+        });
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+
+    #[test]
+    fn persisted_reorg_evidence_rejects_duplicate_fingerprints() {
+        let mut state = state();
+        let bridge_id = [5; 32];
+        state.bitcoin_reorg_policy.insert(bridge_id, policy());
+        let evidence = evidence();
+        state.bitcoin_reorg_evidence.insert(bridge_id, vec![evidence.clone(), evidence]);
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+
+    #[test]
+    fn persisted_reorg_evidence_rejects_tampered_fingerprint() {
+        let mut state = state();
+        let bridge_id = [6; 32];
+        state.bitcoin_reorg_policy.insert(bridge_id, policy());
+        let mut evidence = evidence();
+        evidence.fingerprint[0] ^= 1;
+        state.bitcoin_reorg_evidence.insert(bridge_id, vec![evidence]);
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+
+    #[test]
+    fn persisted_reorg_recovery_requires_matching_map_key() {
+        let mut state = state();
+        let bridge_id = [7; 32];
+        state.bitcoin_reorg_policy.insert(bridge_id, policy());
+        let mut recovery = freedom_types::BitcoinReorgRecovery {
+            bridge_id,
+            evidence_fingerprint: [8; 32],
+            nonce: 1,
+            canonical_height: 101,
+            canonical_block_hash: [9; 32],
+            canonical_chainwork: [10; 32],
+            validator_ids: vec![[11; 32]],
+            signatures: vec![freedom_types::BitcoinReorgRecoverySignature {
+                validator_id: [11; 32],
+                signature: vec![0; 64],
+            }],
+            recovery_hash: [0; 32],
+        };
+        recovery.recovery_hash = recovery.compute_hash();
+        assert!(recovery.validate());
+        state.bitcoin_reorg_recovery.insert([12; 32], recovery);
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+}
