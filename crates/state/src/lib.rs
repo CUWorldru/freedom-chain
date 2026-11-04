@@ -381,7 +381,10 @@ impl ChainState {
   let mut ids=recovery.validator_ids.clone();ids.sort();ids.dedup();
   if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
   let validators=self.bitcoin_recovery_validator_keys();
-  if recovery.authenticated_count(&validators) < (validators.len() - validators.len()/3){return Err(StateError::BitcoinReorgDetected);}
+  if validators.is_empty()
+    || recovery.authenticated_count(&validators) < (validators.len() - validators.len()/3) {
+   return Err(StateError::BitcoinReorgDetected);
+  }
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
  }
@@ -726,9 +729,17 @@ impl ChainState {
    }
   }
   for (bridge_id, recovery) in &self.bitcoin_reorg_recovery {
+   let journal = self.bitcoin_reorg_evidence.get(bridge_id)
+    .ok_or(StateError::BitcoinReorgDetected)?;
+   let validators = self.bitcoin_recovery_validator_keys();
+   let required_quorum = validators.len() - validators.len() / 3;
    if *bridge_id == [0;32]
      || recovery.bridge_id != *bridge_id
      || !recovery.validate()
+     || !journal.iter().any(|evidence|
+       evidence.fingerprint == recovery.evidence_fingerprint)
+     || validators.is_empty()
+     || recovery.authenticated_count(&validators) < required_quorum
      || !self.bitcoin_reorg_policy.get(bridge_id)
        .is_some_and(|policy| policy.validate()) {
     return Err(StateError::BitcoinReorgDetected);
