@@ -8190,34 +8190,22 @@ mod m459_persisted_bridge_pause_authorization_integrity_tests {
  use super::*;
 
  fn state_with_pause(paused:bool)->ChainState {
-  let genesis=Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![]};
+  let signing_key=freedom_crypto::generate_keypair();
+  let public_key=signing_key.verifying_key().to_bytes();
+  let validator_id=freedom_primitives::hash_bytes(&public_key);
+  let validator=Validator { validator_id, owner:[12;32], consensus_key:public_key, stake:100, unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0 };
+  let genesis=Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]};
   let mut state=ChainState::genesis(&genesis);
   let bridge=[9;32];
-  state.register_bridge_security_policy(BridgeSecurityPolicy{
-   bridge_id:bridge,
-   approval_mode:freedom_types::BridgeApprovalMode::Quorum,
-   validator_quorum:1,
-   validator_total:1,
-   threshold_signers:1,
-   threshold_total:1,
-   min_external_confirmations:1,
-   max_deposit_amount:1_000,
-   max_withdrawal_amount:1_000,
-   daily_limit:1_000,
-   emergency_paused:paused,
-   nonce_floor:0,
-  }).unwrap();
-  state.bridge_pause_authorizations.insert(bridge,BridgePauseAuthorizationSet{
-   bridge_id:bridge,
-   nonce:1,
-   authorizations:vec![BridgePauseAuthorization{
-    bridge_id:bridge,
-    paused,
-    nonce:1,
-    validator_id:[13;32],
-    signature:vec![0;64],
-   }],
+  state.bridge_security_policies.insert(bridge,BridgeSecurityPolicy {
+   bridge_id:bridge, approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+   validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+   min_external_confirmations:1, max_deposit_amount:1_000, max_withdrawal_amount:1_000,
+   daily_limit:1_000, emergency_paused:paused, nonce_floor:0,
   });
+  let mut authorization=BridgePauseAuthorization { bridge_id:bridge, paused, nonce:1, validator_id, signature:vec![] };
+  authorization.signature=freedom_crypto::sign(&signing_key,&authorization.authorization_hash()).to_vec();
+  state.bridge_pause_authorizations.insert(bridge,BridgePauseAuthorizationSet { bridge_id:bridge, nonce:1, authorizations:vec![authorization] });
   state
  }
 
@@ -8226,48 +8214,52 @@ mod m459_persisted_bridge_pause_authorization_integrity_tests {
   let state=state_with_pause(true);
   assert!(state.validate_persisted_bridge_state_integrity().is_ok());
  }
-
  #[test]
  fn pause_authorization_rejects_duplicate_signers() {
   let mut state=state_with_pause(true);
-  let mut duplicate=state.bridge_pause_authorizations[&[9;32]].authorizations[0].clone();
-  duplicate.signature=vec![1;64];
+  let duplicate=state.bridge_pause_authorizations[&[9;32]].authorizations[0].clone();
   state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations.push(duplicate);
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
  }
-
  #[test]
  fn pause_authorization_rejects_mixed_pause_values() {
   let mut state=state_with_pause(true);
   let mut conflicting=state.bridge_pause_authorizations[&[9;32]].authorizations[0].clone();
-  conflicting.validator_id=[14;32];
-  conflicting.paused=false;
+  conflicting.validator_id=[14;32]; conflicting.paused=false;
   state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations.push(conflicting);
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
  }
-
  #[test]
  fn pause_authorization_rejects_nonce_mismatch() {
   let mut state=state_with_pause(true);
   state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations[0].nonce=2;
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
  }
-
  #[test]
  fn pause_authorization_requires_matching_policy_state() {
   let mut state=state_with_pause(true);
   state.bridge_security_policies.get_mut(&[9;32]).unwrap().emergency_paused=false;
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
  }
-
  #[test]
  fn pause_authorization_requires_persisted_policy() {
   let mut state=state_with_pause(true);
   state.bridge_security_policies.remove(&[9;32]);
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
  }
+ #[test]
+ fn persisted_pause_authorization_rejects_invalid_signature() {
+  let mut state=state_with_pause(true);
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations[0].signature=vec![1;64];
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+ #[test]
+ fn persisted_pause_authorization_rejects_unknown_validator() {
+  let mut state=state_with_pause(true);
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations[0].validator_id=[15;32];
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
 }
-
 
 #[cfg(test)]
 mod m460_persisted_withdrawal_nonce_floor_tests {
