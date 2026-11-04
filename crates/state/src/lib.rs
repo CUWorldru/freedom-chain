@@ -382,6 +382,7 @@ impl ChainState {
   if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
   let validators=self.bitcoin_recovery_validator_keys();
   if validators.is_empty()
+    || recovery.validator_ids.iter().any(|id| !validators.contains_key(id))
     || recovery.authenticated_count(&validators) < (validators.len() - validators.len()/3) {
    return Err(StateError::BitcoinReorgDetected);
   }
@@ -739,6 +740,7 @@ impl ChainState {
      || !journal.iter().any(|evidence|
        evidence.fingerprint == recovery.evidence_fingerprint)
      || validators.is_empty()
+     || recovery.validator_ids.iter().any(|id| !validators.contains_key(id))
      || recovery.authenticated_count(&validators) < required_quorum
      || !self.bitcoin_reorg_policy.get(bridge_id)
        .is_some_and(|policy| policy.validate()) {
