@@ -2361,7 +2361,8 @@ impl ChainState {
    let approval_epoch=*self.bridge_message_approval_epochs.get(id).ok_or(StateError::InvalidBridgeMessage)?;
    let historical_entries=self.validator_set_history_entries.get(&approval_epoch).ok_or(StateError::InvalidBridgeMessage)?;
    let keys=historical_entries.iter().map(|(validator_id,entry)|(*validator_id,entry.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
-   if approval_set.bridge_id!=message.bridge_id
+   if approval_epoch>self.epoch
+     || approval_set.bridge_id!=message.bridge_id
      || approval_set.message_hash!=message.message_hash
      || !approval_set.is_canonical_order()
      || approval_set.approvals.is_empty()
@@ -3972,6 +3973,14 @@ mod m156_bridge_mint_transaction_tests {
   state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
   assert!(state.validate_persisted_bridge_state_integrity().is_ok());
   state.bridge_message_approval_sets.remove(&message.replay_key());
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
+ fn persisted_mint_rejects_future_approval_epoch() {
+  let (mut state,deposit,message,auth,approvals,_)=setup();
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  state.bridge_message_approval_epochs.insert(message.replay_key(),state.epoch+1);
   assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
  }
 
