@@ -660,13 +660,19 @@ impl ChainState {
   // Historical validator-set snapshots are authoritative and must form a
   // contiguous chain from genesis through the current epoch. A missing
   // historical epoch must never make an attestation history look valid.
-  for epoch in 0..=self.epoch {
-   if !self.validator_set_history.contains_key(&epoch)
-     || !self.validator_set_history_sets.contains_key(&epoch)
-     || !self.validator_set_history_entries.contains_key(&epoch)
-     || !self.validator_set_history_key_hashes.contains_key(&epoch) {
-    return Err(StateError::InvalidBridgeWithdrawal);
-   }
+  let expected_history_len=usize::try_from(self.epoch).ok()
+   .and_then(|epoch| epoch.checked_add(1))
+   .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let expected_epochs=0..=self.epoch;
+  if self.validator_set_history.len()!=expected_history_len
+    || self.validator_set_history_sets.len()!=expected_history_len
+    || self.validator_set_history_entries.len()!=expected_history_len
+    || self.validator_set_history_key_hashes.len()!=expected_history_len
+    || !self.validator_set_history.keys().copied().eq(expected_epochs.clone())
+    || !self.validator_set_history_sets.keys().copied().eq(expected_epochs.clone())
+    || !self.validator_set_history_entries.keys().copied().eq(expected_epochs.clone())
+    || !self.validator_set_history_key_hashes.keys().copied().eq(expected_epochs) {
+   return Err(StateError::InvalidBridgeWithdrawal);
   }
   for (epoch, keys) in &self.validator_set_history_sets {
    let mut bytes=Vec::new();
@@ -5415,6 +5421,13 @@ mod m267_validator_quorum_binding_tests {
 #[cfg(test)]
 mod m268_validator_set_binding_tests {
     use super::*;
+
+    #[test]
+    fn finality_integrity_rejects_orphan_future_history_hash() {
+        let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] });
+        state.validator_set_history.insert(1,[9u8;32]);
+        assert_eq!(state.validate_finality_state_integrity(),Err(StateError::InvalidBridgeWithdrawal));
+    }
 
     #[test]
     fn finality_integrity_rejects_historical_entry_hash_mismatch() {
