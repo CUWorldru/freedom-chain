@@ -63,7 +63,23 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
         tx.signature = freedom_crypto::sign(&sender_key, &tx.signing_bytes()).to_vec();
 
         let mut mempool = Mempool::new();
-        mempool.submit(&state, tx).unwrap();
+
+        // Admission must verify the actual Ed25519 signature before a
+        // transaction can enter the pool.
+        let mut invalid_signature_tx = tx.clone();
+        invalid_signature_tx.signature[0] ^= 0x01;
+        let invalid_error = mempool.submit(&state, invalid_signature_tx).unwrap_err();
+        assert!(invalid_error.contains("invalid transaction signature"), "unexpected signature error: {invalid_error}");
+        assert!(mempool.is_empty(), "rejected transaction must not enter the mempool");
+
+        let tx_hash = tx.hash();
+        assert_eq!(mempool.submit(&state, tx.clone()).unwrap(), tx_hash);
+        assert_eq!(mempool.len(), 1);
+        assert_eq!(
+            mempool.submit(&state, tx.clone()).unwrap_err(),
+            "duplicate transaction",
+            "the same signed transaction must not be admitted twice",
+        );
 
         let owner = proposer(&state, &validator_keys);
         let block = build_next_block(&state, &mempool, owner, 1, state.epoch, 0, 10).unwrap();
@@ -95,6 +111,14 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
     assert_eq!(recovered.accounts.get(&sender).unwrap().nonce, 1);
     assert_eq!(recovered.state_root(), state.state_root());
     assert_eq!(recovered.last_block_hash, store.latest_hash().unwrap());
+    store.validate_tip_metadata().unwrap();
+    store.validate_chain_through(stored_height).unwrap();
+
+    // Once the transfer is committed and replayed, its old nonce is stale.
+    let mut stale_pool = Mempool::new();
+    let stale_error = stale_pool.submit(&recovered, tx.clone()).unwrap_err();
+    assert!(stale_error.contains("stale transaction nonce"), "unexpected stale nonce error: {stale_error}");
+    assert!(stale_pool.is_empty(), "stale transaction must not enter the mempool");
 
     let owner = proposer(&recovered, &validator_keys);
     let next = build_next_block(&recovered, &Mempool::new(), owner, 3, recovered.epoch, 0, 10).unwrap();
