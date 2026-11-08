@@ -47,6 +47,7 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
     state.supply = Supply { total: 1_000, circulating: 1_000, locked: 0, staked: 0, treasury: 0 };
     state.assert_invariants();
 
+    let signed_tx_for_replay;
     {
         let store = ChainStore::open(dir.path()).unwrap();
         store.save_snapshot(&state, [0; 32]).unwrap();
@@ -61,6 +62,7 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
             signature: Vec::new(),
         };
         tx.signature = freedom_crypto::sign(&sender_key, &tx.signing_bytes()).to_vec();
+        signed_tx_for_replay = tx.clone();
 
         let mut mempool = Mempool::new();
 
@@ -116,7 +118,7 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
 
     // Once the transfer is committed and replayed, its old nonce is stale.
     let mut stale_pool = Mempool::new();
-    let stale_error = stale_pool.submit(&recovered, tx.clone()).unwrap_err();
+    let stale_error = stale_pool.submit(&recovered, signed_tx_for_replay.clone()).unwrap_err();
     assert!(stale_error.contains("stale transaction nonce"), "unexpected stale nonce error: {stale_error}");
     assert!(stale_pool.is_empty(), "stale transaction must not enter the mempool");
 
