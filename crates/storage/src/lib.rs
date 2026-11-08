@@ -1059,7 +1059,7 @@ mod tests {
         assert!(validate_snapshot_finality_set_binding(&snapshot, &checkpoint).is_ok());
 
         snapshot.finality_validator_set.insert([7; 32], freedom_types::ValidatorSetEntry {
-            validator_id: [7; 32], owner: [8; 20], consensus_key: [9; 32], stake: 10,
+            validator_id: [7; 32], owner: [8; 32], consensus_key: [9; 32], stake: 10,
         });
         assert!(matches!(
             validate_snapshot_finality_set_binding(&snapshot, &checkpoint),
@@ -1073,10 +1073,10 @@ mod tests {
             chain_id: CHAIN_ID, initial_supply: 0, validators: vec![],
         });
         let previous = std::collections::BTreeMap::from([([1; 32], freedom_types::ValidatorSetEntry {
-            validator_id: [1; 32], owner: [2; 20], consensus_key: [3; 32], stake: 100,
+            validator_id: [1; 32], owner: [2; 32], consensus_key: [3; 32], stake: 100,
         })]);
         let next = std::collections::BTreeMap::from([([4; 32], freedom_types::ValidatorSetEntry {
-            validator_id: [4; 32], owner: [5; 20], consensus_key: [6; 32], stake: 200,
+            validator_id: [4; 32], owner: [5; 32], consensus_key: [6; 32], stake: 200,
         })]);
         state.epoch = 1;
         state.validator_set_history_entries.insert(0, previous.clone());
