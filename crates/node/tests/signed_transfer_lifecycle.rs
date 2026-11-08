@@ -1,5 +1,5 @@
 use ed25519_dalek::SigningKey;
-use freedom_primitives::{address_from_public_key, hash_bytes, ChainId, Supply, CHAIN_ID};
+use freedom_primitives::{address_from_public_key, hash_bytes, Supply, CHAIN_ID};
 use freedom_runtime::{build_next_block, execute_block, initialize, Mempool};
 use freedom_state::{Account, ChainState};
 use freedom_storage::ChainStore;
