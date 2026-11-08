@@ -57,6 +57,30 @@ pub struct StateSnapshot {
     pub epoch_transition_certificate: Option<freedom_types::ValidatorSetCertificate>,
 }
 
+/// Bind the snapshot's finality signer set to the validator history committed
+/// by the snapshot state root. A peer or corrupted disk must not be able to
+/// replace both the certificate and its accompanying signer set independently.
+fn validate_snapshot_finality_set_binding(
+    snapshot: &StateSnapshot,
+    checkpoint: &Block,
+) -> Result<(), StorageError> {
+    let finality_epoch = checkpoint.header.epoch_transition_certificate
+        .as_ref()
+        .map(|certificate| certificate.from_epoch)
+        .unwrap_or(checkpoint.header.epoch);
+    let historical_set = snapshot.state.validator_set_history_entries
+        .get(&finality_epoch)
+        .ok_or_else(|| StorageError::InvalidSnapshot(
+            format!("snapshot has no validator history for finality epoch {finality_epoch}"),
+        ))?;
+    if historical_set != &snapshot.finality_validator_set {
+        return Err(StorageError::InvalidSnapshot(
+            "finality validator set does not match snapshot's committed validator history".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub struct ChainStore { db: DB }
 
 impl ChainStore {
@@ -222,6 +246,9 @@ impl ChainStore {
         snapshot.state.validate_finality_state_integrity()
             .map_err(|e| StorageError::InvalidSnapshot(format!("persisted finality state integrity failure: {e:?}")))?;
 
+        snapshot.state.validate_persisted_bridge_state_integrity()
+            .map_err(|e| StorageError::InvalidSnapshot(format!("persisted bridge state integrity failure: {e:?}")))?;
+
         if snapshot.height == 0 {
             if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
                 return Err(StorageError::InvalidSnapshot("genesis snapshot hash linkage mismatch".into()));
@@ -256,6 +283,8 @@ impl ChainStore {
                 checkpoint,
                 cert,
             ).map_err(StorageError::InvalidSnapshot)?;
+
+            validate_snapshot_finality_set_binding(snapshot, checkpoint)?;
 
             if let Some(transition) = &snapshot.epoch_transition_certificate {
                 if freedom_consensus::validator_set_hash(&snapshot.finality_validator_set) != transition.previous_set_hash {
@@ -1011,6 +1040,67 @@ mod tests {
 
 
     #[test]
+    fn snapshot_finality_set_must_match_committed_history() {
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![],
+        });
+        let checkpoint = Block {
+            header: freedom_types::BlockHeader {
+                height: 1, round: 0, previous_hash: [0; 32], state_root: [0; 32], tx_root: [0; 32],
+                receipts_root: [0; 32], timestamp: 1, epoch: 0, proposer: [0; 32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let mut snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID), height: 1, block_hash: [0; 32], state_root: [0; 32],
+            state: state.clone(), certificate: None, finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+        assert!(validate_snapshot_finality_set_binding(&snapshot, &checkpoint).is_ok());
+
+        snapshot.finality_validator_set.insert([7; 32], freedom_types::ValidatorSetEntry {
+            validator_id: [7; 32], owner: [8; 32], consensus_key: [9; 32], stake: 10,
+        });
+        assert!(matches!(
+            validate_snapshot_finality_set_binding(&snapshot, &checkpoint),
+            Err(StorageError::InvalidSnapshot(_)),
+        ));
+    }
+
+    #[test]
+    fn transition_checkpoint_uses_previous_epoch_finality_set() {
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![],
+        });
+        let previous = std::collections::BTreeMap::from([([1; 32], freedom_types::ValidatorSetEntry {
+            validator_id: [1; 32], owner: [2; 32], consensus_key: [3; 32], stake: 100,
+        })]);
+        let next = std::collections::BTreeMap::from([([4; 32], freedom_types::ValidatorSetEntry {
+            validator_id: [4; 32], owner: [5; 32], consensus_key: [6; 32], stake: 200,
+        })]);
+        state.epoch = 1;
+        state.validator_set_history_entries.insert(0, previous.clone());
+        state.validator_set_history_entries.insert(1, next);
+        let transition = freedom_types::ValidatorSetCertificate {
+            from_epoch: 0, to_epoch: 1, previous_set_hash: [0; 32], new_set_hash: [0; 32], votes: vec![],
+        };
+        let checkpoint = Block {
+            header: freedom_types::BlockHeader {
+                height: 10, round: 0, previous_hash: [0; 32], state_root: [0; 32], tx_root: [0; 32],
+                receipts_root: [0; 32], timestamp: 10, epoch: 1, proposer: [0; 32],
+                epoch_transition_certificate: Some(transition),
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID), height: 10, block_hash: [0; 32], state_root: [0; 32],
+            state, certificate: None, finality_validator_set: previous,
+            epoch_transition_certificate: None,
+        };
+        assert!(validate_snapshot_finality_set_binding(&snapshot, &checkpoint).is_ok());
+    }
+
+    #[test]
     fn corrupted_replay_block_fails_without_mutating_canonical_tip_metadata() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
@@ -1131,6 +1221,30 @@ mod tests {
         assert_eq!(store.latest_height().unwrap(), 1);
         assert_eq!(store.latest_hash().unwrap(), original_hash);
         assert!(store.get_block(2).unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_snapshot_with_orphaned_bridge_withdrawal_rate_limit_period() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let mut state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![]
+        });
+        state.bridge_withdrawal_rate_limit_period.insert([9u8; 32], 0);
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: 0,
+            block_hash: [0; 32],
+            state_root: state.state_root(),
+            state,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+        store.db.put(ChainStore::snapshot_key(0), encode_snapshot(&snapshot).unwrap()).unwrap();
+
+        let err = store.load_snapshot(0).unwrap_err();
+        assert!(matches!(err, StorageError::InvalidSnapshot(message) if message.contains("persisted bridge state integrity failure")));
     }
 
 }

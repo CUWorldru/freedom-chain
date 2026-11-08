@@ -1235,6 +1235,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let stored_height = store.latest_height()?;
     store.validate_tip_metadata()
         .map_err(|e| format!("stored tip metadata is inconsistent: {e}"))?;
+    // Validate the complete persisted parent-link chain even when the newest
+    // snapshot is exactly at the tip and no block replay would otherwise run.
+    store.validate_chain_through(stored_height)
+        .map_err(|e| format!("stored canonical block chain is inconsistent: {e}"))?;
     let snapshot_interval = std::env::var("NETWORK_321MORE_SNAPSHOT_INTERVAL").or_else(|_| std::env::var("FREEDOM_SNAPSHOT_INTERVAL")).ok()
         .and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
         .unwrap_or(DEFAULT_SNAPSHOT_INTERVAL);
@@ -2431,5 +2435,81 @@ mod m484_global_sync_response_budget_tests {
         assert!(sync_response_byte_budget_available(cap - 1, 1));
         assert!(!sync_response_byte_budget_available(cap, 1));
         assert!(!sync_response_byte_budget_available(usize::MAX, 1));
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    fn test_genesis() -> Genesis {
+        let validators: Vec<Validator> = (0u8..3).map(|i| {
+            let key = [i + 1; 32];
+            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
+            Validator {
+                validator_id: hash_bytes(&public_key),
+                owner: address_from_public_key(&public_key),
+                consensus_key: public_key,
+                stake: 0,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect();
+        Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators }
+    }
+
+    #[test]
+    fn one_node_persists_restarts_recovers_and_continues() {
+        let dir = tempfile::tempdir().unwrap();
+        let genesis = test_genesis();
+        let mut state = initialize(&genesis).unwrap();
+
+        {
+            let store = ChainStore::open(dir.path()).unwrap();
+            store.save_snapshot(&state, [0; 32]).unwrap();
+
+            // Produce and durably commit two sequential blocks before shutdown.
+            for _ in 0..2 {
+                let owner = proposer_for_height_round(&state, state.height + 1, 0).unwrap();
+                let key = test_signing_key_for_owner(owner);
+                let (_, block) = build_local_proposal(&state, owner, &key, 0).unwrap();
+                execute_block(&mut state, &block).unwrap();
+                store.put_block(&block).unwrap();
+            }
+            assert_eq!(store.latest_height().unwrap(), 2);
+            store.validate_tip_metadata().unwrap();
+            store.validate_chain_through(2).unwrap();
+        }
+
+        // Reopen the same RocksDB directory, load the last available checkpoint,
+        // replay the durable suffix, and verify the reconstructed state.
+        let store = ChainStore::open(dir.path()).unwrap();
+        let stored_height = store.latest_height().unwrap();
+        let snapshot = store.latest_snapshot_at_or_below(stored_height).unwrap()
+            .expect("genesis checkpoint must be available");
+        assert_eq!(snapshot.height, 0);
+        let mut recovered = snapshot.state;
+        let suffix = store.range(snapshot.height + 1, stored_height).unwrap();
+        replay_persisted_blocks(&mut recovered, &suffix).unwrap();
+
+        assert_eq!(recovered.height, 2);
+        assert_eq!(recovered.last_block_hash, store.latest_hash().unwrap());
+        assert_eq!(recovered.state_root(), state.state_root());
+        assert_eq!(format!("{:?}", recovered), format!("{:?}", state));
+
+        // The recovered node must be able to produce, execute and persist
+        // the next contiguous block without resetting its chain history.
+        let owner = proposer_for_height_round(&recovered, recovered.height + 1, 0).unwrap();
+        let key = test_signing_key_for_owner(owner);
+        let (_, next_block) = build_local_proposal(&recovered, owner, &key, 0).unwrap();
+        execute_block(&mut recovered, &next_block).unwrap();
+        store.put_block(&next_block).unwrap();
+
+        assert_eq!(recovered.height, 3);
+        assert_eq!(store.latest_height().unwrap(), 3);
+        assert_eq!(recovered.last_block_hash, store.latest_hash().unwrap());
+        store.validate_chain_through(3).unwrap();
     }
 }

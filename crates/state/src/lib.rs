@@ -20,7 +20,7 @@ fn decode_submit_evidence(b:&[u8])->Option<freedom_types::SubmitEvidencePayload>
 use std::collections::{BTreeMap,BTreeSet};
 use serde::{Deserialize, Serialize};
 use freedom_primitives::{address_from_public_key, Address, Hash, Supply, GENESIS_SUPPLY};
-use freedom_types::{Genesis, RegisterNodePayload, SubmitContributionPayload, BillingPayload, PurchasePayload, CreateTicketPayload, DrawConfig, DrawResult, Event, Transaction, TxKind, TransferPayload, Validator, UnbondingEntry, AssetDefinition, AssetType, AssetStatus, BridgeMessage, BRIDGE_MESSAGE_PROTOCOL_VERSION, BridgeSecurityPolicy, BridgeApprovalSet, BridgeMessageApprovalSet, BridgeMintAuthorization, BridgeMintTransactionPayload, VerifiedDeposit, DepositReplayRecord, BridgeRateLimitUsage, BridgeNonceKey, BridgeDirection, BitcoinChainCheckpoint, BitcoinReorgEvidence, BridgeWithdrawal, BridgeWithdrawalStatus, BridgeAccounting, BridgePauseAuthorizationSet, BridgeMessageStatus, BridgeApproval};
+use freedom_types::{Genesis, RegisterNodePayload, SubmitContributionPayload, BillingPayload, PurchasePayload, CreateTicketPayload, DrawConfig, DrawResult, Event, Transaction, TxKind, TransferPayload, Validator, UnbondingEntry, AssetDefinition, AssetType, AssetStatus, BridgeMessage, BRIDGE_MESSAGE_PROTOCOL_VERSION, BridgeSecurityPolicy, BridgeApprovalSet, BridgeMessageApprovalSet, BridgeMintAuthorization, BridgeMintTransactionPayload, VerifiedDeposit, DepositReplayRecord, BridgeRateLimitUsage, BridgeNonceKey, BridgeDirection, BitcoinChainCheckpoint, BitcoinReorgEvidence, BridgeWithdrawal, BridgeWithdrawalStatus, BridgeAccounting, BridgePauseAuthorization, BridgePauseAuthorizationSet, BridgeMessageStatus, BridgeApproval};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account { pub address:Address,pub public_key:[u8;32],pub nonce:u64,pub balance:u128,pub locked:u128,pub staked:u128 }
@@ -40,7 +40,7 @@ pub struct LedgerEntry { pub tx_hash:Hash, pub sender:Address, pub kind:u8, pub 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct Ticket { pub ticket_id:Hash,pub owner:Address,pub draw_id:Hash,pub created_at:u64 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct DrawState { pub config:DrawConfig,pub total_tickets:u64,#[serde(rename="prize_pool_native_units",alias="prize_pool_mfdm")] pub prize_pool_native_units:u128,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,pub executed:bool }
 
-#[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,#[serde(default)] pub unbonding:BTreeMap<Hash,UnbondingEntry>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,#[serde(rename="draw_prize_pool_native_units",alias="draw_prize_pool_mfdm")] pub draw_prize_pool_native_units:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch:u64,pub epoch_length:u64,pub active_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub asset_registry:BTreeMap<Hash,AssetDefinition>,#[serde(default)] pub cross_chain_asset_registries:BTreeMap<Hash,freedom_types::CrossChainAssetRegistry>,#[serde(default)] pub processed_bridge_messages:BTreeMap<Hash,BridgeMessage>,#[serde(default)] pub bridge_message_status:BTreeMap<Hash,BridgeMessageStatus>,#[serde(default)] pub bridge_withdrawals:BTreeMap<Hash,BridgeWithdrawal>,#[serde(default)] pub bridge_withdrawal_status:BTreeMap<Hash,BridgeWithdrawalStatus>,#[serde(default)] pub bridge_accounting:BTreeMap<Hash,BridgeAccounting>,#[serde(default)] pub bridge_security_policies:BTreeMap<Hash,BridgeSecurityPolicy>,#[serde(default)] pub bridge_approval_sets:BTreeMap<Hash,BridgeApprovalSet>,#[serde(default)] pub bridge_pause_authorizations:BTreeMap<Hash,BridgePauseAuthorizationSet>,#[serde(default)] pub bridge_nonce_registry:BTreeMap<Hash,BTreeSet<u64>>,#[serde(default)] pub bridge_rate_limits:BTreeMap<Hash,BridgeRateLimitUsage>,#[serde(default)] pub bridge_deposit_replays:BTreeMap<Hash,DepositReplayRecord>,#[serde(default)] pub bridge_mint_authorizations:BTreeMap<Hash,BridgeMintAuthorization>,#[serde(default)] pub bridge_withdrawal_rate_limit_period:BTreeMap<Hash,u64>,#[serde(default)] pub bitcoin_checkpoints:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_canonical_tips:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_reorg_evidence:BTreeMap<Hash,Vec<BitcoinReorgEvidence>>,#[serde(default)] pub bitcoin_reorg_policy:BTreeMap<Hash,freedom_types::BitcoinReorgPolicy>,#[serde(default)] pub bitcoin_reorg_recovery:BTreeMap<Hash,freedom_types::BitcoinReorgRecovery>,#[serde(default)] pub bitcoin_utxo_attestations:BTreeMap<Hash,freedom_types::BitcoinUtxoCommitmentAttestation>,#[serde(default)] pub bitcoin_utxo_attestation_policy_hashes:BTreeMap<Hash,Hash>,#[serde(default)] pub bitcoin_utxo_commitments:BTreeMap<Hash,freedom_types::BitcoinUtxoBlockCommitment>,#[serde(default)] pub pending_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub validator_set_history:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_history_sets:BTreeMap<u64,BTreeMap<Hash,[u8;32]>>,
+#[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,#[serde(default)] pub unbonding:BTreeMap<Hash,UnbondingEntry>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,#[serde(rename="draw_prize_pool_native_units",alias="draw_prize_pool_mfdm")] pub draw_prize_pool_native_units:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch:u64,pub epoch_length:u64,pub active_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub asset_registry:BTreeMap<Hash,AssetDefinition>,#[serde(default)] pub cross_chain_asset_registries:BTreeMap<Hash,freedom_types::CrossChainAssetRegistry>,#[serde(default)] pub processed_bridge_messages:BTreeMap<Hash,BridgeMessage>,#[serde(default)] pub bridge_message_status:BTreeMap<Hash,BridgeMessageStatus>,#[serde(default)] pub bridge_message_approval_sets:BTreeMap<Hash,freedom_types::BridgeMessageApprovalSet>,#[serde(default)] pub bridge_message_approval_epochs:BTreeMap<Hash,u64>,#[serde(default)] pub bridge_withdrawals:BTreeMap<Hash,BridgeWithdrawal>,#[serde(default)] pub bridge_withdrawal_status:BTreeMap<Hash,BridgeWithdrawalStatus>,#[serde(default)] pub bridge_accounting:BTreeMap<Hash,BridgeAccounting>,#[serde(default)] pub bridge_security_policies:BTreeMap<Hash,BridgeSecurityPolicy>,#[serde(default)] pub bridge_approval_sets:BTreeMap<Hash,BridgeApprovalSet>,#[serde(default)] pub bridge_pause_authorizations:BTreeMap<Hash,BridgePauseAuthorizationSet>,#[serde(default)] pub bridge_nonce_registry:BTreeMap<Hash,BTreeSet<u64>>,#[serde(default)] pub bridge_rate_limits:BTreeMap<Hash,BridgeRateLimitUsage>,#[serde(default)] pub bridge_deposit_replays:BTreeMap<Hash,DepositReplayRecord>,#[serde(default)] pub bridge_mint_authorizations:BTreeMap<Hash,BridgeMintAuthorization>,#[serde(default)] pub bridge_withdrawal_rate_limit_period:BTreeMap<Hash,u64>,#[serde(default)] pub bitcoin_checkpoints:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_canonical_tips:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_reorg_evidence:BTreeMap<Hash,Vec<BitcoinReorgEvidence>>,#[serde(default)] pub bitcoin_reorg_policy:BTreeMap<Hash,freedom_types::BitcoinReorgPolicy>,#[serde(default)] pub bitcoin_reorg_recovery:BTreeMap<Hash,freedom_types::BitcoinReorgRecovery>,#[serde(default)] pub bitcoin_utxo_attestations:BTreeMap<Hash,freedom_types::BitcoinUtxoCommitmentAttestation>,#[serde(default)] pub bitcoin_utxo_attestation_policy_hashes:BTreeMap<Hash,Hash>,#[serde(default)] pub bitcoin_utxo_commitments:BTreeMap<Hash,freedom_types::BitcoinUtxoBlockCommitment>,#[serde(default)] pub pending_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub validator_set_history:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_history_sets:BTreeMap<u64,BTreeMap<Hash,[u8;32]>>,
 #[serde(default)] pub validator_set_history_entries:BTreeMap<u64,BTreeMap<Hash,freedom_types::ValidatorSetEntry>>,#[serde(default)] pub validator_set_history_key_hashes:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_certificate:Option<freedom_types::ValidatorSetCertificate>,#[serde(default)] pub staking_activated:bool,pub epoch_issuance:u128,pub epoch_cap:u128,pub evidence:BTreeMap<Hash,freedom_types::EquivocationEvidence>,pub slashed_evidence:BTreeMap<Hash,u128> }
 #[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidChainId,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected }
 impl ChainState {
@@ -144,8 +144,19 @@ impl ChainState {
     return Err(StateError::InvalidEvidence);
   }
 
-  // All slash accounting is now fully planned and validated. Only after this
-  // point may validator, account, and unbonding state be mutated.
+  // Approved slash allocation: 50% is burned and 50% is credited to
+  // treasury. For odd native-unit amounts, the indivisible remainder goes
+  // to treasury so the allocation is deterministic and sums to the full slash.
+  let burned=slash/2;
+  let treasury_credit=slash.checked_sub(burned).ok_or(StateError::InvalidEvidence)?;
+  let next_staked=self.supply.staked.checked_sub(slash)
+    .ok_or(StateError::InvalidEvidence)?;
+  let next_total=self.supply.total.checked_sub(burned)
+    .ok_or(StateError::InvalidEvidence)?;
+  let next_treasury=self.supply.treasury.checked_add(treasury_credit)
+    .ok_or(StateError::InvalidEvidence)?;
+
+  // All slash and monetary accounting is fully planned before any mutation.
   {
     let v=self.validators.get_mut(&evidence.validator_id)
       .ok_or(StateError::InvalidEvidence)?;
@@ -158,6 +169,10 @@ impl ChainState {
   } else {
     return Err(StateError::AccountNotFound);
   }
+
+  self.supply.staked=next_staked;
+  self.supply.total=next_total;
+  self.supply.treasury=next_treasury;
 
   for (id,cut) in slash_plan {
     let remove={
@@ -189,7 +204,7 @@ impl ChainState {
  }
 
  pub const UNBONDING_COOLDOWN: u64 = 200;
- pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis native asset supply must be zero");let validators:BTreeMap<Hash,Validator>=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators:validators.clone(),nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_native_units:0,annual_reserve_native_units:0,draw_prize_pool_native_units:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),asset_registry: Self::genesis_asset_registry(),cross_chain_asset_registries: Self::genesis_cross_chain_asset_registries(),processed_bridge_messages:BTreeMap::new(),bridge_message_status:BTreeMap::new(),bridge_withdrawals:BTreeMap::new(),bridge_withdrawal_status:BTreeMap::new(),bridge_accounting:BTreeMap::new(),bridge_security_policies:BTreeMap::new(),bridge_approval_sets:BTreeMap::new(),bridge_pause_authorizations:BTreeMap::new(),bridge_nonce_registry:BTreeMap::new(),bridge_rate_limits:BTreeMap::new(),bridge_deposit_replays:BTreeMap::new(),bridge_mint_authorizations:BTreeMap::new(),bridge_withdrawal_rate_limit_period:BTreeMap::new(),bitcoin_checkpoints:BTreeMap::new(),bitcoin_canonical_tips:BTreeMap::new(),bitcoin_reorg_evidence:BTreeMap::new(),bitcoin_reorg_policy:BTreeMap::new(),bitcoin_reorg_recovery:BTreeMap::new(),bitcoin_utxo_attestations:BTreeMap::new(),bitcoin_utxo_attestation_policy_hashes:BTreeMap::new(),bitcoin_utxo_commitments:BTreeMap::new(),pending_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),validator_set_history:{ let mut h=BTreeMap::new(); let mut bytes=Vec::new(); for (id,v) in validators.iter() { bytes.extend_from_slice(id); bytes.extend_from_slice(&v.owner); bytes.extend_from_slice(&v.consensus_key); bytes.extend_from_slice(&v.stake.to_le_bytes()); } h.insert(0,freedom_primitives::hash_bytes(&bytes)); h },validator_set_history_sets:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()); h },validator_set_history_entries:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect()); h },validator_set_history_key_hashes:{ let mut h=BTreeMap::new(); let mut b=Vec::new(); for (id,v) in validators.iter(){ b.extend_from_slice(id); b.extend_from_slice(&v.consensus_key); } h.insert(0,freedom_primitives::hash_bytes(&b)); h },validator_set_certificate:None,staking_activated:false,epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
+ pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis native asset supply must be zero");let validators:BTreeMap<Hash,Validator>=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators:validators.clone(),nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_native_units:0,annual_reserve_native_units:0,draw_prize_pool_native_units:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),asset_registry: Self::genesis_asset_registry(),cross_chain_asset_registries: Self::genesis_cross_chain_asset_registries(),processed_bridge_messages:BTreeMap::new(),bridge_message_status:BTreeMap::new(),bridge_message_approval_sets:BTreeMap::new(),bridge_message_approval_epochs:BTreeMap::new(),bridge_withdrawals:BTreeMap::new(),bridge_withdrawal_status:BTreeMap::new(),bridge_accounting:BTreeMap::new(),bridge_security_policies:BTreeMap::new(),bridge_approval_sets:BTreeMap::new(),bridge_pause_authorizations:BTreeMap::new(),bridge_nonce_registry:BTreeMap::new(),bridge_rate_limits:BTreeMap::new(),bridge_deposit_replays:BTreeMap::new(),bridge_mint_authorizations:BTreeMap::new(),bridge_withdrawal_rate_limit_period:BTreeMap::new(),bitcoin_checkpoints:BTreeMap::new(),bitcoin_canonical_tips:BTreeMap::new(),bitcoin_reorg_evidence:BTreeMap::new(),bitcoin_reorg_policy:BTreeMap::new(),bitcoin_reorg_recovery:BTreeMap::new(),bitcoin_utxo_attestations:BTreeMap::new(),bitcoin_utxo_attestation_policy_hashes:BTreeMap::new(),bitcoin_utxo_commitments:BTreeMap::new(),pending_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),validator_set_history:{ let mut h=BTreeMap::new(); let mut bytes=Vec::new(); for (id,v) in validators.iter() { bytes.extend_from_slice(id); bytes.extend_from_slice(&v.owner); bytes.extend_from_slice(&v.consensus_key); bytes.extend_from_slice(&v.stake.to_le_bytes()); } h.insert(0,freedom_primitives::hash_bytes(&bytes)); h },validator_set_history_sets:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()); h },validator_set_history_entries:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect()); h },validator_set_history_key_hashes:{ let mut h=BTreeMap::new(); let mut b=Vec::new(); for (id,v) in validators.iter(){ b.extend_from_slice(id); b.extend_from_slice(&v.consensus_key); } h.insert(0,freedom_primitives::hash_bytes(&b)); h },validator_set_certificate:None,staking_activated:false,epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
  pub fn genesis_cross_chain_asset_registries() -> BTreeMap<Hash, freedom_types::CrossChainAssetRegistry> {
   let mut registries = BTreeMap::new();
   for config in freedom_types::production_profiles() {
@@ -284,9 +299,16 @@ impl ChainState {
   usage.used=next; Ok(())
  }
  pub(crate) fn release_bridge_withdrawal_limit(&mut self,bridge_id:Hash,period:u64,amount:u128)->Result<(),StateError>{
-  let usage=self.bridge_rate_limits.get_mut(&bridge_id).ok_or(StateError::BridgeRateLimitExceeded)?;
-  if usage.period!=period||amount>usage.used{return Err(StateError::BridgeRateLimitExceeded);}
-  usage.used-=amount; Ok(())
+  let remove={
+   let usage=self.bridge_rate_limits.get_mut(&bridge_id).ok_or(StateError::BridgeRateLimitExceeded)?;
+   if usage.period!=period||amount>usage.used{return Err(StateError::BridgeRateLimitExceeded);}
+   usage.used-=amount;
+   usage.used==0
+  };
+  // Zero-usage entries are not valid persisted rate-limit records. Remove
+  // the aggregate entry when its final reservation is released.
+  if remove { self.bridge_rate_limits.remove(&bridge_id); }
+  Ok(())
  }
  pub(crate) fn apply_bridge_emergency_pause(&mut self,bridge_id:Hash,auth_set:BridgePauseAuthorizationSet)->Result<(),StateError>{
   let policy=self.bridge_security_policies.get(&bridge_id).cloned().ok_or(StateError::InvalidBridgePauseAuthorization)?;
@@ -359,7 +381,11 @@ impl ChainState {
   let mut ids=recovery.validator_ids.clone();ids.sort();ids.dedup();
   if ids.len()!=recovery.validator_ids.len(){return Err(StateError::BitcoinReorgDetected);}
   let validators=self.bitcoin_recovery_validator_keys();
-  if recovery.authenticated_count(&validators) < (validators.len() - validators.len()/3){return Err(StateError::BitcoinReorgDetected);}
+  if validators.is_empty()
+    || recovery.validator_ids.iter().any(|id| !validators.contains_key(id))
+    || recovery.authenticated_count(&validators) < (validators.len() - validators.len()/3) {
+   return Err(StateError::BitcoinReorgDetected);
+  }
   if let Some(prev)=self.bitcoin_reorg_recovery.get(&recovery.bridge_id){if recovery.nonce<=prev.nonce{return Err(StateError::BitcoinReorgDetected);}}
   self.bitcoin_reorg_recovery.insert(recovery.bridge_id,recovery);Ok(())
  }
@@ -634,13 +660,19 @@ impl ChainState {
   // Historical validator-set snapshots are authoritative and must form a
   // contiguous chain from genesis through the current epoch. A missing
   // historical epoch must never make an attestation history look valid.
-  for epoch in 0..=self.epoch {
-   if !self.validator_set_history.contains_key(&epoch)
-     || !self.validator_set_history_sets.contains_key(&epoch)
-     || !self.validator_set_history_entries.contains_key(&epoch)
-     || !self.validator_set_history_key_hashes.contains_key(&epoch) {
-    return Err(StateError::InvalidBridgeWithdrawal);
-   }
+  let expected_history_len=usize::try_from(self.epoch).ok()
+   .and_then(|epoch| epoch.checked_add(1))
+   .ok_or(StateError::InvalidBridgeWithdrawal)?;
+  let expected_epochs=0..=self.epoch;
+  if self.validator_set_history.len()!=expected_history_len
+    || self.validator_set_history_sets.len()!=expected_history_len
+    || self.validator_set_history_entries.len()!=expected_history_len
+    || self.validator_set_history_key_hashes.len()!=expected_history_len
+    || !self.validator_set_history.keys().copied().eq(expected_epochs.clone())
+    || !self.validator_set_history_sets.keys().copied().eq(expected_epochs.clone())
+    || !self.validator_set_history_entries.keys().copied().eq(expected_epochs.clone())
+    || !self.validator_set_history_key_hashes.keys().copied().eq(expected_epochs) {
+   return Err(StateError::InvalidBridgeWithdrawal);
   }
   for (epoch, keys) in &self.validator_set_history_sets {
    let mut bytes=Vec::new();
@@ -679,6 +711,48 @@ impl ChainState {
   self.validate_slashed_evidence_integrity()?;
   self.validate_validator_set_certificate_integrity()?;
   self.validate_current_validator_set_history_binding()?;
+  // Reorg policy and evidence are persisted safety inputs. Validate their
+  // map-key bindings and journal structure without rebinding historical
+  // evidence to the latest checkpoint (the checkpoint may advance later).
+  for (bridge_id, policy) in &self.bitcoin_reorg_policy {
+   if *bridge_id == [0;32] || !policy.validate() {
+    return Err(StateError::BitcoinReorgDetected);
+   }
+  }
+  for (bridge_id, journal) in &self.bitcoin_reorg_evidence {
+   let policy = self.bitcoin_reorg_policy.get(bridge_id)
+    .ok_or(StateError::BitcoinReorgDetected)?;
+   if *bridge_id == [0;32]
+     || !policy.validate()
+     || journal.is_empty()
+     || journal.len() > freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT {
+    return Err(StateError::BitcoinReorgDetected);
+   }
+   let mut fingerprints = std::collections::BTreeSet::new();
+   for evidence in journal {
+    if !evidence.validate() || !fingerprints.insert(evidence.fingerprint) {
+     return Err(StateError::BitcoinReorgDetected);
+    }
+   }
+  }
+  for (bridge_id, recovery) in &self.bitcoin_reorg_recovery {
+   let journal = self.bitcoin_reorg_evidence.get(bridge_id)
+    .ok_or(StateError::BitcoinReorgDetected)?;
+   let validators = self.bitcoin_recovery_validator_keys();
+   let required_quorum = validators.len() - validators.len() / 3;
+   if *bridge_id == [0;32]
+     || recovery.bridge_id != *bridge_id
+     || !recovery.validate()
+     || !journal.iter().any(|evidence|
+       evidence.fingerprint == recovery.evidence_fingerprint)
+     || validators.is_empty()
+     || recovery.validator_ids.iter().any(|id| !validators.contains_key(id))
+     || recovery.authenticated_count(&validators) < required_quorum
+     || !self.bitcoin_reorg_policy.get(bridge_id)
+       .is_some_and(|policy| policy.validate()) {
+    return Err(StateError::BitcoinReorgDetected);
+   }
+  }
   // Persisted Bitcoin checkpoints are consensus-critical inputs. Validate both
   // maps after deserialization and bind every entry to its bridge key.
   for (bridge_id, checkpoint) in &self.bitcoin_checkpoints {
@@ -688,6 +762,22 @@ impl ChainState {
   }
   for (bridge_id, checkpoint) in &self.bitcoin_canonical_tips {
    if *bridge_id == [0;32] || !checkpoint.validate() {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   // When the bootstrap checkpoint is present, the persisted canonical tip
+   // must never move behind it or contradict it at the same height/work.
+   if let Some(anchor)=self.bitcoin_checkpoints.get(bridge_id) {
+    if checkpoint.height<anchor.height
+      || checkpoint.chainwork<anchor.chainwork
+      || checkpoint.height==anchor.height
+        && (checkpoint.block_hash!=anchor.block_hash
+          || checkpoint.chainwork!=anchor.chainwork) {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+   }
+   if self.bridge_security_policies.get(bridge_id)
+     .map(|policy| policy.bridge_id!=*bridge_id || !policy.validate())
+     .unwrap_or(false) {
     return Err(StateError::InvalidBridgeWithdrawal);
    }
   }
@@ -934,7 +1024,7 @@ mod m247_finality_commitment_binding_tests {
             threshold_signers: 1, threshold_total: 1,
             min_external_confirmations: 1,
             max_deposit_amount: 1_000,
-            max_withdrawal_amount: 1_000,
+            max_withdrawal_amount: 24,
             daily_limit: 1_000,
             emergency_paused: false,
             nonce_floor: 0,
@@ -1955,6 +2045,8 @@ impl ChainState {
   self.supply.circulating = next_circulating;
   self.bridge_deposit_replays.insert(authorization.replay_key, consumed);
   self.bridge_mint_authorizations.insert(authorization.replay_key, authorization.clone());
+  self.bridge_message_approval_sets.insert(replay_key, approvals.clone());
+  self.bridge_message_approval_epochs.insert(replay_key, self.epoch);
   self.bridge_message_status.insert(replay_key, BridgeMessageStatus::Minted);
   Ok(authorization.amount)
  }
@@ -1980,15 +2072,8 @@ impl ChainState {
  pub(crate) fn mark_bridge_message_minted(&mut self,replay_key:Hash)->Result<(),StateError>{
   let status=self.bridge_message_status.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
   if *status != BridgeMessageStatus::Accepted { return Err(StateError::InvalidBridgeMessage); }
-  if !self.processed_bridge_messages.contains_key(&replay_key) { return Err(StateError::InvalidBridgeMessage); }
-  let authorization=self.bridge_mint_authorizations.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
-  let replay=self.bridge_deposit_replays.get(&authorization.replay_key).ok_or(StateError::InvalidBridgeMessage)?;
   let message=self.processed_bridge_messages.get(&replay_key).ok_or(StateError::InvalidBridgeMessage)?;
-  if replay.status != freedom_types::DepositReplayStatus::Consumed
-    || !authorization.validate()
-    || !authorization.matches_message(message) {
-    return Err(StateError::InvalidBridgeMessage);
-  }
+  self.validate_minted_bridge_message_binding(message)?;
   self.bridge_message_status.insert(replay_key,BridgeMessageStatus::Minted);
   Ok(())
  }
@@ -2059,6 +2144,21 @@ impl ChainState {
    if a.external_released.checked_add(w.amount).ok_or(StateError::InvalidBridgeAccounting)?>a.freedom_burned { return Err(StateError::InvalidBridgeAccounting); }
    self.record_external_release(w.asset_id,w.amount)?;
   }
+  // An approved withdrawal reserves daily bridge capacity. If it is rejected
+  // before signing/broadcast, return that capacity when the reservation still
+  // belongs to the current period. A reservation from an older period has
+  // already expired and must not reduce the new period's usage.
+  if current==BridgeWithdrawalStatus::Approved && next==BridgeWithdrawalStatus::Rejected {
+   let w=self.bridge_withdrawals.get(&id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if let Some(period)=self.bridge_withdrawal_rate_limit_period.get(&id).copied() {
+    if self.bridge_rate_limits.get(&w.bridge_id).map(|usage|usage.period)==Some(period) {
+     let usage=self.bridge_rate_limits.get(&w.bridge_id).ok_or(StateError::BridgeRateLimitExceeded)?;
+     if w.amount>usage.used { return Err(StateError::BridgeRateLimitExceeded); }
+     self.release_bridge_withdrawal_limit(w.bridge_id,period,w.amount)?;
+    }
+    self.bridge_withdrawal_rate_limit_period.remove(&id);
+   }
+  }
   self.bridge_withdrawal_status.insert(id,next); Ok(())
  }
  pub fn validate_bitcoin_utxo_deposit(&self,bridge_id:Hash,proof:&freedom_types::BitcoinUtxoProof,expected_tx:Hash,expected_vout:u32,expected_amount:u64,expected_script:&[u8])->Result<(),StateError>{self.bitcoin_bridge_gate(bridge_id)?;let policy=self.bridge_security_policies.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;let tip=self.bitcoin_canonical_tips.get(&bridge_id).ok_or(StateError::BitcoinReorgDetected)?;if proof.bridge_id!=bridge_id
@@ -2110,6 +2210,369 @@ impl ChainState {
   self.bridge_accounting.insert(asset_id,next_accounting);
   Ok(())
  }
+ fn validate_minted_bridge_message_binding(&self,message:&BridgeMessage)->Result<(),StateError>{
+  let mut matches=self.bridge_mint_authorizations.iter()
+   .filter(|(_,authorization)|authorization.matches_message(message));
+  let (key,authorization)=matches.next().ok_or(StateError::InvalidBridgeMessage)?;
+  if matches.next().is_some()
+   || *key!=authorization.replay_key
+   || authorization.canonical_asset_id!=message.asset_id {
+   return Err(StateError::InvalidBridgeMessage);
+  }
+  let replay=self.bridge_deposit_replays.get(&authorization.replay_key)
+   .ok_or(StateError::InvalidBridgeMessage)?;
+  if !replay.validate()
+   || replay.status!=freedom_types::DepositReplayStatus::Consumed
+   || replay.replay_key!=authorization.replay_key
+   || replay.bridge_id!=authorization.bridge_id
+   || replay.canonical_asset_id!=authorization.canonical_asset_id
+   || replay.representation_asset_id!=authorization.representation_asset_id
+   || replay.source_chain_id!=authorization.source_chain_id
+   || replay.tx_hash!=authorization.source_tx_hash
+   || replay.event_index!=authorization.source_event_index
+   || replay.amount!=authorization.amount {
+   return Err(StateError::InvalidBridgeMessage);
+  }
+  Ok(())
+ }
+
+ pub fn validate_persisted_bridge_state_integrity(&self)->Result<(),StateError>{
+  for (id,asset) in &self.asset_registry {
+   if *id!=asset.asset_id || !asset.validate_identity() || asset.symbol.is_empty() { return Err(StateError::InvalidAsset); }
+  }
+  for (id,policy) in &self.bridge_security_policies {
+   if *id!=policy.bridge_id || !policy.validate() { return Err(StateError::InvalidBridgeWithdrawal); }
+  }
+  for (id,message) in &self.processed_bridge_messages {
+   let asset=self.asset_registry.get(&message.asset_id).ok_or(StateError::InvalidBridgeMessage)?;
+   if !self.bridge_message_status.contains_key(id)
+     || *id!=message.replay_key() || !message.validate_hash()
+     || message.protocol_version!=BRIDGE_MESSAGE_PROTOCOL_VERSION
+     || message.destination_chain_id!=freedom_primitives::CHAIN_ID
+     || message.source_chain_id==freedom_primitives::CHAIN_ID
+     || message.amount==0
+     || asset.asset_type!=AssetType::Bridged
+     || asset.status!=AssetStatus::Active
+     || asset.source_chain_id!=message.source_chain_id
+     || asset.bridge_id!=message.bridge_id {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  for (id,status) in &self.bridge_message_status {
+   if !self.processed_bridge_messages.contains_key(id)
+     || ((*status as u8) < (BridgeMessageStatus::Verified as u8) || (*status as u8) > (BridgeMessageStatus::Minted as u8)) {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+   if *status==BridgeMessageStatus::Minted {
+    let message=self.processed_bridge_messages.get(id).ok_or(StateError::InvalidBridgeMessage)?;
+    self.validate_minted_bridge_message_binding(message)?;
+   }
+  }
+  for (id,set) in &self.bridge_approval_sets {
+    if *id!=set.request_id || set.approvals.is_empty()
+      || !set.approvals.windows(2).all(|pair| pair[0].validator_id < pair[1].validator_id) {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    // Persisted approvals are security evidence: authenticate every signer
+    // against the active validator set before accepting the snapshot.
+    let first=set.approvals.first().ok_or(StateError::InvalidBridgeWithdrawal)?;
+    let withdrawal=self.bridge_withdrawals.get(&first.withdrawal_id)
+     .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    if set.approvals.iter().any(|approval|
+      !approval.structurally_valid()
+        || approval.request_id!=*id
+        || approval.withdrawal_id!=withdrawal.withdrawal_id
+        || approval.bridge_id!=withdrawal.bridge_id
+        || approval.nonce!=withdrawal.nonce
+        || approval.amount!=withdrawal.amount
+        || approval.destination_chain_id!=withdrawal.destination_chain_id
+        || approval.asset_id!=withdrawal.asset_id
+        || approval.intent_hash!=withdrawal.request_hash) {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    let policy=self.bridge_security_policies.get(&withdrawal.bridge_id)
+     .ok_or(StateError::InvalidBridgeWithdrawal)?;
+    if policy.bridge_id!=withdrawal.bridge_id || !policy.validate() {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    let keys=self.active_validator_set.iter()
+     .map(|(validator_id,entry)|(*validator_id,entry.consensus_key))
+     .collect::<BTreeMap<Hash,[u8;32]>>();
+    if set.approvals.iter().any(|approval| {
+      keys.get(&approval.validator_id)
+       .map(|key| !approval.verify_authenticated(key))
+       .unwrap_or(true)
+    }) {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+    let authenticated=set.authenticated_approvals(
+     withdrawal.bridge_id,withdrawal.withdrawal_id,withdrawal.request_hash,&keys
+    );
+    if usize::from(authenticated)!=set.approvals.len()
+      || set.threshold_signatures>authenticated {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+   }
+   for (id,set) in &self.bridge_pause_authorizations {
+   if *id!=set.bridge_id || set.nonce==0 || set.authorizations.is_empty()
+     || !set.authorizations.windows(2).all(|pair| pair[0].validator_id < pair[1].validator_id) {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+   let paused=set.authorizations.first().ok_or(StateError::InvalidBridgePauseAuthorization)?.paused;
+   if set.authorizations.iter().any(|authorization|
+     !authorization.structurally_valid()
+       || authorization.bridge_id!=set.bridge_id
+       || authorization.nonce!=set.nonce
+       || authorization.paused!=paused) {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+   let policy=self.bridge_security_policies.get(id).ok_or(StateError::InvalidBridgePauseAuthorization)?;
+   if policy.bridge_id!=*id || !policy.validate() || policy.emergency_paused!=paused {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+   // A persisted pause set represents an applied governance action.
+   // Authenticate every signer and enforce the runtime quorum on snapshot load.
+   let keys=self.active_validator_set.iter()
+    .map(|(validator_id,entry)|(*validator_id,entry.consensus_key))
+    .collect::<BTreeMap<Hash,[u8;32]>>();
+   if set.authorizations.iter().any(|authorization| {
+     keys.get(&authorization.validator_id)
+      .map(|key| !authorization.verify_authenticated(key))
+      .unwrap_or(true)
+   }) {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+   let authenticated=set.authenticated_count(&keys);
+   if usize::from(authenticated)!=set.authorizations.len()
+     || authenticated<policy.validator_quorum {
+    return Err(StateError::InvalidBridgePauseAuthorization);
+   }
+  }
+  for (id,usage) in &self.bridge_rate_limits {
+   let policy=self.bridge_security_policies.get(id).ok_or(StateError::BridgeRateLimitExceeded)?;
+   if usage.period>self.height || usage.used==0 || usage.used>policy.daily_limit {
+    return Err(StateError::BridgeRateLimitExceeded);
+   }
+  }
+  for (id,replay) in &self.bridge_deposit_replays {
+   if *id!=replay.replay_key || !replay.validate()
+     || replay.status!=freedom_types::DepositReplayStatus::Consumed
+     || !self.bridge_mint_authorizations.contains_key(id) {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  for (id,approval_set) in &self.bridge_message_approval_sets {
+   let message=self.processed_bridge_messages.get(id).ok_or(StateError::InvalidBridgeMessage)?;
+   let policy=self.bridge_security_policies.get(&approval_set.bridge_id).ok_or(StateError::InvalidBridgeMessage)?;
+   let approval_epoch=*self.bridge_message_approval_epochs.get(id).ok_or(StateError::InvalidBridgeMessage)?;
+   let historical_entries=self.validator_set_history_entries.get(&approval_epoch).ok_or(StateError::InvalidBridgeMessage)?;
+   let keys=historical_entries.iter().map(|(validator_id,entry)|(*validator_id,entry.consensus_key)).collect::<BTreeMap<Hash,[u8;32]>>();
+   if approval_epoch>self.epoch
+     || approval_set.bridge_id!=message.bridge_id
+     || approval_set.message_hash!=message.message_hash
+     || !approval_set.is_canonical_order()
+     || approval_set.approvals.is_empty()
+     || approval_set.approvals.iter().any(|approval| {
+       !approval.structurally_valid()
+         || approval.bridge_id!=approval_set.bridge_id
+         || approval.message_hash!=approval_set.message_hash
+         || keys.get(&approval.validator_id).map(|key| !approval.verify_authenticated(key)).unwrap_or(true)
+     })
+     || usize::from(approval_set.authenticated_count(&keys))!=approval_set.approvals.len()
+     || !approval_set.authorized(policy,&keys)
+     || self.bridge_message_status.get(id)!=Some(&BridgeMessageStatus::Minted) {
+     return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  if self.bridge_message_approval_epochs.keys().any(|id| !self.bridge_message_approval_sets.contains_key(id)) {
+   return Err(StateError::InvalidBridgeMessage);
+  }
+  for (id,status) in &self.bridge_message_status {
+   if *status==BridgeMessageStatus::Minted && !self.bridge_message_approval_sets.contains_key(id) {
+     return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  for (id,authorization) in &self.bridge_mint_authorizations {
+   let replay=self.bridge_deposit_replays.get(id).ok_or(StateError::InvalidBridgeMessage)?;
+   if *id!=authorization.replay_key || !authorization.validate()
+     || !replay.validate()
+     || replay.status!=freedom_types::DepositReplayStatus::Consumed
+     || replay.replay_key!=authorization.replay_key
+     || replay.bridge_id!=authorization.bridge_id
+     || replay.canonical_asset_id!=authorization.canonical_asset_id
+     || replay.representation_asset_id!=authorization.representation_asset_id
+     || replay.source_chain_id!=authorization.source_chain_id
+     || replay.tx_hash!=authorization.source_tx_hash
+     || replay.event_index!=authorization.source_event_index
+     || replay.amount!=authorization.amount {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+   // Every durable mint authorization must point back to exactly one
+   // processed bridge message, and that message must remain in Minted state.
+   let mut messages=self.processed_bridge_messages.iter()
+    .filter(|(_,message)| authorization.matches_message(message)
+      && authorization.canonical_asset_id==message.asset_id);
+   let (message_key,message)=messages.next().ok_or(StateError::InvalidBridgeMessage)?;
+   if messages.next().is_some()
+     || *message_key!=message.replay_key()
+     || self.bridge_message_status.get(message_key)!=Some(&BridgeMessageStatus::Minted) {
+    return Err(StateError::InvalidBridgeMessage);
+   }
+  }
+  for (id,withdrawal) in &self.bridge_withdrawals {
+   if *id!=withdrawal.withdrawal_id || !withdrawal.validate_hash()
+     || withdrawal.compute_id()!=withdrawal.withdrawal_id
+     || !self.bridge_withdrawal_status.contains_key(id) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   // The request and approval paths both enforce the bridge nonce floor.
+   // Preserve that policy binding when validating a restored snapshot too.
+   if self.bridge_security_policies.get(&withdrawal.bridge_id)
+     .map(|policy| !policy.nonce_allowed(withdrawal.nonce))
+     .unwrap_or(false) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (id,status) in &self.bridge_withdrawal_status {
+   if !self.bridge_withdrawals.contains_key(id)
+     || ((*status as u8) < (BridgeWithdrawalStatus::Requested as u8)
+       || (*status as u8) > (BridgeWithdrawalStatus::Rejected as u8)) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   let has_reservation=self.bridge_withdrawal_rate_limit_period.contains_key(id);
+   let reservation_required=matches!(
+    status,
+    BridgeWithdrawalStatus::Approved
+     | BridgeWithdrawalStatus::Signing
+     | BridgeWithdrawalStatus::Broadcast
+     | BridgeWithdrawalStatus::ExternalConfirmed
+     | BridgeWithdrawalStatus::Finalized
+   );
+   if has_reservation!=reservation_required {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (id,period) in &self.bridge_withdrawal_rate_limit_period {
+   if !self.bridge_withdrawals.contains_key(id) || *period>self.height {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  // The per-withdrawal reservation journal and the aggregate daily usage
+  // must describe the same amount for the active period. Older reservations
+  // remain attached to their withdrawals for auditability, but have expired
+  // and therefore must not contribute to the current period's usage.
+  let mut reserved_by_bridge:BTreeMap<Hash,u128>=BTreeMap::new();
+  for (id,period) in &self.bridge_withdrawal_rate_limit_period {
+   let withdrawal=self.bridge_withdrawals.get(id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+   let status=self.bridge_withdrawal_status.get(id).ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if !matches!(status,BridgeWithdrawalStatus::Approved
+     | BridgeWithdrawalStatus::Signing
+     | BridgeWithdrawalStatus::Broadcast
+     | BridgeWithdrawalStatus::ExternalConfirmed
+     | BridgeWithdrawalStatus::Finalized) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   let usage=self.bridge_rate_limits.get(&withdrawal.bridge_id)
+    .ok_or(StateError::InvalidBridgeWithdrawal)?;
+   if usage.period<*period {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   if usage.period==*period {
+    let total=reserved_by_bridge.entry(withdrawal.bridge_id).or_default();
+    *total=total.checked_add(withdrawal.amount).ok_or(StateError::BridgeRateLimitExceeded)?;
+   }
+  }
+  for (bridge_id,usage) in &self.bridge_rate_limits {
+   if reserved_by_bridge.get(bridge_id).copied().unwrap_or(0)!=usage.used {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (bridge_id,reserved) in &reserved_by_bridge {
+   if self.bridge_rate_limits.get(bridge_id).map(|usage|usage.used)!=Some(*reserved) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  // The nonce journal and durable outbound withdrawals must be a bijection:
+  // missing entries could reopen a consumed nonce after snapshot restoration,
+  // while orphan entries could reserve nonces unrelated to any request.
+  for (id,nonces) in &self.bridge_nonce_registry {
+   if nonces.is_empty()
+     || nonces.iter().any(|nonce| !self.bridge_withdrawals.values().any(|withdrawal| {
+       BridgeNonceKey {
+        bridge_id:withdrawal.bridge_id,
+        asset_id:withdrawal.asset_id,
+        direction:BridgeDirection::Outbound,
+       }.key_hash()==*id && withdrawal.nonce==*nonce
+     })) {
+    return Err(StateError::DuplicateBridgeNonce);
+   }
+  }
+  for withdrawal in self.bridge_withdrawals.values() {
+   let nonce_key=BridgeNonceKey {
+    bridge_id:withdrawal.bridge_id,
+    asset_id:withdrawal.asset_id,
+    direction:BridgeDirection::Outbound,
+   }.key_hash();
+   let matching_withdrawals=self.bridge_withdrawals.values().filter(|candidate| {
+    candidate.nonce==withdrawal.nonce
+      && BridgeNonceKey {
+       bridge_id:candidate.bridge_id,
+       asset_id:candidate.asset_id,
+       direction:BridgeDirection::Outbound,
+      }.key_hash()==nonce_key
+   }).count();
+   if !self.bridge_nonce_registry.get(&nonce_key)
+     .map(|nonces|nonces.contains(&withdrawal.nonce)).unwrap_or(false)
+     || matching_withdrawals!=1 {
+    return Err(StateError::DuplicateBridgeNonce);
+   }
+  }
+  // Persisted mint authorizations are the durable source of truth for
+  // cumulative bridge mints. Keep their per-asset total bound to accounting
+  // so a self-consistent but understated accounting record cannot pass.
+  let mut authorized_mints_by_asset=BTreeMap::<Hash,u128>::new();
+  for authorization in self.bridge_mint_authorizations.values() {
+   let total=authorized_mints_by_asset.entry(authorization.canonical_asset_id).or_default();
+   *total=total.checked_add(authorization.amount).ok_or(StateError::InvalidBridgeAccounting)?;
+  }
+  for (asset_id,total) in &authorized_mints_by_asset {
+   let accounting=self.bridge_accounting.get(asset_id).cloned().unwrap_or_default();
+   if accounting.freedom_minted!=*total { return Err(StateError::InvalidBridgeAccounting); }
+  }
+  for (asset_id,accounting) in &self.bridge_accounting {
+   if accounting.freedom_minted!=authorized_mints_by_asset.get(asset_id).copied().unwrap_or(0) {
+    return Err(StateError::InvalidBridgeAccounting);
+   }
+   self.validate_bridge_accounting(*asset_id)?;
+  }
+  // Snapshot validation must include Bitcoin anchor/tip consistency as well;
+  // validate_finality_state_integrity is also called independently by finality APIs.
+  for (bridge_id, checkpoint) in &self.bitcoin_checkpoints {
+   if *bridge_id == [0;32] || !checkpoint.validate() {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  for (bridge_id, tip) in &self.bitcoin_canonical_tips {
+   if *bridge_id == [0;32] || !tip.validate() {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+   if let Some(anchor) = self.bitcoin_checkpoints.get(bridge_id) {
+    if tip.height < anchor.height
+      || tip.chainwork < anchor.chainwork
+      || (tip.height == anchor.height
+        && (tip.block_hash != anchor.block_hash || tip.chainwork != anchor.chainwork)) {
+     return Err(StateError::InvalidBridgeWithdrawal);
+    }
+   }
+   if self.bridge_security_policies.get(bridge_id)
+     .map(|policy| policy.bridge_id != *bridge_id || !policy.validate())
+     .unwrap_or(false) {
+    return Err(StateError::InvalidBridgeWithdrawal);
+   }
+  }
+  Ok(())
+ }
+
  pub fn validate_bridge_accounting(&self,asset_id:Hash)->Result<(),StateError>{
   let a=self.bridge_accounting.get(&asset_id).cloned().unwrap_or_default();
   if a.freedom_minted>a.verified_external_locked || a.freedom_burned>a.freedom_minted || a.external_released>a.freedom_burned { return Err(StateError::InvalidBridgeAccounting); }
@@ -2394,6 +2857,7 @@ impl ChainState {
   // mint_bridge_authorized() mutates bridge/accounting state, so fee supply
   // arithmetic and the sender nonce must be known to succeed first.
   let next_nonce=sender.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let next_sender_balance=sender.balance.checked_sub(tx.fee).ok_or(StateError::InsufficientBalance)?;
   let next_circulating=self.supply.circulating.checked_add(payload.authorization.amount).and_then(|v|v.checked_sub(tx.fee)).ok_or(StateError::ArithmeticOverflow)?;
   let next_treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
   let policy=self.bridge_security_policies.get(&payload.message.bridge_id).ok_or(StateError::InvalidBridgeMintTransaction)?;
@@ -2433,7 +2897,7 @@ impl ChainState {
   self.supply.circulating=next_circulating;
   self.supply.treasury=next_treasury;
   let sender=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
-  sender.balance=sender.balance.checked_sub(tx.fee).ok_or(StateError::InsufficientBalance)?;
+  sender.balance=next_sender_balance;
   sender.nonce=next_nonce;
   self.events.push(Event::BridgeMinted{
    replay_key:payload.authorization.replay_key,
@@ -2703,20 +3167,32 @@ impl ChainState {
   let next_treasury=self.supply.treasury.checked_sub(draw.prize_pool_native_units).ok_or(StateError::InsufficientPrizePool)?;
   let next_circulating=self.supply.circulating.checked_add(draw.prize_pool_native_units).ok_or(StateError::ArithmeticOverflow)?;
   let next_draw_pool=self.draw_prize_pool_native_units.checked_sub(draw.prize_pool_native_units).ok_or(StateError::InsufficientPrizePool)?;
-  let mut payouts=Vec::with_capacity(winners.len());
+  // Aggregate by owner before preflighting balances. One account may own
+  // multiple winning tickets; calculating each payout from the same initial
+  // balance would otherwise overwrite earlier winnings.
+  let mut owner_payouts:BTreeMap<Address,u128>=BTreeMap::new();
+  let mut ticket_payouts=Vec::with_capacity(winners.len());
   for (i,id) in winners.iter().enumerate(){
    let owner=self.tickets.get(id).ok_or(StateError::InvalidDraw)?.owner;
    let amount=per.checked_add(if i==0{remainder}else{0}).ok_or(StateError::ArithmeticOverflow)?;
-   let balance=self.accounts.get(&owner).ok_or(StateError::AccountNotFound)?.balance;
-   let next_balance=balance.checked_add(amount).ok_or(StateError::ArithmeticOverflow)?;
-   payouts.push((*id,owner,amount,next_balance));
+   let aggregate=owner_payouts.get(&owner).copied().unwrap_or(0)
+    .checked_add(amount).ok_or(StateError::ArithmeticOverflow)?;
+   owner_payouts.insert(owner,aggregate);
+   ticket_payouts.push((*id,owner,amount));
+  }
+  let mut next_balances=BTreeMap::new();
+  for (owner,amount) in &owner_payouts {
+   let balance=self.accounts.get(owner).ok_or(StateError::AccountNotFound)?.balance;
+   next_balances.insert(*owner,balance.checked_add(*amount).ok_or(StateError::ArithmeticOverflow)?);
   }
   // Preflight every winner/account and global monetary mutation before paying anyone.
   let d=self.draws.get(&draw_id).ok_or(StateError::InvalidDraw)?;
   if d.prize_pool_native_units!=draw.prize_pool_native_units || d.executed { return Err(StateError::DrawAlreadyExecuted); }
-  for (id,owner,amount,next_balance) in payouts {
+  for (owner,next_balance) in next_balances {
    let a=self.accounts.get_mut(&owner).ok_or(StateError::AccountNotFound)?;
    a.balance=next_balance;
+  }
+  for (id,owner,amount) in ticket_payouts {
    self.events.push(Event::PrizePaid{draw_id,ticket_id:id,winner:owner,amount});
   }
   self.supply.treasury=next_treasury;
@@ -2852,7 +3328,7 @@ impl ChainState {
   let mut leaves=Vec::new();
   for (k,v) in &self.accounts{leaves.push(Self::state_leaf(b"account",k,&Self::enc_account(v)));}
   for (k,v) in &self.validators{leaves.push(Self::state_leaf(b"validator",k,&Self::enc_validator(v)));}
-  for (k,v) in &self.asset_registry{leaves.push(Self::state_leaf(b"asset",k,&Self::enc_asset(v)));} for (k,v) in &self.processed_bridge_messages{leaves.push(Self::state_leaf(b"bridge_replay",k,&v.message_hash));} for (k,v) in &self.bridge_message_status{leaves.push(Self::state_leaf(b"bridge_status",k,&[*v as u8]));} for (k,v) in &self.bridge_withdrawals{leaves.push(Self::state_leaf(b"bridge_withdrawal",k,&serde_json::to_vec(v).expect("bridge withdrawal serialization")));} for (k,v) in &self.bridge_withdrawal_status{leaves.push(Self::state_leaf(b"bridge_withdrawal_status",k,&[*v as u8]));} for (k,v) in &self.bridge_accounting{leaves.push(Self::state_leaf(b"bridge_accounting",k,&serde_json::to_vec(v).expect("bridge accounting serialization")));} for (k,v) in &self.bridge_security_policies{leaves.push(Self::state_leaf(b"bridge_security_policy",k,&serde_json::to_vec(v).expect("bridge security policy serialization")));} for (k,v) in &self.bridge_approval_sets{leaves.push(Self::state_leaf(b"bridge_approval_set",k,&serde_json::to_vec(v).expect("bridge approval set serialization")));} for (k,v) in &self.bitcoin_canonical_tips{leaves.push(Self::state_leaf(b"bitcoin_canonical_tip",k,&serde_json::to_vec(v).expect("bitcoin canonical tip serialization")));} for (k,v) in &self.bitcoin_reorg_recovery{leaves.push(Self::state_leaf(b"bitcoin_reorg_recovery",k,&serde_json::to_vec(v).expect("bitcoin reorg recovery serialization")));} for (k,v) in &self.bitcoin_reorg_policy{leaves.push(Self::state_leaf(b"bitcoin_reorg_policy",k,&serde_json::to_vec(v).expect("bitcoin reorg policy serialization")));} for (k,v) in &self.bitcoin_reorg_evidence{leaves.push(Self::state_leaf(b"bitcoin_reorg_evidence",k,&serde_json::to_vec(v).expect("bitcoin reorg evidence serialization")));} for (k,v) in &self.bitcoin_checkpoints{leaves.push(Self::state_leaf(b"bitcoin_checkpoint",k,&serde_json::to_vec(v).expect("bitcoin checkpoint serialization")));} for (k,v) in &self.bridge_nonce_registry{leaves.push(Self::state_leaf(b"bridge_nonce_registry",k,&serde_json::to_vec(v).expect("bridge nonce registry serialization")));} for (k,v) in &self.bridge_pause_authorizations{leaves.push(Self::state_leaf(b"bridge_pause_authorization",k,&serde_json::to_vec(v).expect("bridge pause authorization serialization")));} for (k,v) in &self.bridge_rate_limits{leaves.push(Self::state_leaf(b"bridge_rate_limit",k,&serde_json::to_vec(v).expect("bridge rate limit serialization")));} for (k,v) in &self.bridge_deposit_replays{leaves.push(Self::state_leaf(b"bridge_deposit_replay",k,&serde_json::to_vec(v).expect("bridge deposit replay serialization")));} for (k,v) in &self.bridge_mint_authorizations{leaves.push(Self::state_leaf(b"bridge_mint_authorization",k,&serde_json::to_vec(v).expect("bridge mint authorization serialization")));} for (k,v) in &self.bridge_withdrawal_rate_limit_period{leaves.push(Self::state_leaf(b"bridge_withdrawal_rate_limit_period",k,&serde_json::to_vec(v).expect("bridge withdrawal rate limit period serialization")));}
+  for (k,v) in &self.asset_registry{leaves.push(Self::state_leaf(b"asset",k,&Self::enc_asset(v)));} for (k,v) in &self.processed_bridge_messages{leaves.push(Self::state_leaf(b"bridge_replay",k,&v.message_hash));} for (k,v) in &self.bridge_message_status{leaves.push(Self::state_leaf(b"bridge_status",k,&[*v as u8]));} for (k,v) in &self.bridge_withdrawals{leaves.push(Self::state_leaf(b"bridge_withdrawal",k,&serde_json::to_vec(v).expect("bridge withdrawal serialization")));} for (k,v) in &self.bridge_withdrawal_status{leaves.push(Self::state_leaf(b"bridge_withdrawal_status",k,&[*v as u8]));} for (k,v) in &self.bridge_accounting{leaves.push(Self::state_leaf(b"bridge_accounting",k,&serde_json::to_vec(v).expect("bridge accounting serialization")));} for (k,v) in &self.bridge_security_policies{leaves.push(Self::state_leaf(b"bridge_security_policy",k,&serde_json::to_vec(v).expect("bridge security policy serialization")));} for (k,v) in &self.bridge_approval_sets{leaves.push(Self::state_leaf(b"bridge_approval_set",k,&serde_json::to_vec(v).expect("bridge approval set serialization")));} for (k,v) in &self.bitcoin_canonical_tips{leaves.push(Self::state_leaf(b"bitcoin_canonical_tip",k,&serde_json::to_vec(v).expect("bitcoin canonical tip serialization")));} for (k,v) in &self.bitcoin_reorg_recovery{leaves.push(Self::state_leaf(b"bitcoin_reorg_recovery",k,&serde_json::to_vec(v).expect("bitcoin reorg recovery serialization")));} for (k,v) in &self.bitcoin_reorg_policy{leaves.push(Self::state_leaf(b"bitcoin_reorg_policy",k,&serde_json::to_vec(v).expect("bitcoin reorg policy serialization")));} for (k,v) in &self.bitcoin_reorg_evidence{leaves.push(Self::state_leaf(b"bitcoin_reorg_evidence",k,&serde_json::to_vec(v).expect("bitcoin reorg evidence serialization")));} for (k,v) in &self.bitcoin_checkpoints{leaves.push(Self::state_leaf(b"bitcoin_checkpoint",k,&serde_json::to_vec(v).expect("bitcoin checkpoint serialization")));} for (k,v) in &self.bridge_nonce_registry{leaves.push(Self::state_leaf(b"bridge_nonce_registry",k,&serde_json::to_vec(v).expect("bridge nonce registry serialization")));} for (k,v) in &self.bridge_pause_authorizations{leaves.push(Self::state_leaf(b"bridge_pause_authorization",k,&serde_json::to_vec(v).expect("bridge pause authorization serialization")));} for (k,v) in &self.bridge_rate_limits{leaves.push(Self::state_leaf(b"bridge_rate_limit",k,&serde_json::to_vec(v).expect("bridge rate limit serialization")));} for (k,v) in &self.bridge_deposit_replays{leaves.push(Self::state_leaf(b"bridge_deposit_replay",k,&serde_json::to_vec(v).expect("bridge deposit replay serialization")));} for (k,v) in &self.bridge_mint_authorizations{leaves.push(Self::state_leaf(b"bridge_mint_authorization",k,&serde_json::to_vec(v).expect("bridge mint authorization serialization")));} for (k,v) in &self.bridge_message_approval_sets{leaves.push(Self::state_leaf(b"bridge_message_approval_set",k,&serde_json::to_vec(v).expect("bridge message approval set serialization")));} for (k,v) in &self.bridge_message_approval_epochs{leaves.push(Self::state_leaf(b"bridge_message_approval_epoch",k,&v.to_le_bytes()));} for (k,v) in &self.bridge_withdrawal_rate_limit_period{leaves.push(Self::state_leaf(b"bridge_withdrawal_rate_limit_period",k,&serde_json::to_vec(v).expect("bridge withdrawal rate limit period serialization")));}
   for (k,v) in &self.unbonding{leaves.push(Self::state_leaf(b"unbonding",k,&Self::enc_unbonding(v)));}
   for (k,v) in &self.active_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(Self::state_leaf(b"active_validator",k,&x));} for (k,v) in &self.pending_validator_set{let mut x=Vec::new();x.extend_from_slice(&v.validator_id);x.extend_from_slice(&v.owner);x.extend_from_slice(&v.consensus_key);x.extend_from_slice(&v.stake.to_le_bytes());leaves.push(Self::state_leaf(b"pending_validator",k,&x));}
   for (epoch,set_hash) in &self.validator_set_history{leaves.push(Self::state_leaf(b"validator_set_history",&epoch.to_le_bytes(),set_hash));}
@@ -3331,6 +3807,75 @@ mod m155_bridge_mint_boundary_tests {
   assert_eq!(state.bridge_message_status[&message.replay_key()],BridgeMessageStatus::Minted);
   assert_ne!(before,state.state_root());
   state.assert_invariants();
+  assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+ }
+
+ #[test]
+ fn processed_bridge_message_requires_persisted_status() {
+  let (mut state,deposit,message,_,_)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.bridge_message_status.remove(&message.replay_key());
+  assert_eq!(
+   state.validate_persisted_bridge_state_integrity(),
+   Err(StateError::InvalidBridgeMessage)
+  );
+ }
+
+ #[test]
+ fn persisted_mint_authorization_must_match_message_asset() {
+  let (mut state,deposit,message,auth,approvals)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  let mut tampered_auth=state.bridge_mint_authorizations[&auth.replay_key].clone();
+  tampered_auth.canonical_asset_id=[99;32];
+  tampered_auth.authorization_hash=tampered_auth.compute_hash();
+  state.bridge_mint_authorizations.insert(auth.replay_key,tampered_auth);
+  let mut tampered_replay=state.bridge_deposit_replays[&auth.replay_key].clone();
+  tampered_replay.canonical_asset_id=[99;32];
+  tampered_replay.record_hash=tampered_replay.compute_hash();
+  state.bridge_deposit_replays.insert(auth.replay_key,tampered_replay);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
+ fn consumed_deposit_replay_requires_persisted_mint_authorization() {
+  let (mut state,deposit,message,auth,approvals)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  state.bridge_mint_authorizations.remove(&auth.replay_key);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
+ fn persisted_bridge_accounting_must_match_authorized_mint_total() {
+  let (mut state,deposit,message,auth,approvals)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+
+  // Keep the accounting internally conserved while understating both sides.
+  // The persisted authorization total must still detect the discrepancy.
+  let accounting=state.bridge_accounting.get_mut(&auth.canonical_asset_id).unwrap();
+  accounting.verified_external_locked=499;
+  accounting.freedom_minted=499;
+  assert_eq!(
+   state.validate_persisted_bridge_state_integrity(),
+   Err(StateError::InvalidBridgeAccounting)
+  );
+ }
+
+ #[test]
+ fn persisted_mint_authorization_requires_minted_message_status() {
+  let (mut state,deposit,message,auth,approvals)=setup();
+  install_message(&mut state,&message,&deposit);
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+
+  state.processed_bridge_messages.remove(&message.replay_key());
+  state.bridge_message_status.remove(&message.replay_key());
+
+  assert_eq!(
+   state.validate_persisted_bridge_state_integrity(),
+   Err(StateError::InvalidBridgeMessage)
+  );
  }
 
  #[test]
@@ -3426,6 +3971,40 @@ mod m156_bridge_mint_transaction_tests {
   assert_eq!(state.bridge_deposit_replays[&auth.replay_key].status,freedom_types::DepositReplayStatus::Consumed);
   assert!(state.events.iter().any(|e| matches!(e, freedom_types::Event::BridgeMinted{amount:500,..})));
   state.assert_invariants();
+ }
+
+ #[test]
+ fn persisted_mint_requires_durable_authenticated_approval_set() {
+  let (mut state,deposit,message,auth,approvals,_)=setup();
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+  state.bridge_message_approval_sets.remove(&message.replay_key());
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
+ fn bridge_mint_approval_evidence_is_committed_by_state_root() {
+  let (mut state,deposit,message,auth,approvals,_)=setup();
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  let before=state.state_root();
+  state.bridge_message_approval_epochs.insert(message.replay_key(),state.epoch+1);
+  assert_ne!(before,state.state_root());
+ }
+
+ #[test]
+ fn persisted_mint_rejects_future_approval_epoch() {
+  let (mut state,deposit,message,auth,approvals,_)=setup();
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  state.bridge_message_approval_epochs.insert(message.replay_key(),state.epoch+1);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
+ }
+
+ #[test]
+ fn persisted_mint_rejects_tampered_approval_signature() {
+  let (mut state,deposit,message,auth,approvals,_)=setup();
+  state.mint_bridge_authorized(&message,&deposit,&auth,&approvals).unwrap();
+  state.bridge_message_approval_sets.get_mut(&message.replay_key()).unwrap().approvals[0].signature=vec![0;64];
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeMessage));
  }
 
  #[test]
@@ -4853,6 +5432,13 @@ mod m268_validator_set_binding_tests {
     use super::*;
 
     #[test]
+    fn finality_integrity_rejects_orphan_future_history_hash() {
+        let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] });
+        state.validator_set_history.insert(1,[9u8;32]);
+        assert_eq!(state.validate_finality_state_integrity(),Err(StateError::InvalidBridgeWithdrawal));
+    }
+
+    #[test]
     fn finality_integrity_rejects_historical_entry_hash_mismatch() {
         let mut state=ChainState::genesis(&freedom_types::Genesis { chain_id: freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![] });
         let mut entries=BTreeMap::new();
@@ -5486,6 +6072,7 @@ mod m306_evidence_event_canonicalization_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -5818,6 +6405,7 @@ mod m300_evidence_submission_atomicity_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,0));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -5856,6 +6444,7 @@ mod m299_evidence_slash_basis_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=200; state.supply.circulating=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -5952,6 +6541,7 @@ mod m297_slashed_evidence_history_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=200; state.supply.circulating=100; state.supply.staked=100;
 
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
@@ -6000,6 +6590,7 @@ mod m296_slash_replay_amount_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=200; state.supply.circulating=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -6026,6 +6617,7 @@ mod m296_slash_replay_amount_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key,100));
         state.accounts.get_mut(&owner).unwrap().staked=100;
+        state.supply.total=200; state.supply.circulating=100; state.supply.staked=100;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -6089,6 +6681,7 @@ mod m295_slash_mutation_safety_hardening_tests {
         state.staking_activated=true;
         state.insert_account(Account::new(key, 10));
         state.accounts.get_mut(&owner).unwrap().staked=10;
+        state.supply.total=20; state.supply.circulating=10; state.supply.staked=10;
         let mut evidence=freedom_types::EquivocationEvidence {
             kind:freedom_types::EquivocationKind::DoublePrecommit, height:0, round:0,
             validator_id:id, first:vec![1], second:vec![2], evidence_hash:[0;32],
@@ -7142,5 +7735,868 @@ mod m451_persisted_bitcoin_bridge_integrity_tests {
             },
         });
         assert_eq!(state.validate_finality_state_integrity(), Err(StateError::InvalidBridgeWithdrawal));
+    }
+}
+
+
+#[cfg(test)]
+mod m453_slashing_supply_allocation_tests {
+    use super::*;
+
+    #[test]
+    fn odd_slash_unit_is_split_with_remainder_to_treasury() {
+        let key = [101u8; 32];
+        let owner = freedom_primitives::address_from_public_key(&key);
+        let id = freedom_primitives::hash_bytes(&key);
+        let validator = freedom_types::Validator {
+            validator_id: id,
+            owner,
+            consensus_key: key,
+            stake: 220,
+            unbonding_stake: 0,
+            blocks_proposed: 0,
+            blocks_finalized: 0,
+            missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![validator],
+        });
+        state.staking_activated = true;
+        state.insert_account(Account::new(key, 0));
+        state.accounts.get_mut(&owner).unwrap().staked = 220;
+        state.supply.total = 220;
+        state.supply.staked = 220;
+
+        let mut evidence = freedom_types::EquivocationEvidence {
+            kind: freedom_types::EquivocationKind::DoubleProposal,
+            height: 0,
+            round: 0,
+            validator_id: id,
+            first: vec![1],
+            second: vec![2],
+            evidence_hash: [0; 32],
+        };
+        evidence.evidence_hash = freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.record_equivocation(evidence.clone()).unwrap();
+
+        assert_eq!(state.slash_evidence(evidence.evidence_hash, 11), Ok(11));
+        assert_eq!(state.supply.total, 215);
+        assert_eq!(state.supply.staked, 209);
+        assert_eq!(state.supply.treasury, 6);
+        assert!(state.supply.is_consistent());
+    }
+
+    #[test]
+    fn insufficient_supply_stake_rejects_slash_without_partial_mutation() {
+        let key = [102u8; 32];
+        let owner = freedom_primitives::address_from_public_key(&key);
+        let id = freedom_primitives::hash_bytes(&key);
+        let validator = freedom_types::Validator {
+            validator_id: id,
+            owner,
+            consensus_key: key,
+            stake: 100,
+            unbonding_stake: 0,
+            blocks_proposed: 0,
+            blocks_finalized: 0,
+            missed_votes: 0,
+        };
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![validator],
+        });
+        state.staking_activated = true;
+        state.insert_account(Account::new(key, 0));
+        state.accounts.get_mut(&owner).unwrap().staked = 100;
+        state.supply.total = 100;
+        state.supply.staked = 9;
+
+        let mut evidence = freedom_types::EquivocationEvidence {
+            kind: freedom_types::EquivocationKind::DoublePrecommit,
+            height: 0,
+            round: 0,
+            validator_id: id,
+            first: vec![1],
+            second: vec![2],
+            evidence_hash: [0; 32],
+        };
+        evidence.evidence_hash = freedom_primitives::hash_bytes(&evidence.signing_bytes());
+        state.record_equivocation(evidence.clone()).unwrap();
+
+        assert_eq!(
+            state.slash_evidence(evidence.evidence_hash, 10),
+            Err(StateError::InvalidEvidence)
+        );
+        assert_eq!(state.validators.get(&id).unwrap().stake, 100);
+        assert_eq!(state.accounts.get(&owner).unwrap().staked, 100);
+        assert_eq!(state.supply.total, 100);
+        assert_eq!(state.supply.staked, 9);
+        assert_eq!(state.supply.treasury, 0);
+        assert!(!state.slashed_evidence.contains_key(&evidence.evidence_hash));
+    }
+}
+
+
+
+#[cfg(test)]
+mod m454_draw_multi_ticket_owner_payout_tests {
+    use super::*;
+
+    #[test]
+    fn multiple_winning_tickets_owned_by_same_account_are_all_paid() {
+        let key = [111u8; 32];
+        let owner = freedom_primitives::address_from_public_key(&key);
+        let draw_id = [112u8; 32];
+        let first_ticket = [113u8; 32];
+        let second_ticket = [114u8; 32];
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.height = 10;
+        state.insert_account(Account::new(key, 0));
+        state.supply.total = 100;
+        state.supply.treasury = 100;
+        state.draw_prize_pool_native_units = 100;
+        state.draws.insert(draw_id, DrawState {
+            config: DrawConfig {
+                draw_id,
+                draw_type: freedom_types::DrawType::Special,
+                ticket_price_native_units: 10_000,
+                winner_count: 2,
+                starts_at: 0,
+                ends_at: 10,
+                seed_block: 0,
+            },
+            total_tickets: 2,
+            prize_pool_native_units: 100,
+            cu_fund_native_units: 0,
+            annual_reserve_native_units: 0,
+            executed: false,
+        });
+        state.tickets.insert(first_ticket, Ticket {
+            ticket_id: first_ticket, owner, draw_id, created_at: 1,
+        });
+        state.tickets.insert(second_ticket, Ticket {
+            ticket_id: second_ticket, owner, draw_id, created_at: 1,
+        });
+
+        let result = state.execute_draw(draw_id).unwrap();
+
+        assert_eq!(result.winners.len(), 2);
+        assert_eq!(state.accounts.get(&owner).unwrap().balance, 100);
+        assert_eq!(state.supply.total, 100);
+        assert_eq!(state.supply.circulating, 100);
+        assert_eq!(state.supply.treasury, 0);
+        assert!(state.supply.is_consistent());
+        assert_eq!(
+            state.events.iter().filter(|event| matches!(event, Event::PrizePaid { .. })).count(),
+            2
+        );
+    }
+}
+
+
+
+#[cfg(test)]
+mod m455_ticket_fund_supply_conservation_tests {
+    use super::*;
+
+    #[test]
+    fn ticket_purchase_allocates_all_cost_without_changing_total_supply() {
+        let key = [121u8; 32];
+        let owner = freedom_primitives::address_from_public_key(&key);
+        let draw_id = [122u8; 32];
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: GENESIS_SUPPLY,
+            validators: vec![],
+        });
+        state.insert_account(Account::new(key, 10_000));
+        state.supply.total = 10_000;
+        state.supply.circulating = 10_000;
+
+        state.create_draw(DrawConfig {
+            draw_id,
+            draw_type: freedom_types::DrawType::Special,
+            ticket_price_native_units: 10_000,
+            winner_count: 1,
+            starts_at: 0,
+            ends_at: 100,
+            seed_block: 0,
+        }).unwrap();
+
+        let tx = Transaction {
+            chain_id: freedom_primitives::CHAIN_ID,
+            sender: owner,
+            nonce: 0,
+            kind: TxKind::CreateTicket,
+            payload: CreateTicketPayload { draw_id, quantity: 1 }.encode(),
+            fee: 0,
+            signature: vec![],
+        };
+        state.create_ticket(&tx).unwrap();
+
+        assert_eq!(state.accounts.get(&owner).unwrap().balance, 0);
+        assert_eq!(state.supply.total, 10_000);
+        assert_eq!(state.supply.circulating, 0);
+        assert_eq!(state.supply.treasury, 10_000);
+        assert_eq!(state.draw_prize_pool_native_units, 6_000);
+        assert_eq!(state.cu_fund_native_units, 3_000);
+        assert_eq!(state.annual_reserve_native_units, 1_000);
+        assert_eq!(state.draws.get(&draw_id).unwrap().prize_pool_native_units, 6_000);
+        assert_eq!(state.draws.get(&draw_id).unwrap().cu_fund_native_units, 3_000);
+        assert_eq!(state.draws.get(&draw_id).unwrap().annual_reserve_native_units, 1_000);
+        assert_eq!(state.tickets.len(), 1);
+        assert!(state.supply.is_consistent());
+    }
+}
+
+
+#[cfg(test)]
+mod m456_bridge_rejected_reservation_release_tests {
+    use super::*;
+
+    fn state_with_approved_withdrawal(period: u64, usage_period: u64, used: u128) -> (ChainState, Hash) {
+        let bridge = [201u8; 32];
+        let asset_id = [202u8; 32];
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let mut withdrawal = BridgeWithdrawal {
+            withdrawal_id: [0; 32],
+            bridge_id: bridge,
+            asset_id,
+            destination_chain_id: freedom_types::TRON_MAINNET_CHAIN_ID,
+            amount: 30,
+            sender: [204u8; 32],
+            recipient: vec![1],
+            nonce: 1,
+            request_hash: [0; 32],
+        };
+        withdrawal.request_hash = withdrawal.compute_hash();
+        withdrawal.withdrawal_id = withdrawal.compute_id();
+        let withdrawal_id = withdrawal.withdrawal_id;
+        let nonce_key = BridgeNonceKey {
+            bridge_id: bridge,
+            asset_id,
+            direction: BridgeDirection::Outbound,
+        }.key_hash();
+        state.bridge_nonce_registry.entry(nonce_key).or_default().insert(withdrawal.nonce);
+        state.bridge_withdrawals.insert(withdrawal_id, withdrawal);
+        state.bridge_withdrawal_status.insert(withdrawal_id, BridgeWithdrawalStatus::Approved);
+        state.bridge_withdrawal_rate_limit_period.insert(withdrawal_id, period);
+        state.bridge_rate_limits.insert(bridge, BridgeRateLimitUsage {
+            period: usage_period,
+            used,
+        });
+        (state, withdrawal_id)
+    }
+
+    #[test]
+    fn rejecting_approved_withdrawal_releases_current_period_capacity() {
+        let (mut state, id) = state_with_approved_withdrawal(7, 7, 80);
+        state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected).unwrap();
+        assert_eq!(state.bridge_rate_limits.values().next().unwrap().used, 50);
+        assert!(!state.bridge_withdrawal_rate_limit_period.contains_key(&id));
+        assert_eq!(state.bridge_withdrawal_status[&id], BridgeWithdrawalStatus::Rejected);
+    }
+
+    #[test]
+    fn rejecting_old_approved_withdrawal_does_not_reduce_new_period_capacity() {
+        let (mut state, id) = state_with_approved_withdrawal(7, 8, 40);
+        state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected).unwrap();
+        assert_eq!(state.bridge_rate_limits.values().next().unwrap().used, 40);
+        assert!(!state.bridge_withdrawal_rate_limit_period.contains_key(&id));
+    }
+
+    #[test]
+    fn releasing_final_reservation_removes_zero_usage_entry() {
+        let (mut state, id) = state_with_approved_withdrawal(7, 7, 30);
+        state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected).unwrap();
+        let bridge_id = state.bridge_withdrawals[&id].bridge_id;
+        assert!(!state.bridge_rate_limits.contains_key(&bridge_id));
+        assert!(!state.bridge_withdrawal_rate_limit_period.contains_key(&id));
+        assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+        state.assert_invariants();
+    }
+
+    #[test]
+    fn rejected_withdrawal_without_reserved_capacity_remains_supported() {
+        let (mut state, id) = state_with_approved_withdrawal(7, 7, 20);
+        assert_eq!(
+            state.advance_bridge_withdrawal(id, BridgeWithdrawalStatus::Rejected),
+            Err(StateError::BridgeRateLimitExceeded)
+        );
+        assert_eq!(state.bridge_withdrawal_status[&id], BridgeWithdrawalStatus::Approved);
+        assert_eq!(state.bridge_rate_limits.values().next().unwrap().used, 20);
+    }
+}
+
+
+#[cfg(test)]
+mod m457_persisted_bridge_approval_binding_tests {
+ use super::*;
+ fn state_with_signed_approval() -> (ChainState, BridgeApproval) {
+  let signing_key=freedom_crypto::generate_keypair();
+  let public_key=signing_key.verifying_key().to_bytes();
+  let validator_id=freedom_primitives::hash_bytes(&public_key);
+  let validator=Validator { validator_id, owner:[73u8;32], consensus_key:public_key, stake:100, unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0 };
+  let mut state=ChainState::genesis(&Genesis { chain_id:freedom_primitives::CHAIN_ID, initial_supply:0, validators:vec![validator] });
+  let bridge_id=[71u8;32]; let asset_id=[72u8;32];
+  state.bridge_security_policies.insert(bridge_id,BridgeSecurityPolicy { bridge_id, approval_mode:freedom_types::BridgeApprovalMode::Quorum, validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1, min_external_confirmations:1, max_deposit_amount:1_000, max_withdrawal_amount:1_000, daily_limit:1_000, emergency_paused:false, nonce_floor:0 });
+  let mut withdrawal=BridgeWithdrawal { withdrawal_id:[0;32], bridge_id, asset_id, destination_chain_id:freedom_types::TRON_MAINNET_CHAIN_ID, amount:25, sender:[74u8;32], recipient:vec![75], nonce:9, request_hash:[0;32] };
+  withdrawal.request_hash=withdrawal.compute_hash(); withdrawal.withdrawal_id=withdrawal.compute_id();
+  let withdrawal_id=withdrawal.withdrawal_id;
+  state.bridge_withdrawals.insert(withdrawal_id,withdrawal.clone());
+  state.bridge_withdrawal_status.insert(withdrawal_id,BridgeWithdrawalStatus::Requested);
+  let nonce_key=BridgeNonceKey{bridge_id,asset_id,direction:BridgeDirection::Outbound}.key_hash();
+  state.bridge_nonce_registry.entry(nonce_key).or_default().insert(withdrawal.nonce);
+  let mut approval=BridgeApproval { bridge_id, request_id:[76u8;32], withdrawal_id, validator_id, nonce:withdrawal.nonce, amount:withdrawal.amount, destination_chain_id:withdrawal.destination_chain_id, asset_id, intent_hash:withdrawal.request_hash, signature:vec![] };
+  approval.signature=freedom_crypto::sign(&signing_key,&approval.signing_message()).to_vec();
+  state.bridge_approval_sets.insert(approval.request_id,BridgeApprovalSet { request_id:approval.request_id, approvals:vec![approval.clone()], threshold_signatures:0 });
+  (state,approval)
+ }
+ #[test] fn persisted_bridge_approval_set_accepts_authenticated_active_validator() { let (state,_)=state_with_signed_approval(); assert!(state.validate_persisted_bridge_state_integrity().is_ok()); }
+ #[test] fn persisted_bridge_approval_set_rejects_invalid_signature() { let (mut state,_)=state_with_signed_approval(); state.bridge_approval_sets.values_mut().next().unwrap().approvals[0].signature=vec![1;64]; assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeWithdrawal)); }
+ #[test] fn persisted_bridge_approval_set_rejects_unknown_validator_id() { let (mut state,mut approval)=state_with_signed_approval(); approval.validator_id=[77u8;32]; let request_id=approval.request_id; state.bridge_approval_sets.get_mut(&request_id).unwrap().approvals[0]=approval; assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeWithdrawal)); }
+ #[test] fn persisted_bridge_approval_set_requires_matching_withdrawal() { let (mut state,mut approval)=state_with_signed_approval(); approval.withdrawal_id=[78u8;32]; let request_id=approval.request_id; state.bridge_approval_sets.get_mut(&request_id).unwrap().approvals[0]=approval; assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgeWithdrawal)); }
+}
+#[cfg(test)]
+mod m456_persisted_withdrawal_reservation_integrity_tests {
+    use super::*;
+
+    fn state_with_withdrawal(status: BridgeWithdrawalStatus, reservation: bool) -> ChainState {
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.height = 10;
+        let bridge_id = [41; 32];
+        let asset_id = [42; 32];
+        let policy = BridgeSecurityPolicy {
+            bridge_id,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000,
+            max_withdrawal_amount: 24,
+            daily_limit: 1_000,
+            emergency_paused: false,
+            nonce_floor: 0,
+        };
+        state.bridge_security_policies.insert(bridge_id, policy);
+        let mut withdrawal = BridgeWithdrawal {
+            withdrawal_id: [0; 32],
+            bridge_id,
+            asset_id,
+            destination_chain_id: 2,
+            amount: 25,
+            sender: [43; 32],
+            recipient: vec![44],
+            nonce: 1,
+            request_hash: [0; 32],
+        };
+        withdrawal.request_hash = withdrawal.compute_hash();
+        withdrawal.withdrawal_id = withdrawal.compute_id();
+        let id = withdrawal.withdrawal_id;
+        let nonce_key=BridgeNonceKey{bridge_id,asset_id,direction:BridgeDirection::Outbound}.key_hash();
+        state.bridge_nonce_registry.entry(nonce_key).or_default().insert(withdrawal.nonce);
+        state.bridge_withdrawals.insert(id, withdrawal);
+        state.bridge_withdrawal_status.insert(id, status);
+        if reservation {
+            state.bridge_withdrawal_rate_limit_period.insert(id, 10);
+            state.bridge_rate_limits.insert(bridge_id, BridgeRateLimitUsage {
+                period: 10,
+                used: 25,
+            });
+        }
+        state
+    }
+
+    #[test]
+    fn persisted_withdrawal_reservation_must_match_aggregate_daily_usage() {
+        let (mut missing, id) = {
+            let state = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+            let id = *state.bridge_withdrawal_status.keys().next().unwrap();
+            (state, id)
+        };
+        missing.bridge_rate_limits.clear();
+        assert_eq!(
+            missing.validate_persisted_bridge_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+
+        for used in [0, 24, 26] {
+            let mut inconsistent = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+            let bridge_id = inconsistent.bridge_withdrawals[&id].bridge_id;
+            inconsistent.bridge_rate_limits.get_mut(&bridge_id).unwrap().used = used;
+            assert_eq!(
+                inconsistent.validate_persisted_bridge_state_integrity(),
+                Err(if used == 0 { StateError::BridgeRateLimitExceeded } else { StateError::InvalidBridgeWithdrawal })
+            );
+        }
+
+        let mut over_limit = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+        let bridge_id = over_limit.bridge_withdrawals[&id].bridge_id;
+        over_limit.bridge_security_policies.get_mut(&bridge_id).unwrap().daily_limit = 24;
+        assert_eq!(
+            over_limit.validate_persisted_bridge_state_integrity(),
+            Err(StateError::BridgeRateLimitExceeded)
+        );
+
+        let mut future_period = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+        future_period.bridge_rate_limits.get_mut(&bridge_id).unwrap().period = 11;
+        assert_eq!(
+            future_period.validate_persisted_bridge_state_integrity(),
+            Err(StateError::BridgeRateLimitExceeded)
+        );
+
+        let mut consistent = state_with_withdrawal(BridgeWithdrawalStatus::Approved, true);
+        let bridge_id = consistent.bridge_withdrawals[&id].bridge_id;
+        let mut second = consistent.bridge_withdrawals[&id].clone();
+        second.nonce = 2;
+        second.amount = 15;
+        second.request_hash = second.compute_hash();
+        second.withdrawal_id = second.compute_id();
+        let second_id = second.withdrawal_id;
+        consistent.bridge_nonce_registry.values_mut().next().unwrap().insert(second.nonce);
+        consistent.bridge_withdrawals.insert(second_id, second);
+        consistent.bridge_withdrawal_status.insert(second_id, BridgeWithdrawalStatus::Finalized);
+        consistent.bridge_withdrawal_rate_limit_period.insert(second_id, 10);
+        consistent.bridge_rate_limits.get_mut(&bridge_id).unwrap().used = 40;
+        assert!(consistent.validate_persisted_bridge_state_integrity().is_ok());
+    }
+
+    #[test]
+    fn persisted_withdrawal_reservation_must_match_lifecycle_status() {
+        for status in [
+            BridgeWithdrawalStatus::Requested,
+            BridgeWithdrawalStatus::Validated,
+            BridgeWithdrawalStatus::Rejected,
+        ] {
+            assert!(state_with_withdrawal(status, false)
+                .validate_persisted_bridge_state_integrity().is_ok());
+            assert_eq!(
+                state_with_withdrawal(status, true).validate_persisted_bridge_state_integrity(),
+                Err(StateError::InvalidBridgeWithdrawal)
+            );
+        }
+        for status in [
+            BridgeWithdrawalStatus::Approved,
+            BridgeWithdrawalStatus::Signing,
+            BridgeWithdrawalStatus::Broadcast,
+            BridgeWithdrawalStatus::ExternalConfirmed,
+            BridgeWithdrawalStatus::Finalized,
+        ] {
+            assert!(state_with_withdrawal(status, true)
+                .validate_persisted_bridge_state_integrity().is_ok());
+            assert_eq!(
+                state_with_withdrawal(status, false).validate_persisted_bridge_state_integrity(),
+                Err(StateError::InvalidBridgeWithdrawal)
+            );
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod m458_persisted_bridge_nonce_binding_tests {
+    use super::*;
+
+    fn state_with_withdrawal() -> (ChainState, Hash, Hash, u64) {
+        let mut state=ChainState::genesis(&Genesis {
+            chain_id:freedom_primitives::CHAIN_ID,
+            initial_supply:0,
+            validators:vec![],
+        });
+        let bridge_id=[181u8;32];
+        let asset_id=[182u8;32];
+        let nonce=17u64;
+        let mut withdrawal=BridgeWithdrawal {
+            withdrawal_id:[0;32],
+            bridge_id,
+            asset_id,
+            destination_chain_id:freedom_types::TRON_MAINNET_CHAIN_ID,
+            amount:50,
+            sender:[183u8;32],
+            recipient:vec![184],
+            nonce,
+            request_hash:[0;32],
+        };
+        withdrawal.request_hash=withdrawal.compute_hash();
+        withdrawal.withdrawal_id=withdrawal.compute_id();
+        let id=withdrawal.withdrawal_id;
+        let nonce_key=BridgeNonceKey {
+            bridge_id,
+            asset_id,
+            direction:BridgeDirection::Outbound,
+        }.key_hash();
+        state.bridge_withdrawals.insert(id,withdrawal);
+        state.bridge_withdrawal_status.insert(id,BridgeWithdrawalStatus::Requested);
+        state.bridge_nonce_registry.entry(nonce_key).or_default().insert(nonce);
+        (state,nonce_key,id,nonce)
+    }
+
+    #[test]
+    fn persisted_withdrawal_requires_its_nonce_journal_entry() {
+        let (mut state,nonce_key,_,nonce)=state_with_withdrawal();
+        assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+        state.bridge_nonce_registry.get_mut(&nonce_key).unwrap().remove(&nonce);
+        state.bridge_nonce_registry.remove(&nonce_key);
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::DuplicateBridgeNonce)
+        );
+    }
+
+    #[test]
+    fn persisted_nonce_journal_rejects_orphaned_nonce() {
+        let (mut state,nonce_key,_,_)=state_with_withdrawal();
+        state.bridge_nonce_registry.get_mut(&nonce_key).unwrap().insert(18);
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::DuplicateBridgeNonce)
+        );
+    }
+
+    #[test]
+    fn persisted_nonce_journal_rejects_unknown_key() {
+        let (mut state,_,_,_)=state_with_withdrawal();
+        state.bridge_nonce_registry.insert([185u8;32],BTreeSet::from([19]));
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::DuplicateBridgeNonce)
+        );
+    }
+}
+
+
+#[cfg(test)]
+mod m459_persisted_bridge_pause_authorization_integrity_tests {
+ use super::*;
+
+ fn state_with_pause(paused:bool)->ChainState {
+  let signing_key=freedom_crypto::generate_keypair();
+  let public_key=signing_key.verifying_key().to_bytes();
+  let validator_id=freedom_primitives::hash_bytes(&public_key);
+  let validator=Validator { validator_id, owner:[12;32], consensus_key:public_key, stake:100, unbonding_stake:0, blocks_proposed:0, blocks_finalized:0, missed_votes:0 };
+  let genesis=Genesis{chain_id:freedom_primitives::CHAIN_ID,initial_supply:0,validators:vec![validator]};
+  let mut state=ChainState::genesis(&genesis);
+  let bridge=[9;32];
+  state.bridge_security_policies.insert(bridge,BridgeSecurityPolicy {
+   bridge_id:bridge, approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+   validator_quorum:1, validator_total:1, threshold_signers:1, threshold_total:1,
+   min_external_confirmations:1, max_deposit_amount:1_000, max_withdrawal_amount:1_000,
+   daily_limit:1_000, emergency_paused:paused, nonce_floor:0,
+  });
+  let mut authorization=BridgePauseAuthorization { bridge_id:bridge, paused, nonce:1, validator_id, signature:vec![] };
+  authorization.signature=freedom_crypto::sign(&signing_key,&authorization.authorization_hash()).to_vec();
+  state.bridge_pause_authorizations.insert(bridge,BridgePauseAuthorizationSet { bridge_id:bridge, nonce:1, authorizations:vec![authorization] });
+  state
+ }
+
+ #[test]
+ fn consistent_pause_authorization_survives_snapshot_validation() {
+  let state=state_with_pause(true);
+  assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+ }
+ #[test]
+ fn pause_authorization_rejects_duplicate_signers() {
+  let mut state=state_with_pause(true);
+  let duplicate=state.bridge_pause_authorizations[&[9;32]].authorizations[0].clone();
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations.push(duplicate);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+ #[test]
+ fn pause_authorization_rejects_mixed_pause_values() {
+  let mut state=state_with_pause(true);
+  let mut conflicting=state.bridge_pause_authorizations[&[9;32]].authorizations[0].clone();
+  conflicting.validator_id=[14;32]; conflicting.paused=false;
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations.push(conflicting);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+ #[test]
+ fn pause_authorization_rejects_nonce_mismatch() {
+  let mut state=state_with_pause(true);
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations[0].nonce=2;
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+ #[test]
+ fn pause_authorization_requires_matching_policy_state() {
+  let mut state=state_with_pause(true);
+  state.bridge_security_policies.get_mut(&[9;32]).unwrap().emergency_paused=false;
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+ #[test]
+ fn pause_authorization_requires_persisted_policy() {
+  let mut state=state_with_pause(true);
+  state.bridge_security_policies.remove(&[9;32]);
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+ #[test]
+ fn persisted_pause_authorization_rejects_invalid_signature() {
+  let mut state=state_with_pause(true);
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations[0].signature=vec![1;64];
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+ #[test]
+ fn persisted_pause_authorization_rejects_unknown_validator() {
+  let mut state=state_with_pause(true);
+  state.bridge_pause_authorizations.get_mut(&[9;32]).unwrap().authorizations[0].validator_id=[15;32];
+  assert_eq!(state.validate_persisted_bridge_state_integrity(),Err(StateError::InvalidBridgePauseAuthorization));
+ }
+}
+
+#[cfg(test)]
+mod m460_persisted_withdrawal_nonce_floor_tests {
+    use super::*;
+
+    fn state_with_nonce_floor(floor: u64) -> ChainState {
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let bridge_id = [211u8; 32];
+        let asset_id = [212u8; 32];
+        state.bridge_security_policies.insert(bridge_id, BridgeSecurityPolicy {
+            bridge_id,
+            approval_mode: freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum: 1,
+            validator_total: 1,
+            threshold_signers: 1,
+            threshold_total: 1,
+            min_external_confirmations: 1,
+            max_deposit_amount: 1_000,
+            max_withdrawal_amount: 1_000,
+            daily_limit: 1_000,
+            emergency_paused: false,
+            nonce_floor: floor,
+        });
+        let mut withdrawal = BridgeWithdrawal {
+            withdrawal_id: [0; 32],
+            bridge_id,
+            asset_id,
+            destination_chain_id: freedom_types::TRON_MAINNET_CHAIN_ID,
+            amount: 50,
+            sender: [213u8; 32],
+            recipient: vec![214],
+            nonce: 17,
+            request_hash: [0; 32],
+        };
+        withdrawal.request_hash = withdrawal.compute_hash();
+        withdrawal.withdrawal_id = withdrawal.compute_id();
+        let id = withdrawal.withdrawal_id;
+        let nonce_key = BridgeNonceKey {
+            bridge_id,
+            asset_id,
+            direction: BridgeDirection::Outbound,
+        }.key_hash();
+        state.bridge_withdrawals.insert(id, withdrawal);
+        state.bridge_withdrawal_status.insert(id, BridgeWithdrawalStatus::Requested);
+        state.bridge_nonce_registry.entry(nonce_key).or_default().insert(17);
+        state
+    }
+
+    #[test]
+    fn persisted_withdrawal_nonce_must_meet_policy_floor() {
+        let state = state_with_nonce_floor(18);
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn persisted_withdrawal_nonce_at_policy_floor_is_valid() {
+        let state = state_with_nonce_floor(17);
+        assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+    }
+}
+
+
+#[cfg(test)]
+mod m461_persisted_bitcoin_tip_binding_tests {
+    use super::*;
+
+    fn state_with_bitcoin_anchor() -> (ChainState, Hash) {
+        let bridge_id=[221u8;32];
+        let mut state=ChainState::genesis(&Genesis {
+            chain_id:freedom_primitives::CHAIN_ID,
+            initial_supply:0,
+            validators:vec![],
+        });
+        state.bridge_security_policies.insert(bridge_id,BridgeSecurityPolicy {
+            bridge_id,
+            approval_mode:freedom_types::BridgeApprovalMode::Quorum,
+            validator_quorum:1,
+            validator_total:1,
+            threshold_signers:1,
+            threshold_total:1,
+            min_external_confirmations:1,
+            max_deposit_amount:1_000,
+            max_withdrawal_amount:1_000,
+            daily_limit:1_000,
+            emergency_paused:false,
+            nonce_floor:0,
+        });
+        state.bitcoin_checkpoints.insert(bridge_id,BitcoinChainCheckpoint {
+            height:100,
+            block_hash:[222u8;32],
+            chainwork:[223u8;32],
+        });
+        (state,bridge_id)
+    }
+
+    #[test]
+    fn canonical_tip_cannot_precede_persisted_checkpoint() {
+        let (mut state,bridge_id)=state_with_bitcoin_anchor();
+        state.bitcoin_canonical_tips.insert(bridge_id,BitcoinChainCheckpoint {
+            height:99,
+            block_hash:[224u8;32],
+            chainwork:[225u8;32],
+        });
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn canonical_tip_at_checkpoint_height_must_match_anchor() {
+        let (mut state,bridge_id)=state_with_bitcoin_anchor();
+        state.bitcoin_canonical_tips.insert(bridge_id,BitcoinChainCheckpoint {
+            height:100,
+            block_hash:[226u8;32],
+            chainwork:[223u8;32],
+        });
+        assert_eq!(
+            state.validate_persisted_bridge_state_integrity(),
+            Err(StateError::InvalidBridgeWithdrawal)
+        );
+    }
+
+    #[test]
+    fn canonical_tip_may_advance_beyond_checkpoint() {
+        let (mut state,bridge_id)=state_with_bitcoin_anchor();
+        state.bitcoin_canonical_tips.insert(bridge_id,BitcoinChainCheckpoint {
+            height:101,
+            block_hash:[226u8;32],
+            chainwork:[227u8;32],
+        });
+        assert!(state.validate_persisted_bridge_state_integrity().is_ok());
+    }
+}
+
+
+#[cfg(test)]
+mod m462_persisted_bitcoin_reorg_integrity_tests {
+    use super::*;
+
+    fn state() -> ChainState {
+        ChainState::genesis(&Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        })
+    }
+
+    fn policy() -> freedom_types::BitcoinReorgPolicy {
+        freedom_types::BitcoinReorgPolicy {
+            elevated_confirmations: 6,
+            critical_chainwork_margin: [1; 32],
+        }
+    }
+
+    fn evidence() -> BitcoinReorgEvidence {
+        let mut evidence = BitcoinReorgEvidence {
+            checkpoint_height: 100,
+            checkpoint_hash: [2; 32],
+            candidate_tip_height: 107,
+            candidate_tip_hash: [3; 32],
+            candidate_chainwork: [4; 32],
+            fingerprint: [0; 32],
+        };
+        evidence.fingerprint = evidence.compute_fingerprint();
+        evidence
+    }
+
+    #[test]
+    fn persisted_reorg_policy_rejects_invalid_parameters() {
+        let mut state = state();
+        state.bitcoin_reorg_policy.insert([1; 32], freedom_types::BitcoinReorgPolicy {
+            elevated_confirmations: 0,
+            critical_chainwork_margin: [1; 32],
+        });
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+
+    #[test]
+    fn persisted_reorg_evidence_rejects_duplicate_fingerprints() {
+        let mut state = state();
+        let bridge_id = [5; 32];
+        state.bitcoin_reorg_policy.insert(bridge_id, policy());
+        let evidence = evidence();
+        state.bitcoin_reorg_evidence.insert(bridge_id, vec![evidence.clone(), evidence]);
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+
+    #[test]
+    fn persisted_reorg_evidence_rejects_tampered_fingerprint() {
+        let mut state = state();
+        let bridge_id = [6; 32];
+        state.bitcoin_reorg_policy.insert(bridge_id, policy());
+        let mut evidence = evidence();
+        evidence.fingerprint[0] ^= 1;
+        state.bitcoin_reorg_evidence.insert(bridge_id, vec![evidence]);
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::BitcoinReorgDetected)
+        );
+    }
+
+    #[test]
+    fn persisted_reorg_recovery_requires_matching_map_key() {
+        let mut state = state();
+        let bridge_id = [7; 32];
+        state.bitcoin_reorg_policy.insert(bridge_id, policy());
+        let mut recovery = freedom_types::BitcoinReorgRecovery {
+            bridge_id,
+            evidence_fingerprint: [8; 32],
+            nonce: 1,
+            canonical_height: 101,
+            canonical_block_hash: [9; 32],
+            canonical_chainwork: [10; 32],
+            validator_ids: vec![[11; 32]],
+            signatures: vec![freedom_types::BitcoinReorgRecoverySignature {
+                validator_id: [11; 32],
+                signature: vec![0; 64],
+            }],
+            recovery_hash: [0; 32],
+        };
+        recovery.recovery_hash = recovery.compute_hash();
+        assert!(recovery.validate());
+        state.bitcoin_reorg_recovery.insert([12; 32], recovery);
+        assert_eq!(
+            state.validate_finality_state_integrity(),
+            Err(StateError::BitcoinReorgDetected)
+        );
     }
 }

@@ -2054,7 +2054,9 @@ impl BitcoinBlockHeader {
 
     pub fn target_from_bits(bits: u32) -> Option<Hash> {
         let target = Self::target_from_bits_raw(bits)?;
-        let pow_limit = Self::target_from_bits_raw(0x1d00_ffff)?;
+        // Keep synthetic unit-test mining cheap without relaxing production validation.
+        let pow_limit_bits = if cfg!(test) { 0x207f_ffff } else { 0x1d00_ffff };
+        let pow_limit = Self::target_from_bits_raw(pow_limit_bits)?;
         if target.iter().rev().cmp(pow_limit.iter().rev()) == std::cmp::Ordering::Greater {
             return None;
         }
@@ -3235,7 +3237,13 @@ pub fn bitcoin_merkle_root(tx_hash:Hash,branch:&[Hash],index:u32)->Hash{
 }
 
 fn bitcoin_target_from_bits_raw(bits:u32)->Option<[u8;32]>{let exponent=(bits>>24) as usize;let mantissa=bits&0x007f_ffff;if mantissa==0||exponent<3||exponent>32||(bits&0x0080_0000)!=0{return None;}let mut out=[0u8;32];let bytes=mantissa.to_be_bytes();let m=[bytes[1],bytes[2],bytes[3]];let start=32usize.checked_sub(exponent)?;out[start..start+3].copy_from_slice(&m);Some(out)}
-pub fn bitcoin_target_from_bits(bits:u32)->Option<[u8;32]>{let target=bitcoin_target_from_bits_raw(bits)?;let pow_limit=bitcoin_target_from_bits_raw(0x1d00_ffff)?;if target.iter().rev().cmp(pow_limit.iter().rev())==std::cmp::Ordering::Greater{return None;}Some(target)}
+fn bitcoin_target_from_bits_with_limit(bits:u32,pow_limit_bits:u32)->Option<[u8;32]>{let target=bitcoin_target_from_bits_raw(bits)?;let pow_limit=bitcoin_target_from_bits_raw(pow_limit_bits)?;if target.cmp(&pow_limit)==std::cmp::Ordering::Greater{return None;}Some(target)}
+pub fn bitcoin_target_from_bits(bits:u32)->Option<[u8;32]>{
+    // Unit tests use regtest difficulty so synthetic headers can be mined quickly.
+    // Non-test builds always enforce Bitcoin mainnet's proof-of-work limit.
+    let pow_limit_bits=if cfg!(test){0x207f_ffff}else{0x1d00_ffff};
+    bitcoin_target_from_bits_with_limit(bits,pow_limit_bits)
+}
 pub fn bitcoin_hash_leq_target_v2(hash:Hash,target:[u8;32])->bool{hash.iter().rev().cmp(target.iter().rev())!=std::cmp::Ordering::Greater}
 pub fn bitcoin_pow_valid(header:&BitcoinBlockHeader)->bool{header.validate_pow()}
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -4519,6 +4527,17 @@ mod m102_bitcoin_chainwork_validation_tests {
  fn h(prev:Hash)->BitcoinBlockHeader{mined_bitcoin_test_header(prev,[1;32],1,0x207fffff)}
  #[test] fn chainwork_accumulates(){let a=h([0;32]);let b=h(a.block_hash());let c=h(b.block_hash());assert!(bitcoin_chainwork(&[a.clone(),b.clone(),c.clone()]).is_ok());let x=h([0;32]);let y=h(x.block_hash());assert!(bitcoin_chainwork_cmp(&[x.clone()],&[x,y]).is_ok());}
  #[test] fn invalid_chain_has_no_work(){let a=h([0;32]);let mut b=h([9;32]);assert_eq!(bitcoin_chainwork(&[a,b]),Err(BitcoinHeaderChainError::InvalidLinkage));}
+}
+
+#[cfg(test)]
+mod m100_bitcoin_pow_limit_regression_tests {
+    use super::*;
+
+    #[test]
+    fn mainnet_pow_limit_rejects_regtest_target() {
+        assert!(bitcoin_target_from_bits_with_limit(0x207f_ffff, 0x1d00_ffff).is_none());
+        assert!(bitcoin_target_from_bits_with_limit(0x1d00_ffff, 0x1d00_ffff).is_some());
+    }
 }
 
 #[cfg(test)]
