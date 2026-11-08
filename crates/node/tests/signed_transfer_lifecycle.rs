@@ -1,9 +1,9 @@
 use ed25519_dalek::SigningKey;
-use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID};
+use freedom_primitives::{address_from_public_key, hash_bytes, ChainId, Supply, CHAIN_ID};
 use freedom_runtime::{build_next_block, execute_block, initialize, Mempool};
 use freedom_state::{Account, ChainState};
 use freedom_storage::ChainStore;
-use freedom_types::{Genesis, Transaction, TxKind, TransferPayload, Validator, Supply};
+use freedom_types::{Genesis, Transaction, TxKind, TransferPayload, Validator};
 
 fn genesis() -> (Genesis, Vec<SigningKey>) {
     let keys: Vec<SigningKey> = (1u8..=3)
@@ -25,13 +25,10 @@ fn genesis() -> (Genesis, Vec<SigningKey>) {
     (Genesis { chain_id: CHAIN_ID, initial_supply: 0, validators }, keys)
 }
 
-fn proposer_key(state: &ChainState, keys: &[SigningKey]) -> ( [u8; 32], SigningKey ) {
+fn proposer(state: &ChainState, keys: &[SigningKey]) -> [u8; 32] {
     let (_, validator) = state.active_validator_set.iter().next().unwrap();
-    let key = keys.iter()
-        .find(|key| key.verifying_key().to_bytes() == validator.consensus_key)
-        .unwrap()
-        .clone();
-    (validator.owner, key)
+    assert!(keys.iter().any(|key| key.verifying_key().to_bytes() == validator.consensus_key));
+    validator.owner
 }
 
 #[test]
@@ -68,7 +65,7 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
         let mut mempool = Mempool::new();
         mempool.submit(&state, tx).unwrap();
 
-        let (owner, consensus_key) = proposer_key(&state, &validator_keys);
+        let owner = proposer(&state, &validator_keys);
         let block = build_next_block(&state, &mempool, owner, 1, state.epoch, 0, 10).unwrap();
         execute_block(&mut state, &block).unwrap();
         store.put_block(&block).unwrap();
@@ -77,7 +74,6 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
         assert_eq!(state.accounts.get(&recipient).unwrap().balance, 250);
         assert_eq!(state.accounts.get(&sender).unwrap().nonce, 1);
 
-        // Commit one more block so recovery must replay a suffix after the transfer.
         let empty_pool = Mempool::new();
         let block_two = build_next_block(&state, &empty_pool, owner, 2, state.epoch, 0, 10).unwrap();
         execute_block(&mut state, &block_two).unwrap();
@@ -89,7 +85,6 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
     let snapshot = store.latest_snapshot_at_or_below(stored_height).unwrap().unwrap();
     let mut recovered = snapshot.state;
     let suffix = store.range(snapshot.height + 1, stored_height).unwrap();
-    freedom_runtime::execute_block; // keep runtime execution linked in this integration test
     for block in &suffix {
         execute_block(&mut recovered, block).unwrap();
     }
@@ -101,7 +96,7 @@ fn signed_transfer_survives_restart_and_recovered_chain_continues() {
     assert_eq!(recovered.state_root(), state.state_root());
     assert_eq!(recovered.last_block_hash, store.latest_hash().unwrap());
 
-    let (owner, _) = proposer_key(&recovered, &validator_keys);
+    let owner = proposer(&recovered, &validator_keys);
     let next = build_next_block(&recovered, &Mempool::new(), owner, 3, recovered.epoch, 0, 10).unwrap();
     execute_block(&mut recovered, &next).unwrap();
     store.put_block(&next).unwrap();
