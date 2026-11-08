@@ -1235,6 +1235,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let stored_height = store.latest_height()?;
     store.validate_tip_metadata()
         .map_err(|e| format!("stored tip metadata is inconsistent: {e}"))?;
+    // Validate the complete persisted parent-link chain even when the newest
+    // snapshot is exactly at the tip and no block replay would otherwise run.
+    store.validate_chain_through(stored_height)
+        .map_err(|e| format!("stored canonical block chain is inconsistent: {e}"))?;
     let snapshot_interval = std::env::var("NETWORK_321MORE_SNAPSHOT_INTERVAL").or_else(|_| std::env::var("FREEDOM_SNAPSHOT_INTERVAL")).ok()
         .and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0)
         .unwrap_or(DEFAULT_SNAPSHOT_INTERVAL);
