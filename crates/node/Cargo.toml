@@ -19,3 +19,6 @@ tokio.workspace = true
 freedom-storage = { path = "../storage" }
 freedom-crypto = { path = "../crypto" }
 hex.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
