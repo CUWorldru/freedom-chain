@@ -442,3 +442,158 @@ mod tests {
     }
 
 }
+
+
+/// Transport encoding is separate from signing_message() and encode_canonical():
+/// those remain the authorization preimage plus signatures; this payload carries
+/// the operation bytes needed by nodes.
+pub const REGISTRY_PAYLOAD_DOMAIN: &[u8] = b"321MORE-REGISTRY-PAYLOAD-V1";
+const MAX_REGISTRY_PAYLOAD_BYTES: usize = 1_048_576;
+const MAX_REGISTRY_FIELD_BYTES: usize = 65_536;
+const MAX_REGISTRY_POLICY_MEMBERS: usize = 1_024;
+const MAX_REGISTRY_SIGNATURES: usize = 1_024;
+
+struct RegistryReader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+impl<'a> RegistryReader<'a> {
+    fn new(bytes: &'a [u8]) -> Result<Self, String> {
+        if bytes.len() > MAX_REGISTRY_PAYLOAD_BYTES { return Err("registry payload exceeds maximum size".into()); }
+        Ok(Self { bytes, offset: 0 })
+    }
+    fn take(&mut self, len: usize) -> Result<&'a [u8], String> {
+        let end = self.offset.checked_add(len).ok_or_else(|| "registry payload length overflow".to_string())?;
+        let value = self.bytes.get(self.offset..end).ok_or_else(|| "truncated registry payload".to_string())?;
+        self.offset = end;
+        Ok(value)
+    }
+    fn u8(&mut self) -> Result<u8, String> { Ok(self.take(1)?[0]) }
+    fn u16(&mut self) -> Result<u16, String> { Ok(u16::from_le_bytes(self.take(2)?.try_into().expect("fixed length"))) }
+    fn u32(&mut self) -> Result<u32, String> { Ok(u32::from_le_bytes(self.take(4)?.try_into().expect("fixed length"))) }
+    fn u64(&mut self) -> Result<u64, String> { Ok(u64::from_le_bytes(self.take(8)?.try_into().expect("fixed length"))) }
+    fn hash(&mut self) -> Result<Hash, String> { Ok(self.take(32)?.try_into().expect("fixed length")) }
+    fn bytes(&mut self) -> Result<Vec<u8>, String> {
+        let len = self.u32()? as usize;
+        if len > MAX_REGISTRY_FIELD_BYTES { return Err("registry field exceeds maximum size".into()); }
+        Ok(self.take(len)?.to_vec())
+    }
+    fn string(&mut self) -> Result<String, String> {
+        let value = String::from_utf8(self.bytes()?).map_err(|_| "registry string is not valid UTF-8".to_string())?;
+        if value.is_empty() { return Err("registry string must not be empty".into()); }
+        Ok(value)
+    }
+    fn finish(self) -> Result<(), String> {
+        if self.offset != self.bytes.len() { return Err("trailing bytes in registry payload".into()); }
+        Ok(())
+    }
+}
+
+impl RegistryOperation {
+    /// Decode the explicit operation wire format and reject non-canonical forms.
+    pub fn decode_canonical(bytes: &[u8]) -> Result<Self, String> {
+        let mut reader = RegistryReader::new(bytes)?;
+        if reader.take(REGISTRY_OPERATION_DOMAIN.len())? != REGISTRY_OPERATION_DOMAIN { return Err("invalid registry operation domain".into()); }
+        if reader.u8()? != 1 { return Err("unsupported registry operation codec version".into()); }
+        let operation = match reader.u8()? {
+            1 => Self::RegisterChain { chain_id: reader.u32()?, name: reader.string()?, network: reader.string()?, finality_depth: reader.u64()? },
+            2 => {
+                let chain_id = reader.u32()?;
+                let status = match reader.u8()? {
+                    1 => ChainStatus::Active, 2 => ChainStatus::Paused, 3 => ChainStatus::Retired,
+                    _ => return Err("unknown registry chain status".into()),
+                };
+                Self::UpdateChainStatus { chain_id, status }
+            }
+            3 => Self::RegisterCanonicalAsset { canonical_asset_id: reader.hash()?, symbol: reader.string()?, name: reader.string()?, decimals: reader.u8()? },
+            4 => Self::AddAssetRepresentation { canonical_asset_id: reader.hash()?, chain_id: reader.u32()?, external_asset_id: reader.bytes()?, asset_kind: reader.u8()?, decimals: reader.u8()? },
+            5 => {
+                let canonical_asset_id = reader.hash()?;
+                let status = match reader.u8()? {
+                    1 => AssetStatus::Active, 2 => AssetStatus::Paused, 3 => AssetStatus::Revoked,
+                    _ => return Err("unknown registry asset status".into()),
+                };
+                Self::UpdateAssetStatus { canonical_asset_id, status }
+            }
+            6 => Self::RevokeAssetRepresentation { canonical_asset_id: reader.hash()?, chain_id: reader.u32()?, external_asset_id: reader.bytes()? },
+            7 => {
+                let policy_id = reader.hash()?;
+                let threshold = reader.u16()?;
+                let count = reader.u16()? as usize;
+                if count > MAX_REGISTRY_POLICY_MEMBERS { return Err("registry policy member count exceeds limit".into()); }
+                let mut members = BTreeMap::new();
+                let mut previous: Option<Hash> = None;
+                for _ in 0..count {
+                    let signer_id = reader.hash()?;
+                    let public_key: [u8; 32] = reader.take(32)?.try_into().expect("fixed length");
+                    if previous.is_some_and(|value| value >= signer_id) { return Err("registry policy members must be sorted and unique".into()); }
+                    previous = Some(signer_id);
+                    members.insert(signer_id, public_key);
+                }
+                Self::UpdateRegistryAuthorizationPolicy { policy_id, threshold, members }
+            }
+            _ => return Err("unknown registry operation variant".into()),
+        };
+        reader.finish()?;
+        operation.validate()?;
+        if operation.encode_canonical()?.as_slice() != bytes { return Err("non-canonical registry operation encoding".into()); }
+        Ok(operation)
+    }
+}
+
+impl RegistryOperationEnvelope {
+    /// Complete consensus transport payload: operation + envelope metadata + signatures.
+    pub fn encode_payload(&self) -> Result<Vec<u8>, String> {
+        self.signing_message()?;
+        let operation = self.operation.encode_canonical()?;
+        let mut out = Vec::new();
+        out.extend_from_slice(REGISTRY_PAYLOAD_DOMAIN);
+        put_bytes(&mut out, &operation)?;
+        put_u16(&mut out, self.protocol_version);
+        put_u32(&mut out, self.network_id);
+        out.extend_from_slice(&self.policy_id);
+        put_u64(&mut out, self.nonce);
+        let count = u16::try_from(self.authorization.signatures.len()).map_err(|_| "too many registry signatures".to_string())?;
+        if count as usize > MAX_REGISTRY_SIGNATURES { return Err("registry signature count exceeds limit".into()); }
+        put_u16(&mut out, count);
+        let mut previous: Option<Hash> = None;
+        for item in &self.authorization.signatures {
+            if previous.is_some_and(|value| value >= item.signer_id) { return Err("registry signatures must be sorted and unique".into()); }
+            previous = Some(item.signer_id);
+            if item.signature.len() != 64 { return Err("registry signature must be exactly 64 bytes".into()); }
+            out.extend_from_slice(&item.signer_id);
+            out.extend_from_slice(&item.signature);
+        }
+        if out.len() > MAX_REGISTRY_PAYLOAD_BYTES { return Err("registry payload exceeds maximum size".into()); }
+        Ok(out)
+    }
+
+    /// Decode a complete transport payload; reject truncation, trailing bytes,
+    /// unknown discriminants, oversized fields and non-canonical ordering.
+    pub fn decode_payload(bytes: &[u8]) -> Result<Self, String> {
+        let mut reader = RegistryReader::new(bytes)?;
+        if reader.take(REGISTRY_PAYLOAD_DOMAIN.len())? != REGISTRY_PAYLOAD_DOMAIN { return Err("invalid registry payload domain".into()); }
+        let operation = RegistryOperation::decode_canonical(&reader.bytes()?)?;
+        let protocol_version = reader.u16()?;
+        let network_id = reader.u32()?;
+        let policy_id = reader.hash()?;
+        let nonce = reader.u64()?;
+        let count = reader.u16()? as usize;
+        if count > MAX_REGISTRY_SIGNATURES { return Err("registry signature count exceeds limit".into()); }
+        let mut signatures = Vec::with_capacity(count);
+        let mut previous: Option<Hash> = None;
+        for _ in 0..count {
+            let signer_id = reader.hash()?;
+            if previous.is_some_and(|value| value >= signer_id) { return Err("registry signatures must be sorted and unique".into()); }
+            previous = Some(signer_id);
+            signatures.push(RegistrySignature { signer_id, signature: reader.take(64)?.to_vec() });
+        }
+        reader.finish()?;
+        let envelope = Self {
+            protocol_version, network_id, policy_id, nonce, operation,
+            authorization: RegistryAuthorization { signatures },
+        };
+        if envelope.encode_payload()?.as_slice() != bytes { return Err("non-canonical registry payload encoding".into()); }
+        Ok(envelope)
+    }
+}
