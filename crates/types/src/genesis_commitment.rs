@@ -1,4 +1,5 @@
-use crate::{RegistryAuthorizationPolicy, Validator};
+use crate::registry_authorization::RegistryAuthorizationPolicy;
+use crate::Validator;
 use freedom_primitives::{hash_bytes, Hash, CHAIN_ID};
 use std::collections::BTreeSet;
 
