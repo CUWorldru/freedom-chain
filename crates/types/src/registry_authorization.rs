@@ -53,7 +53,7 @@ pub enum RegistryOperation {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RegistrySignature {
     pub signer_id: Hash,
-    pub signature: [u8; 64],
+    pub signature: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -170,6 +170,9 @@ impl RegistryOperationEnvelope {
             }
             previous = Some(item.signer_id);
             out.extend_from_slice(&item.signer_id);
+            if item.signature.len() != 64 {
+                return Err("registry signature must be exactly 64 bytes".into());
+            }
             out.extend_from_slice(&item.signature);
         }
         Ok(out)
@@ -201,7 +204,9 @@ impl RegistryOperationEnvelope {
             }
             let public_key = policy.members.get(&item.signer_id)
                 .ok_or_else(|| "registry signer is not an active policy member".to_string())?;
-            if !freedom_crypto::verify(public_key, &message, &item.signature) {
+            let signature: &[u8; 64] = item.signature.as_slice().try_into()
+                .map_err(|_| "registry signature must be exactly 64 bytes".to_string())?;
+            if !freedom_crypto::verify(public_key, &message, signature) {
                 return Err("invalid registry Ed25519 signature".into());
             }
         }
@@ -252,7 +257,7 @@ mod tests {
             let public_key = key.verifying_key().to_bytes();
             RegistrySignature {
                 signer_id: hash_bytes(&public_key),
-                signature: key.sign(&message).to_bytes(),
+                signature: key.sign(&message).to_bytes().to_vec(),
             }
         }).collect();
         envelope.authorization.signatures.sort_by_key(|s| s.signer_id);
