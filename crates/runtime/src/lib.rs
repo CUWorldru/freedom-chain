@@ -1528,7 +1528,7 @@ mod genesis_commitment_runtime_tests {
     use super::*;
     use ed25519_dalek::SigningKey;
     use freedom_primitives::{address_from_public_key, hash_bytes, GENESIS_SUPPLY};
-    use freedom_types::{GenesisCommitmentManifest, RegistryAuthorizationPolicy, Validator};
+    use freedom_types::{genesis_commitment::GenesisCommitmentManifest, registry_authorization::RegistryAuthorizationPolicy, Validator};
     use std::collections::BTreeMap;
 
     fn committed_genesis() -> (Genesis, GenesisCommitmentManifest) {
