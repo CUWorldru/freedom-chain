@@ -7183,3 +7183,5 @@ mod m444_bitcoin_witness_commitment_integration_tests {
 
 
 pub mod registry_authorization;
+pub mod genesis_commitment;
+pub use genesis_commitment::GenesisCommitmentManifest;
