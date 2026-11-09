@@ -61,6 +61,24 @@ pub fn commit_validator_set_certificate(
 }
 
 pub fn initialize(g:&Genesis)->Result<ChainState,String>{if g.chain_id!=CHAIN_ID{return Err("invalid chain id".into())}let s=ChainState::genesis(g);validate_genesis(&s,&ConsensusConfig::default())?;s.assert_invariants();Ok(s)}
+
+/// Secure genesis entry point. The manifest is checked against the actual
+/// Genesis passed to the runtime and against an independently pinned trust
+/// anchor before any ChainState is constructed.
+pub fn initialize_with_genesis_commitment(
+    genesis: &Genesis,
+    manifest: &freedom_types::GenesisCommitmentManifest,
+    trusted_expected: &Hash,
+) -> Result<ChainState, String> {
+    if manifest.chain_id != genesis.chain_id
+        || manifest.initial_supply != genesis.initial_supply
+        || manifest.validators != genesis.validators
+    {
+        return Err("genesis manifest does not match runtime genesis parameters".into());
+    }
+    manifest.verify_pinned(trusted_expected)?;
+    initialize(genesis)
+}
 pub fn validate_transaction_admission(s:&ChainState,tx:&Transaction)->Result<(),String>{
  if tx.chain_id!=CHAIN_ID{return Err("invalid chain id".into())}
  let a=s.accounts.get(&tx.sender).ok_or_else(||"sender account not found".to_string())?;
@@ -1501,5 +1519,76 @@ mod m321_epoch_transition_commitment_tests {
         );
         assert_eq!(state.epoch, 0);
         assert_eq!(state.height, 0);
+    }
+}
+
+
+#[cfg(test)]
+mod genesis_commitment_runtime_tests {
+    use super::*;
+    use ed25519_dalek::SigningKey;
+    use freedom_primitives::{address_from_public_key, hash_bytes, GENESIS_SUPPLY};
+    use freedom_types::{GenesisCommitmentManifest, RegistryAuthorizationPolicy, Validator};
+    use std::collections::BTreeMap;
+
+    fn committed_genesis() -> (Genesis, GenesisCommitmentManifest) {
+        let keys: Vec<_> = (1u8..=4).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
+        let members: BTreeMap<_, _> = keys.iter().map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            (hash_bytes(&public_key), public_key)
+        }).collect();
+        let validators: Vec<_> = keys.iter().take(3).map(|key| {
+            let consensus_key = key.verifying_key().to_bytes();
+            Validator {
+                validator_id: hash_bytes(&consensus_key),
+                owner: address_from_public_key(&consensus_key),
+                consensus_key,
+                stake: 0,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect();
+        let genesis = Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: GENESIS_SUPPLY,
+            validators: validators.clone(),
+        };
+        let manifest = GenesisCommitmentManifest {
+            chain_id: CHAIN_ID,
+            network_id: 1,
+            initial_supply: GENESIS_SUPPLY,
+            validators,
+            registry_policy: RegistryAuthorizationPolicy {
+                policy_id: [9; 32],
+                threshold: 4,
+                members,
+            },
+            registry_activation_height: 0,
+        };
+        (genesis, manifest)
+    }
+
+    #[test]
+    fn secure_genesis_initialization_accepts_pinned_manifest() {
+        let (genesis, manifest) = committed_genesis();
+        let anchor = manifest.commitment_hash().unwrap();
+        assert!(initialize_with_genesis_commitment(&genesis, &manifest, &anchor).is_ok());
+    }
+
+    #[test]
+    fn secure_genesis_initialization_rejects_manifest_mismatch() {
+        let (genesis, manifest) = committed_genesis();
+        let anchor = manifest.commitment_hash().unwrap();
+        let mut altered_genesis = genesis.clone();
+        altered_genesis.initial_supply = 1;
+        assert!(initialize_with_genesis_commitment(&altered_genesis, &manifest, &anchor).is_err());
+    }
+
+    #[test]
+    fn secure_genesis_initialization_rejects_untrusted_anchor() {
+        let (genesis, manifest) = committed_genesis();
+        assert!(initialize_with_genesis_commitment(&genesis, &manifest, &[0; 32]).is_err());
     }
 }
