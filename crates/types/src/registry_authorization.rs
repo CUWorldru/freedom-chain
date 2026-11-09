@@ -179,6 +179,7 @@ impl RegistryOperationEnvelope {
     }
 
     pub fn verify_authorization(&self, policy: &RegistryAuthorizationPolicy) -> Result<(), String> {
+        policy.validate()?;
         if self.policy_id != policy.policy_id {
             return Err("registry policy id mismatch".into());
         }
@@ -224,6 +225,11 @@ impl RegistryAuthorizationPolicy {
         }
         if self.members.keys().any(|id| *id == [0; 32]) {
             return Err("zero registry signer id is invalid".into());
+        }
+        for (signer_id, public_key) in &self.members {
+            if hash_bytes(public_key) != *signer_id {
+                return Err("registry signer id must equal the BLAKE3 hash of its Ed25519 public key".into());
+            }
         }
         Ok(())
     }
@@ -311,5 +317,26 @@ mod tests {
         let mut policy = policy_and_keys().0;
         policy.threshold = 3;
         assert!(policy.validate().is_err());
+    }
+
+    #[test]
+    fn policy_rejects_signer_id_not_bound_to_public_key() {
+        let mut policy = policy_and_keys().0;
+        let first = *policy.members.keys().next().unwrap();
+        let public_key = policy.members.remove(&first).unwrap();
+        policy.members.insert([0xA5; 32], public_key);
+        assert!(policy.validate().is_err());
+    }
+
+    #[test]
+    fn authorization_rejects_malformed_policy_before_signature_checks() {
+        let (mut policy, keys) = policy_and_keys();
+        let first = *policy.members.keys().next().unwrap();
+        let public_key = policy.members.remove(&first).unwrap();
+        policy.members.insert([0xA5; 32], public_key);
+        let envelope = signed_envelope(&keys, RegistryOperation::UpdateChainStatus {
+            chain_id: 100, status: ChainStatus::Paused,
+        });
+        assert!(envelope.verify_authorization(&policy).is_err());
     }
 }
