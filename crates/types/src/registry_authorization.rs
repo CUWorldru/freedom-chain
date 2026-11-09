@@ -133,6 +133,8 @@ impl RegistryOperation {
         Ok(())
     }
 
+}
+
 impl RegistryOperation {
     /// Stable, explicit binary encoding. Do not replace with serde/bincode:
     /// these bytes are part of the authorization and consensus identity.
