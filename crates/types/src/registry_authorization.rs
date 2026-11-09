@@ -93,10 +93,51 @@ fn put_string(out: &mut Vec<u8>, value: &str) -> Result<(), String> {
     put_bytes(out, value.as_bytes())
 }
 
+
+impl RegistryOperation {
+    /// Validate operation fields before they become part of a signed payload.
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            Self::RegisterChain { chain_id, name, network, finality_depth } => {
+                if *chain_id == 0 { return Err("registry chain id must be non-zero".into()); }
+                if name.trim().is_empty() || network.trim().is_empty() {
+                    return Err("registry chain name and network must not be empty".into());
+                }
+                if *finality_depth == 0 { return Err("registry finality depth must be non-zero".into()); }
+            }
+            Self::UpdateChainStatus { chain_id, .. } => {
+                if *chain_id == 0 { return Err("registry chain id must be non-zero".into()); }
+            }
+            Self::RegisterCanonicalAsset { canonical_asset_id, symbol, name, .. } => {
+                if *canonical_asset_id == [0; 32] { return Err("canonical asset id must be non-zero".into()); }
+                if symbol.trim().is_empty() || name.trim().is_empty() {
+                    return Err("canonical asset symbol and name must not be empty".into());
+                }
+            }
+            Self::AddAssetRepresentation { canonical_asset_id, chain_id, external_asset_id, .. }
+            | Self::RevokeAssetRepresentation { canonical_asset_id, chain_id, external_asset_id } => {
+                if *canonical_asset_id == [0; 32] { return Err("canonical asset id must be non-zero".into()); }
+                if *chain_id == 0 { return Err("registry chain id must be non-zero".into()); }
+                if external_asset_id.is_empty() { return Err("external asset id must not be empty".into()); }
+            }
+            Self::UpdateAssetStatus { canonical_asset_id, .. } => {
+                if *canonical_asset_id == [0; 32] { return Err("canonical asset id must be non-zero".into()); }
+            }
+            Self::UpdateRegistryAuthorizationPolicy { policy_id, threshold, members } => {
+                let policy = RegistryAuthorizationPolicy {
+                    policy_id: *policy_id, threshold: *threshold, members: members.clone(),
+                };
+                policy.validate()?;
+            }
+        }
+        Ok(())
+    }
+
 impl RegistryOperation {
     /// Stable, explicit binary encoding. Do not replace with serde/bincode:
     /// these bytes are part of the authorization and consensus identity.
     pub fn encode_canonical(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
         let mut out = Vec::new();
         out.extend_from_slice(REGISTRY_OPERATION_DOMAIN);
         out.push(1); // operation codec version
@@ -144,6 +185,9 @@ impl RegistryOperation {
 
 impl RegistryOperationEnvelope {
     pub fn signing_message(&self) -> Result<Vec<u8>, String> {
+        if self.network_id == 0 { return Err("registry network id must be non-zero".into()); }
+        if self.nonce == 0 { return Err("registry nonce must be non-zero".into()); }
+        if self.policy_id == [0; 32] { return Err("registry policy id must be non-zero".into()); }
         if self.protocol_version != REGISTRY_PROTOCOL_VERSION {
             return Err("unsupported registry protocol version".into());
         }
@@ -217,6 +261,7 @@ impl RegistryOperationEnvelope {
 
 impl RegistryAuthorizationPolicy {
     pub fn validate(&self) -> Result<(), String> {
+        if self.policy_id == [0; 32] { return Err("registry policy id must be non-zero".into()); }
         if self.threshold < MIN_REGISTRY_THRESHOLD {
             return Err("registry threshold cannot be below four".into());
         }
@@ -339,4 +384,47 @@ mod tests {
         });
         assert!(envelope.verify_authorization(&policy).is_err());
     }
+    #[test]
+    fn invalid_operation_fields_are_rejected_before_encoding() {
+        let cases = vec![
+            RegistryOperation::RegisterChain { chain_id: 0, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64 },
+            RegistryOperation::RegisterChain { chain_id: 1, name: " ".into(), network: "mainnet".into(), finality_depth: 64 },
+            RegistryOperation::RegisterChain { chain_id: 1, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 0 },
+            RegistryOperation::RegisterCanonicalAsset { canonical_asset_id: [0; 32], symbol: "ABC".into(), name: "Asset".into(), decimals: 18 },
+            RegistryOperation::AddAssetRepresentation { canonical_asset_id: [1; 32], chain_id: 1, external_asset_id: Vec::new(), asset_kind: 1, decimals: 18 },
+            RegistryOperation::RevokeAssetRepresentation { canonical_asset_id: [1; 32], chain_id: 0, external_asset_id: vec![1] },
+        ];
+        for operation in cases {
+            assert!(operation.validate().is_err());
+            assert!(operation.encode_canonical().is_err());
+        }
+    }
+
+    #[test]
+    fn policy_update_requires_a_valid_new_policy() {
+        let mut policy = policy_and_keys().0;
+        policy.threshold = 3;
+        let operation = RegistryOperation::UpdateRegistryAuthorizationPolicy {
+            policy_id: policy.policy_id, threshold: policy.threshold, members: policy.members,
+        };
+        assert!(operation.validate().is_err());
+        assert!(operation.encode_canonical().is_err());
+    }
+
+    #[test]
+    fn envelope_rejects_zero_network_nonce_and_policy_id() {
+        let (policy, keys) = policy_and_keys();
+        let mut envelope = signed_envelope(&keys, RegistryOperation::UpdateChainStatus {
+            chain_id: 100, status: ChainStatus::Paused,
+        });
+        envelope.network_id = 0;
+        assert!(envelope.signing_message().is_err());
+        envelope.network_id = 1;
+        envelope.nonce = 0;
+        assert!(envelope.signing_message().is_err());
+        envelope.nonce = 1;
+        envelope.policy_id = [0; 32];
+        assert!(envelope.verify_authorization(&policy).is_err());
+    }
+
 }
