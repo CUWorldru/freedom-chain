@@ -235,6 +235,9 @@ impl RegistryOperationEnvelope {
         if policy.members.len() < policy.threshold as usize {
             return Err("registry policy has fewer members than its threshold".into());
         }
+        if self.authorization.signatures.len() > u16::MAX as usize {
+            return Err("too many registry signatures".into());
+        }
         if self.authorization.signatures.len() < policy.threshold as usize {
             return Err("insufficient registry signatures".into());
         }
@@ -269,6 +272,9 @@ impl RegistryAuthorizationPolicy {
         }
         if self.members.len() < self.threshold as usize {
             return Err("registry policy has fewer members than its threshold".into());
+        }
+        if self.members.len() > u16::MAX as usize {
+            return Err("too many registry policy members".into());
         }
         if self.members.keys().any(|id| *id == [0; 32]) {
             return Err("zero registry signer id is invalid".into());
@@ -427,6 +433,12 @@ mod tests {
         envelope.nonce = 1;
         envelope.policy_id = [0; 32];
         assert!(envelope.verify_authorization(&policy).is_err());
+    }
+
+    #[test]
+    fn registry_collection_limits_match_u16_canonical_encoding() {
+        assert!(u16::try_from(u16::MAX as usize).is_ok());
+        assert!(u16::try_from(u16::MAX as usize + 1).is_err());
     }
 
 }
