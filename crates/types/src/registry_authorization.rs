@@ -597,3 +597,110 @@ impl RegistryOperationEnvelope {
         Ok(envelope)
     }
 }
+
+
+#[cfg(test)]
+mod registry_payload_codec_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+
+    fn signed_envelope(operation: RegistryOperation) -> RegistryOperationEnvelope {
+        let keys: Vec<_> = (1u8..=5).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
+        let mut envelope = RegistryOperationEnvelope {
+            protocol_version: REGISTRY_PROTOCOL_VERSION,
+            network_id: 1,
+            policy_id: [9; 32],
+            nonce: 7,
+            operation,
+            authorization: RegistryAuthorization { signatures: Vec::new() },
+        };
+        let message = envelope.signing_message().unwrap();
+        envelope.authorization.signatures = keys.iter().take(4).map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            RegistrySignature {
+                signer_id: hash_bytes(&public_key),
+                signature: key.sign(&message).to_bytes().to_vec(),
+            }
+        }).collect();
+        envelope.authorization.signatures.sort_by_key(|item| item.signer_id);
+        envelope
+    }
+
+    #[test]
+    fn every_registry_operation_variant_roundtrips_canonically() {
+        let mut members = BTreeMap::new();
+        for n in 1u8..=4 {
+            let key = SigningKey::from_bytes(&[n; 32]).verifying_key().to_bytes();
+            members.insert(hash_bytes(&key), key);
+        }
+        let operations = vec![
+            RegistryOperation::RegisterChain { chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64 },
+            RegistryOperation::UpdateChainStatus { chain_id: 10, status: ChainStatus::Paused },
+            RegistryOperation::RegisterCanonicalAsset { canonical_asset_id: [1; 32], symbol: "USD".into(), name: "Dollar".into(), decimals: 6 },
+            RegistryOperation::AddAssetRepresentation { canonical_asset_id: [1; 32], chain_id: 10, external_asset_id: vec![1, 2, 3], asset_kind: 1, decimals: 6 },
+            RegistryOperation::UpdateAssetStatus { canonical_asset_id: [1; 32], status: AssetStatus::Revoked },
+            RegistryOperation::RevokeAssetRepresentation { canonical_asset_id: [1; 32], chain_id: 10, external_asset_id: vec![4, 5] },
+            RegistryOperation::UpdateRegistryAuthorizationPolicy { policy_id: [2; 32], threshold: 4, members },
+        ];
+        for operation in operations {
+            let encoded = operation.encode_canonical().unwrap();
+            assert_eq!(RegistryOperation::decode_canonical(&encoded).unwrap(), operation);
+        }
+    }
+
+    #[test]
+    fn complete_payload_roundtrips_and_preserves_four_of_five_signatures() {
+        let envelope = signed_envelope(RegistryOperation::RegisterChain {
+            chain_id: 100, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+        });
+        let encoded = envelope.encode_payload().unwrap();
+        let decoded = RegistryOperationEnvelope::decode_payload(&encoded).unwrap();
+        assert_eq!(decoded, envelope);
+        assert_eq!(decoded.authorization.signatures.len(), 4);
+        assert_eq!(decoded.signing_message().unwrap(), envelope.signing_message().unwrap());
+    }
+
+    #[test]
+    fn payload_decoder_rejects_truncation_and_trailing_bytes() {
+        let encoded = signed_envelope(RegistryOperation::UpdateChainStatus {
+            chain_id: 100, status: ChainStatus::Paused,
+        }).encode_payload().unwrap();
+        assert!(RegistryOperationEnvelope::decode_payload(&encoded[..encoded.len() - 1]).is_err());
+        let mut trailing = encoded;
+        trailing.push(0);
+        assert!(RegistryOperationEnvelope::decode_payload(&trailing).is_err());
+    }
+
+    #[test]
+    fn payload_decoder_rejects_unknown_domain_and_operation_variant() {
+        let encoded = signed_envelope(RegistryOperation::UpdateChainStatus {
+            chain_id: 100, status: ChainStatus::Paused,
+        }).encode_payload().unwrap();
+        let mut bad_domain = encoded.clone();
+        bad_domain[0] ^= 1;
+        assert!(RegistryOperationEnvelope::decode_payload(&bad_domain).is_err());
+
+        let mut bad_operation = RegistryOperation::RegisterChain {
+            chain_id: 100, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+        }.encode_canonical().unwrap();
+        *bad_operation.last_mut().unwrap() = 0xFF;
+        assert!(RegistryOperation::decode_canonical(&bad_operation).is_err());
+    }
+
+    #[test]
+    fn payload_decoder_rejects_noncanonical_signature_order_and_oversize() {
+        let mut encoded = signed_envelope(RegistryOperation::UpdateChainStatus {
+            chain_id: 100, status: ChainStatus::Paused,
+        }).encode_payload().unwrap();
+        // Locate signature entries: domain + operation length/data + fixed envelope + count.
+        let op_len_at = REGISTRY_PAYLOAD_DOMAIN.len();
+        let op_len = u32::from_le_bytes(encoded[op_len_at..op_len_at + 4].try_into().unwrap()) as usize;
+        let signatures_at = op_len_at + 4 + op_len + 2 + 4 + 32 + 8 + 2;
+        let first_signer = encoded[signatures_at..signatures_at + 32].to_vec();
+        let second_signer = encoded[signatures_at + 96..signatures_at + 128].to_vec();
+        encoded[signatures_at..signatures_at + 32].copy_from_slice(&second_signer);
+        encoded[signatures_at + 96..signatures_at + 128].copy_from_slice(&first_signer);
+        assert!(RegistryOperationEnvelope::decode_payload(&encoded).is_err());
+        assert!(RegistryOperationEnvelope::decode_payload(&vec![0; MAX_REGISTRY_PAYLOAD_BYTES + 1]).is_err());
+    }
+}
