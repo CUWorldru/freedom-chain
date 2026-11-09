@@ -683,7 +683,7 @@ mod registry_payload_codec_tests {
         let mut bad_operation = RegistryOperation::RegisterChain {
             chain_id: 100, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
         }.encode_canonical().unwrap();
-        *bad_operation.last_mut().unwrap() = 0xFF;
+        bad_operation[REGISTRY_OPERATION_DOMAIN.len() + 1] = 0xFF;
         assert!(RegistryOperation::decode_canonical(&bad_operation).is_err());
     }
 
