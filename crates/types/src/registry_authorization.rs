@@ -449,7 +449,7 @@ mod tests {
 /// the operation bytes needed by nodes.
 pub const REGISTRY_PAYLOAD_DOMAIN: &[u8] = b"321MORE-REGISTRY-PAYLOAD-V1";
 const MAX_REGISTRY_PAYLOAD_BYTES: usize = 1_048_576;
-const MAX_REGISTRY_FIELD_BYTES: usize = 65_536;
+const MAX_REGISTRY_FIELD_BYTES: usize = MAX_REGISTRY_PAYLOAD_BYTES;
 const MAX_REGISTRY_POLICY_MEMBERS: usize = 1_024;
 const MAX_REGISTRY_SIGNATURES: usize = 1_024;
 
