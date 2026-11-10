@@ -94,8 +94,28 @@ pub fn validate_transaction_admission(s:&ChainState,tx:&Transaction)->Result<(),
  if !verify(&a.public_key,&tx.signing_bytes(),&sig){return Err("invalid transaction signature".into())}
  match tx.kind {
   freedom_types::TxKind::BridgeMint => validate_bridge_mint_admission(s,tx)?,
+  freedom_types::TxKind::RegistryOperation => validate_registry_operation_admission(s,tx)?,
   _ => {}
  }
+ Ok(())
+}
+
+fn validate_registry_operation_admission(s:&ChainState,tx:&Transaction)->Result<(),String>{
+ let envelope=freedom_types::RegistryOperationEnvelope::decode_payload(&tx.payload)
+  .map_err(|_|"InvalidRegistryOperation".to_string())?;
+ let canonical=envelope.encode_payload().map_err(|_|"InvalidRegistryOperation".to_string())?;
+ if canonical!=tx.payload{return Err("InvalidRegistryOperation".into())}
+ let policy=s.registry_policy.as_ref().ok_or_else(||"RegistryNotConfigured".to_string())?;
+ let next_height=s.height.checked_add(1).ok_or_else(||"InvalidRegistryOperation".to_string())?;
+ let expected_nonce=s.registry_nonce.checked_add(1).ok_or_else(||"InvalidRegistryOperation".to_string())?;
+ if s.registry_network_id==0
+  || envelope.network_id!=s.registry_network_id
+  || envelope.policy_id!=policy.policy_id
+  || envelope.nonce!=expected_nonce
+  || next_height<s.registry_activation_height {
+  return Err("InvalidRegistryOperation".into());
+ }
+ envelope.verify_authorization(policy).map_err(|_|"InvalidRegistryOperation".to_string())?;
  Ok(())
 }
 
