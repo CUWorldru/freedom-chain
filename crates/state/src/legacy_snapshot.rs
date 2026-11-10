@@ -126,7 +126,11 @@ impl From<LegacyChainStateV1> for ChainState {
             epoch_issuance: old.epoch_issuance,
             epoch_cap: old.epoch_cap,
             evidence: old.evidence,
-            slashed_evidence: old.slashed_evidence
+            slashed_evidence: old.slashed_evidence,
+            registry_network_id: 0,
+            registry_policy: None,
+            registry_activation_height: 0,
+            registry_nonce: 0
         }
     }
 }
