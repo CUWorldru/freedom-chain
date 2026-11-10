@@ -77,7 +77,13 @@ pub fn initialize_with_genesis_commitment(
         return Err("genesis manifest does not match runtime genesis parameters".into());
     }
     manifest.verify_pinned(trusted_expected)?;
-    initialize(genesis)
+    let mut state = initialize(genesis)?;
+    state.registry_network_id = manifest.network_id;
+    state.registry_policy = Some(manifest.registry_policy.clone());
+    state.registry_activation_height = manifest.registry_activation_height;
+    state.registry_nonce = 0;
+    state.assert_invariants();
+    Ok(state)
 }
 pub fn validate_transaction_admission(s:&ChainState,tx:&Transaction)->Result<(),String>{
  if tx.chain_id!=CHAIN_ID{return Err("invalid chain id".into())}
