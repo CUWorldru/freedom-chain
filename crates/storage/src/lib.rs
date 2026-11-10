@@ -1,4 +1,4 @@
-use freedom_state::ChainState;
+use freedom_state::{legacy_snapshot::LegacyChainStateV1, ChainState};
 use freedom_primitives::{CHAIN_ID, Hash};
 use freedom_types::Block;
 use rocksdb::{Options, DB, WriteBatch};
@@ -16,7 +16,11 @@ const REPUTATION_KEY: &[u8] = b"meta:peer_reputation";
 const SNAPSHOT_MAGIC: &[u8] = b"321MSNP\x01";
 
 fn encode_snapshot(snapshot: &StateSnapshot) -> Result<Vec<u8>, StorageError> {
-    let payload = bincode::serialize(snapshot)
+    // Keep writing the frozen v1 wire type until the next schema version is
+    // introduced. This prevents incidental ChainState edits from silently
+    // changing the bytes emitted under the v1 magic.
+    let legacy = LegacyStateSnapshotV1::from(snapshot.clone());
+    let payload = bincode::serialize(&legacy)
         .map_err(|e| StorageError::Codec(e.to_string()))?;
     let mut bytes = SNAPSHOT_MAGIC.to_vec();
     bytes.extend_from_slice(&payload);
@@ -25,9 +29,60 @@ fn encode_snapshot(snapshot: &StateSnapshot) -> Result<Vec<u8>, StorageError> {
 
 fn decode_snapshot(bytes: &[u8]) -> Result<StateSnapshot, StorageError> {
     if let Some(payload) = bytes.strip_prefix(SNAPSHOT_MAGIC) {
-        bincode::deserialize(payload).map_err(|e| StorageError::Codec(e.to_string()))
+        let legacy: LegacyStateSnapshotV1 =
+            bincode::deserialize(payload).map_err(|e| StorageError::Codec(e.to_string()))?;
+        Ok(legacy.into())
     } else {
         serde_json::from_slice(bytes).map_err(|e| StorageError::Codec(e.to_string()))
+    }
+}
+
+/// Frozen outer snapshot envelope for the original bincode v1 format.
+/// Field order and types must remain unchanged; new snapshot fields belong
+/// only in a future versioned envelope.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct LegacyStateSnapshotV1 {
+    #[serde(default)]
+    chain_id: u64,
+    height: u64,
+    block_hash: [u8;32],
+    state_root: [u8;32],
+    state: LegacyChainStateV1,
+    #[serde(default)]
+    certificate: Option<freedom_types::FinalityCertificate>,
+    #[serde(default)]
+    finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
+    #[serde(default)]
+    epoch_transition_certificate: Option<freedom_types::ValidatorSetCertificate>,
+}
+
+impl From<StateSnapshot> for LegacyStateSnapshotV1 {
+    fn from(snapshot: StateSnapshot) -> Self {
+        Self {
+            chain_id: snapshot.chain_id,
+            height: snapshot.height,
+            block_hash: snapshot.block_hash,
+            state_root: snapshot.state_root,
+            state: snapshot.state.into(),
+            certificate: snapshot.certificate,
+            finality_validator_set: snapshot.finality_validator_set,
+            epoch_transition_certificate: snapshot.epoch_transition_certificate,
+        }
+    }
+}
+
+impl From<LegacyStateSnapshotV1> for StateSnapshot {
+    fn from(snapshot: LegacyStateSnapshotV1) -> Self {
+        Self {
+            chain_id: snapshot.chain_id,
+            height: snapshot.height,
+            block_hash: snapshot.block_hash,
+            state_root: snapshot.state_root,
+            state: snapshot.state.into(),
+            certificate: snapshot.certificate,
+            finality_validator_set: snapshot.finality_validator_set,
+            epoch_transition_certificate: snapshot.epoch_transition_certificate,
+        }
     }
 }
 
