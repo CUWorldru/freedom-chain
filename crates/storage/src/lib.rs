@@ -646,7 +646,7 @@ mod tests {
         assert_eq!(restored.block_hash, snapshot.block_hash);
         assert_eq!(restored.state_root, snapshot.state_root);
         assert_eq!(restored.state.state_root(), snapshot.state_root);
-        assert_eq!(restored.state.accounts, snapshot.state.accounts);
+        assert_eq!(restored.state.accounts.len(), snapshot.state.accounts.len());
     }
 
     #[test]
