@@ -1,3 +1,4 @@
+pub mod legacy_snapshot;
 const MAX_EVIDENCE_COMPONENT_BYTES: usize = 64 * 1024;
 
 fn decode_submit_evidence(b:&[u8])->Option<freedom_types::SubmitEvidencePayload>{
