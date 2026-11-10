@@ -3339,11 +3339,14 @@ impl ChainState {
  }
  pub fn state_root(&self)->Hash{
   let mut leaves=Vec::new();
-  let mut registry_meta=Vec::new();
-  registry_meta.extend_from_slice(&self.registry_network_id.to_le_bytes());
-  registry_meta.extend_from_slice(&self.registry_activation_height.to_le_bytes());
-  registry_meta.extend_from_slice(&self.registry_nonce.to_le_bytes());
-  leaves.push(Self::state_leaf(b"registry_meta",&[0;1],&registry_meta));
+  if self.registry_policy.is_some() || self.registry_network_id != 0
+      || self.registry_activation_height != 0 || self.registry_nonce != 0 {
+   let mut registry_meta=Vec::new();
+   registry_meta.extend_from_slice(&self.registry_network_id.to_le_bytes());
+   registry_meta.extend_from_slice(&self.registry_activation_height.to_le_bytes());
+   registry_meta.extend_from_slice(&self.registry_nonce.to_le_bytes());
+   leaves.push(Self::state_leaf(b"registry_meta",&[0;1],&registry_meta));
+  }
   if let Some(policy)=&self.registry_policy {
    leaves.push(Self::state_leaf(b"registry_policy",&policy.policy_id,&Self::enc_registry_policy(policy)));
   }
@@ -3377,11 +3380,58 @@ impl ChainState {
   leaves.sort();
   freedom_primitives::merkle_root(&leaves)
  }
- pub fn assert_invariants(&self){if let Some(policy)=&self.registry_policy{assert!(self.registry_network_id!=0);assert!(policy.validate().is_ok());}else{assert_eq!(self.registry_network_id,0);}assert!(self.supply.is_consistent());for (id,asset) in &self.asset_registry{assert_eq!(id,&asset.asset_id);assert!(asset.validate_identity());assert!(!asset.symbol.is_empty());}for (replay_key,message) in &self.processed_bridge_messages{assert_eq!(replay_key,&message.replay_key());assert!(message.validate_hash());assert_eq!(message.protocol_version,BRIDGE_MESSAGE_PROTOCOL_VERSION);assert_eq!(message.destination_chain_id,freedom_primitives::CHAIN_ID);}for (replay_key,status) in &self.bridge_message_status{assert!(self.processed_bridge_messages.contains_key(replay_key));assert!(*status as u8>=BridgeMessageStatus::Verified as u8&&*status as u8<=BridgeMessageStatus::Minted as u8);}for (id,p) in &self.bridge_security_policies{assert_eq!(id,&p.bridge_id);assert!(p.validate());}for (id,set) in &self.bridge_approval_sets{assert_eq!(id,&set.request_id);assert!(!set.approvals.is_empty());}for (id,u) in &self.bridge_rate_limits{assert!(self.bridge_security_policies.contains_key(id));assert!(u.used>0);}for (id,r) in &self.bridge_deposit_replays{assert_eq!(id,&r.replay_key);assert!(r.validate());assert_eq!(r.status,freedom_types::DepositReplayStatus::Consumed);}for (id,a) in &self.bridge_mint_authorizations{assert_eq!(id,&a.replay_key);assert!(a.validate());assert!(self.bridge_deposit_replays.contains_key(id));}for (id,cp) in &self.bitcoin_canonical_tips{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,r) in &self.bitcoin_reorg_recovery{assert!(*id!=[0;32]);assert!(r.validate());} for (id,p) in &self.bitcoin_reorg_policy{assert!(*id!=[0;32]);assert!(p.validate());} for (id,journal) in &self.bitcoin_reorg_evidence{assert!(*id!=[0;32]);assert!(journal.len()<=freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT);assert!(journal.iter().all(|e|e.validate()));} for (id,cp) in &self.bitcoin_checkpoints{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,nonces) in &self.bridge_nonce_registry{assert!(!nonces.is_empty());} for (id,set) in &self.bridge_pause_authorizations{assert_eq!(id,&set.bridge_id);assert!(!set.authorizations.is_empty());} for (id,p) in &self.bridge_withdrawal_rate_limit_period{assert!(self.bridge_withdrawals.contains_key(id));assert!(*p<=self.height);}for (id,w) in &self.bridge_withdrawals{assert_eq!(id,&w.withdrawal_id);assert!(w.validate_hash());assert_eq!(w.compute_id(),w.withdrawal_id);assert!(self.bridge_withdrawal_status.contains_key(id));}for (id,status) in &self.bridge_withdrawal_status{assert!(self.bridge_withdrawals.contains_key(id));assert!((*status as u8>=BridgeWithdrawalStatus::Requested as u8&&*status as u8<=BridgeWithdrawalStatus::Rejected as u8));}for id in self.bridge_accounting.keys(){assert!(self.validate_bridge_accounting(*id).is_ok());}let circulating=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.balance));let locked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.locked));let staked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.staked));assert!(circulating.is_some()&&locked.is_some()&&staked.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,circulating.unwrap());assert_eq!(self.supply.locked,locked.unwrap());assert_eq!(self.supply.staked,staked.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_native_units.checked_add(self.annual_reserve_native_units).and_then(|x|x.checked_add(self.draw_prize_pool_native_units)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
+ pub fn assert_invariants(&self){if let Some(policy)=&self.registry_policy{assert!(self.registry_network_id!=0);assert!(policy.validate().is_ok());}else{assert_eq!(self.registry_network_id,0);assert_eq!(self.registry_activation_height,0);assert_eq!(self.registry_nonce,0);}assert!(self.supply.is_consistent());for (id,asset) in &self.asset_registry{assert_eq!(id,&asset.asset_id);assert!(asset.validate_identity());assert!(!asset.symbol.is_empty());}for (replay_key,message) in &self.processed_bridge_messages{assert_eq!(replay_key,&message.replay_key());assert!(message.validate_hash());assert_eq!(message.protocol_version,BRIDGE_MESSAGE_PROTOCOL_VERSION);assert_eq!(message.destination_chain_id,freedom_primitives::CHAIN_ID);}for (replay_key,status) in &self.bridge_message_status{assert!(self.processed_bridge_messages.contains_key(replay_key));assert!(*status as u8>=BridgeMessageStatus::Verified as u8&&*status as u8<=BridgeMessageStatus::Minted as u8);}for (id,p) in &self.bridge_security_policies{assert_eq!(id,&p.bridge_id);assert!(p.validate());}for (id,set) in &self.bridge_approval_sets{assert_eq!(id,&set.request_id);assert!(!set.approvals.is_empty());}for (id,u) in &self.bridge_rate_limits{assert!(self.bridge_security_policies.contains_key(id));assert!(u.used>0);}for (id,r) in &self.bridge_deposit_replays{assert_eq!(id,&r.replay_key);assert!(r.validate());assert_eq!(r.status,freedom_types::DepositReplayStatus::Consumed);}for (id,a) in &self.bridge_mint_authorizations{assert_eq!(id,&a.replay_key);assert!(a.validate());assert!(self.bridge_deposit_replays.contains_key(id));}for (id,cp) in &self.bitcoin_canonical_tips{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,r) in &self.bitcoin_reorg_recovery{assert!(*id!=[0;32]);assert!(r.validate());} for (id,p) in &self.bitcoin_reorg_policy{assert!(*id!=[0;32]);assert!(p.validate());} for (id,journal) in &self.bitcoin_reorg_evidence{assert!(*id!=[0;32]);assert!(journal.len()<=freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT);assert!(journal.iter().all(|e|e.validate()));} for (id,cp) in &self.bitcoin_checkpoints{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,nonces) in &self.bridge_nonce_registry{assert!(!nonces.is_empty());} for (id,set) in &self.bridge_pause_authorizations{assert_eq!(id,&set.bridge_id);assert!(!set.authorizations.is_empty());} for (id,p) in &self.bridge_withdrawal_rate_limit_period{assert!(self.bridge_withdrawals.contains_key(id));assert!(*p<=self.height);}for (id,w) in &self.bridge_withdrawals{assert_eq!(id,&w.withdrawal_id);assert!(w.validate_hash());assert_eq!(w.compute_id(),w.withdrawal_id);assert!(self.bridge_withdrawal_status.contains_key(id));}for (id,status) in &self.bridge_withdrawal_status{assert!(self.bridge_withdrawals.contains_key(id));assert!((*status as u8>=BridgeWithdrawalStatus::Requested as u8&&*status as u8<=BridgeWithdrawalStatus::Rejected as u8));}for id in self.bridge_accounting.keys(){assert!(self.validate_bridge_accounting(*id).is_ok());}let circulating=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.balance));let locked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.locked));let staked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.staked));assert!(circulating.is_some()&&locked.is_some()&&staked.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,circulating.unwrap());assert_eq!(self.supply.locked,locked.unwrap());assert_eq!(self.supply.staked,staked.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_native_units.checked_add(self.annual_reserve_native_units).and_then(|x|x.checked_add(self.draw_prize_pool_native_units)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
 }
 
 
 
+
+#[cfg(test)]
+mod registry_consensus_state_tests {
+ use super::*;
+
+ fn genesis_state() -> ChainState {
+  ChainState::genesis(&Genesis {
+   chain_id: freedom_primitives::CHAIN_ID,
+   initial_supply: 0,
+   validators: vec![],
+  })
+ }
+
+ fn policy() -> freedom_types::RegistryAuthorizationPolicy {
+  let mut members = BTreeMap::new();
+  for n in 1u8..=4 {
+   let key = [n; 32];
+   members.insert(freedom_primitives::hash_bytes(&key), key);
+  }
+  freedom_types::RegistryAuthorizationPolicy {
+   policy_id: [9; 32],
+   threshold: 4,
+   members,
+  }
+ }
+
+ #[test]
+ fn registry_configuration_and_nonce_are_committed_to_state_root() {
+  let mut state = genesis_state();
+  let legacy_root = state.state_root();
+  state.registry_network_id = 1;
+  state.registry_policy = Some(policy());
+  state.registry_activation_height = 10;
+  let configured_root = state.state_root();
+  assert_ne!(legacy_root, configured_root);
+  state.registry_nonce = 1;
+  assert_ne!(configured_root, state.state_root());
+ }
+
+ #[test]
+ fn empty_registry_fields_preserve_legacy_state_root() {
+  let state = genesis_state();
+  let legacy = state.state_root();
+  assert_eq!(legacy, state.state_root());
+  assert_eq!(state.registry_policy, None);
+ }
+}
 
 #[cfg(test)]
 mod m96_bridge_nonce_tests {
