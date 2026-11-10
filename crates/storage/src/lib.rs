@@ -13,14 +13,11 @@ const REPUTATION_KEY: &[u8] = b"meta:peer_reputation";
 // Versioned binary encoding supports consensus-state maps keyed by fixed-size
 // hashes and addresses, which JSON object keys cannot represent. Legacy JSON
 // snapshots remain readable for backward compatibility.
-const SNAPSHOT_MAGIC: &[u8] = b"321MSNP\x01";
+const SNAPSHOT_MAGIC_V1: &[u8] = b"321MSNP\\x01";
+const SNAPSHOT_MAGIC: &[u8] = b"321MSNP\\x02";
 
 fn encode_snapshot(snapshot: &StateSnapshot) -> Result<Vec<u8>, StorageError> {
-    // Keep writing the frozen v1 wire type until the next schema version is
-    // introduced. This prevents incidental ChainState edits from silently
-    // changing the bytes emitted under the v1 magic.
-    let legacy = LegacyStateSnapshotV1::from(snapshot.clone());
-    let payload = bincode::serialize(&legacy)
+    let payload = bincode::serialize(snapshot)
         .map_err(|e| StorageError::Codec(e.to_string()))?;
     let mut bytes = SNAPSHOT_MAGIC.to_vec();
     bytes.extend_from_slice(&payload);
@@ -29,6 +26,8 @@ fn encode_snapshot(snapshot: &StateSnapshot) -> Result<Vec<u8>, StorageError> {
 
 fn decode_snapshot(bytes: &[u8]) -> Result<StateSnapshot, StorageError> {
     if let Some(payload) = bytes.strip_prefix(SNAPSHOT_MAGIC) {
+        bincode::deserialize(payload).map_err(|e| StorageError::Codec(e.to_string()))
+    } else if let Some(payload) = bytes.strip_prefix(SNAPSHOT_MAGIC_V1) {
         let legacy: LegacyStateSnapshotV1 =
             bincode::deserialize(payload).map_err(|e| StorageError::Codec(e.to_string()))?;
         Ok(legacy.into())
@@ -619,6 +618,48 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_v2_roundtrips_registry_consensus_state() {
+        let genesis = freedom_types::Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        };
+        let mut state = freedom_state::ChainState::genesis(&genesis);
+        let mut members = std::collections::BTreeMap::new();
+        for n in 1u8..=4 {
+            let key = [n; 32];
+            members.insert(freedom_primitives::hash_bytes(&key), key);
+        }
+        state.registry_network_id = 7;
+        state.registry_policy = Some(freedom_types::RegistryAuthorizationPolicy {
+            policy_id: [9; 32],
+            threshold: 4,
+            members,
+        });
+        state.registry_activation_height = 12;
+        state.registry_nonce = 3;
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: state.height,
+            block_hash: state.last_block_hash,
+            state_root: state.state_root(),
+            state,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+
+        let bytes = encode_snapshot(&snapshot).unwrap();
+        assert!(bytes.starts_with(SNAPSHOT_MAGIC));
+        let restored = decode_snapshot(&bytes).unwrap();
+        assert_eq!(restored.state.registry_network_id, 7);
+        assert_eq!(restored.state.registry_activation_height, 12);
+        assert_eq!(restored.state.registry_nonce, 3);
+        assert_eq!(restored.state.registry_policy, snapshot.state.registry_policy);
+        assert_eq!(restored.state.state_root(), snapshot.state_root);
+    }
+
+    #[test]
     fn frozen_bincode_v1_snapshot_migrates_through_legacy_wire_types() {
         let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
             chain_id: CHAIN_ID,
@@ -638,7 +679,7 @@ mod tests {
 
         // Encode with the frozen v1 wire structs, as an older node did.
         let legacy = LegacyStateSnapshotV1::from(snapshot.clone());
-        let mut bytes = SNAPSHOT_MAGIC.to_vec();
+        let mut bytes = SNAPSHOT_MAGIC_V1.to_vec();
         bytes.extend_from_slice(&bincode::serialize(&legacy).unwrap());
 
         let restored = decode_snapshot(&bytes).unwrap();
