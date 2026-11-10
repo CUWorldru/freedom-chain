@@ -619,6 +619,37 @@ mod tests {
     }
 
     #[test]
+    fn frozen_bincode_v1_snapshot_migrates_through_legacy_wire_types() {
+        let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: 0,
+            block_hash: [0; 32],
+            state_root: state.state_root(),
+            state,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+
+        // Encode with the frozen v1 wire structs, as an older node did.
+        let legacy = LegacyStateSnapshotV1::from(snapshot.clone());
+        let mut bytes = SNAPSHOT_MAGIC.to_vec();
+        bytes.extend_from_slice(&bincode::serialize(&legacy).unwrap());
+
+        let restored = decode_snapshot(&bytes).unwrap();
+        assert_eq!(restored.height, snapshot.height);
+        assert_eq!(restored.block_hash, snapshot.block_hash);
+        assert_eq!(restored.state_root, snapshot.state_root);
+        assert_eq!(restored.state.state_root(), snapshot.state_root);
+        assert_eq!(restored.state.accounts, snapshot.state.accounts);
+    }
+
+    #[test]
     fn rejects_zero_height_block_write() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
