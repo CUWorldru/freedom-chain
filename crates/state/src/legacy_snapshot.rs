@@ -130,7 +130,10 @@ impl From<LegacyChainStateV1> for ChainState {
             registry_network_id: 0,
             registry_policy: None,
             registry_activation_height: 0,
-            registry_nonce: 0
+            registry_nonce: 0,
+            registry_chains: std::collections::BTreeMap::new(),
+            registry_assets: std::collections::BTreeMap::new(),
+            registry_asset_representations: std::collections::BTreeMap::new()
         }
     }
 }
