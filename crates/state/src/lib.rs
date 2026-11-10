@@ -72,7 +72,7 @@ pub struct RegistryAssetRepresentationRecord {
 
 #[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,#[serde(default)] pub unbonding:BTreeMap<Hash,UnbondingEntry>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,#[serde(rename="draw_prize_pool_native_units",alias="draw_prize_pool_mfdm")] pub draw_prize_pool_native_units:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch:u64,pub epoch_length:u64,pub active_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub asset_registry:BTreeMap<Hash,AssetDefinition>,#[serde(default)] pub cross_chain_asset_registries:BTreeMap<Hash,freedom_types::CrossChainAssetRegistry>,#[serde(default)] pub processed_bridge_messages:BTreeMap<Hash,BridgeMessage>,#[serde(default)] pub bridge_message_status:BTreeMap<Hash,BridgeMessageStatus>,#[serde(default)] pub bridge_message_approval_sets:BTreeMap<Hash,freedom_types::BridgeMessageApprovalSet>,#[serde(default)] pub bridge_message_approval_epochs:BTreeMap<Hash,u64>,#[serde(default)] pub bridge_withdrawals:BTreeMap<Hash,BridgeWithdrawal>,#[serde(default)] pub bridge_withdrawal_status:BTreeMap<Hash,BridgeWithdrawalStatus>,#[serde(default)] pub bridge_accounting:BTreeMap<Hash,BridgeAccounting>,#[serde(default)] pub bridge_security_policies:BTreeMap<Hash,BridgeSecurityPolicy>,#[serde(default)] pub bridge_approval_sets:BTreeMap<Hash,BridgeApprovalSet>,#[serde(default)] pub bridge_pause_authorizations:BTreeMap<Hash,BridgePauseAuthorizationSet>,#[serde(default)] pub bridge_nonce_registry:BTreeMap<Hash,BTreeSet<u64>>,#[serde(default)] pub bridge_rate_limits:BTreeMap<Hash,BridgeRateLimitUsage>,#[serde(default)] pub bridge_deposit_replays:BTreeMap<Hash,DepositReplayRecord>,#[serde(default)] pub bridge_mint_authorizations:BTreeMap<Hash,BridgeMintAuthorization>,#[serde(default)] pub bridge_withdrawal_rate_limit_period:BTreeMap<Hash,u64>,#[serde(default)] pub bitcoin_checkpoints:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_canonical_tips:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_reorg_evidence:BTreeMap<Hash,Vec<BitcoinReorgEvidence>>,#[serde(default)] pub bitcoin_reorg_policy:BTreeMap<Hash,freedom_types::BitcoinReorgPolicy>,#[serde(default)] pub bitcoin_reorg_recovery:BTreeMap<Hash,freedom_types::BitcoinReorgRecovery>,#[serde(default)] pub bitcoin_utxo_attestations:BTreeMap<Hash,freedom_types::BitcoinUtxoCommitmentAttestation>,#[serde(default)] pub bitcoin_utxo_attestation_policy_hashes:BTreeMap<Hash,Hash>,#[serde(default)] pub bitcoin_utxo_commitments:BTreeMap<Hash,freedom_types::BitcoinUtxoBlockCommitment>,#[serde(default)] pub pending_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub validator_set_history:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_history_sets:BTreeMap<u64,BTreeMap<Hash,[u8;32]>>,
 #[serde(default)] pub validator_set_history_entries:BTreeMap<u64,BTreeMap<Hash,freedom_types::ValidatorSetEntry>>,#[serde(default)] pub validator_set_history_key_hashes:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_certificate:Option<freedom_types::ValidatorSetCertificate>,#[serde(default)] pub staking_activated:bool,pub epoch_issuance:u128,pub epoch_cap:u128,pub evidence:BTreeMap<Hash,freedom_types::EquivocationEvidence>,pub slashed_evidence:BTreeMap<Hash,u128>,#[serde(default)] pub registry_network_id:u32,#[serde(default)] pub registry_policy:Option<freedom_types::RegistryAuthorizationPolicy>,#[serde(default)] pub registry_activation_height:u64,#[serde(default)] pub registry_nonce:u64,#[serde(default)] pub registry_chains:BTreeMap<u32,RegistryChainRecord>,#[serde(default)] pub registry_assets:BTreeMap<Hash,RegistryCanonicalAssetRecord>,#[serde(default)] pub registry_asset_representations:BTreeMap<Hash,RegistryAssetRepresentationRecord> }
-#[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidChainId,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected }
+#[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidChainId,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected,InvalidRegistryOperation }
 impl ChainState {
  fn validate_evidence_integrity(&self)->Result<(),StateError>{
   for (id,evidence) in &self.evidence {
@@ -2834,7 +2834,114 @@ impl ChainState {
  }
  pub(crate) fn insert_account(&mut self,a:Account){self.accounts.insert(a.address,a);}
  pub fn drain_events(&mut self)->Vec<Event>{std::mem::take(&mut self.events)}
- pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{if tx.chain_id!=freedom_primitives::CHAIN_ID{return Err(StateError::InvalidChainId)}let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>{let id:Hash=tx.payload.as_slice().try_into().map_err(|_|StateError::UnsupportedTransaction)?;self.claim_reward(id)},TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),TxKind::BridgeMint=>self.execute_bridge_mint(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
+ fn registry_representation_id(canonical_asset_id:Hash,chain_id:u32,external_asset_id:&[u8])->Hash {
+  let mut bytes=Vec::new();
+  bytes.extend_from_slice(b"321MORE-REGISTRY-REPRESENTATION-V1");
+  bytes.extend_from_slice(&canonical_asset_id);
+  bytes.extend_from_slice(&chain_id.to_le_bytes());
+  bytes.extend_from_slice(&(external_asset_id.len() as u32).to_le_bytes());
+  bytes.extend_from_slice(external_asset_id);
+  freedom_primitives::hash_bytes(&bytes)
+ }
+
+ fn apply_registry_envelope(&mut self,envelope:&freedom_types::RegistryOperationEnvelope)->Result<(),StateError>{
+  let policy=self.registry_policy.clone().ok_or(StateError::InvalidRegistryOperation)?;
+  let expected_nonce=self.registry_nonce.checked_add(1).ok_or(StateError::InvalidRegistryOperation)?;
+  let next_height=self.height.checked_add(1).ok_or(StateError::InvalidRegistryOperation)?;
+  if self.registry_network_id==0
+   || envelope.network_id!=self.registry_network_id
+   || envelope.policy_id!=policy.policy_id
+   || envelope.nonce!=expected_nonce
+   || next_height<self.registry_activation_height
+   || envelope.verify_authorization(&policy).is_err()
+   || envelope.operation.validate().is_err() {
+   return Err(StateError::InvalidRegistryOperation);
+  }
+
+  match &envelope.operation {
+   freedom_types::RegistryOperation::RegisterChain{chain_id,name,network,finality_depth}=>{
+    if self.registry_chains.contains_key(chain_id){return Err(StateError::InvalidRegistryOperation);}
+    self.registry_chains.insert(*chain_id,RegistryChainRecord{
+     chain_id:*chain_id,name:name.clone(),network:network.clone(),finality_depth:*finality_depth,
+     status:freedom_types::registry_authorization::ChainStatus::Active,
+    });
+   }
+   freedom_types::RegistryOperation::UpdateChainStatus{chain_id,status}=>{
+    let record=self.registry_chains.get_mut(chain_id).ok_or(StateError::InvalidRegistryOperation)?;
+    record.status=*status;
+   }
+   freedom_types::RegistryOperation::RegisterCanonicalAsset{canonical_asset_id,symbol,name,decimals}=>{
+    if self.registry_assets.contains_key(canonical_asset_id){return Err(StateError::InvalidRegistryOperation);}
+    self.registry_assets.insert(*canonical_asset_id,RegistryCanonicalAssetRecord{
+     canonical_asset_id:*canonical_asset_id,symbol:symbol.clone(),name:name.clone(),decimals:*decimals,
+     status:freedom_types::registry_authorization::AssetStatus::Active,
+    });
+   }
+   freedom_types::RegistryOperation::AddAssetRepresentation{canonical_asset_id,chain_id,external_asset_id,asset_kind,decimals}=>{
+    let asset=self.registry_assets.get(canonical_asset_id).ok_or(StateError::InvalidRegistryOperation)?;
+    let chain=self.registry_chains.get(chain_id).ok_or(StateError::InvalidRegistryOperation)?;
+    if asset.status!=freedom_types::registry_authorization::AssetStatus::Active
+     || chain.status!=freedom_types::registry_authorization::ChainStatus::Active {
+     return Err(StateError::InvalidRegistryOperation);
+    }
+    let id=Self::registry_representation_id(*canonical_asset_id,*chain_id,external_asset_id);
+    if self.registry_asset_representations.contains_key(&id){return Err(StateError::InvalidRegistryOperation);}
+    self.registry_asset_representations.insert(id,RegistryAssetRepresentationRecord{
+     representation_id:id,canonical_asset_id:*canonical_asset_id,chain_id:*chain_id,
+     external_asset_id:external_asset_id.clone(),asset_kind:*asset_kind,decimals:*decimals,
+     status:freedom_types::registry_authorization::AssetStatus::Active,
+    });
+   }
+   freedom_types::RegistryOperation::UpdateAssetStatus{canonical_asset_id,status}=>{
+    let record=self.registry_assets.get_mut(canonical_asset_id).ok_or(StateError::InvalidRegistryOperation)?;
+    record.status=*status;
+   }
+   freedom_types::RegistryOperation::RevokeAssetRepresentation{canonical_asset_id,chain_id,external_asset_id}=>{
+    let id=Self::registry_representation_id(*canonical_asset_id,*chain_id,external_asset_id);
+    let record=self.registry_asset_representations.get_mut(&id).ok_or(StateError::InvalidRegistryOperation)?;
+    if record.canonical_asset_id!=*canonical_asset_id||record.chain_id!=*chain_id
+     ||record.external_asset_id!=*external_asset_id {
+     return Err(StateError::InvalidRegistryOperation);
+    }
+    record.status=freedom_types::registry_authorization::AssetStatus::Revoked;
+   }
+   freedom_types::RegistryOperation::UpdateRegistryAuthorizationPolicy{policy_id,threshold,members}=>{
+    let next=freedom_types::RegistryAuthorizationPolicy{
+     policy_id:*policy_id,threshold:*threshold,members:members.clone(),
+    };
+    if next.validate().is_err(){return Err(StateError::InvalidRegistryOperation);}
+    self.registry_policy=Some(next);
+   }
+  }
+  // Registry nonce is global to the registry, independent from account nonce,
+  // and deliberately survives authorization-policy rotation.
+  self.registry_nonce=envelope.nonce;
+  Ok(())
+ }
+
+ fn execute_registry_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{
+  let envelope=freedom_types::RegistryOperationEnvelope::decode_payload(&tx.payload)
+   .map_err(|_|StateError::InvalidRegistryOperation)?;
+  if envelope.encode_payload().map_err(|_|StateError::InvalidRegistryOperation)?!=tx.payload {
+   return Err(StateError::InvalidRegistryOperation);
+  }
+  let sender=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  if tx.fee>sender.balance{return Err(StateError::InsufficientBalance);}
+  let next_account_nonce=sender.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let next_balance=sender.balance.checked_sub(tx.fee).ok_or(StateError::InsufficientBalance)?;
+  let next_circulating=self.supply.circulating.checked_sub(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+  let next_treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+
+  self.apply_registry_envelope(&envelope)?;
+  let payer=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  payer.nonce=next_account_nonce;
+  payer.balance=next_balance;
+  self.supply.circulating=next_circulating;
+  self.supply.treasury=next_treasury;
+  Ok(())
+ }
+
+ pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{if tx.chain_id!=freedom_primitives::CHAIN_ID{return Err(StateError::InvalidChainId)}let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>{let id:Hash=tx.payload.as_slice().try_into().map_err(|_|StateError::UnsupportedTransaction)?;self.claim_reward(id)},TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),TxKind::BridgeMint=>self.execute_bridge_mint(tx),TxKind::RegistryOperation=>self.execute_registry_transaction(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
 }
 
 #[cfg(test)]
