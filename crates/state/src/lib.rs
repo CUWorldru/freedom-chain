@@ -8841,3 +8841,175 @@ mod m462_persisted_bitcoin_reorg_integrity_tests {
         );
     }
 }
+
+
+#[cfg(test)]
+mod registry_authorization_execution_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use freedom_types::{
+        RegistryAuthorization, RegistryAuthorizationPolicy, RegistryOperation,
+        RegistryOperationEnvelope, RegistrySignature,
+        registry_authorization::{ChainStatus, AssetStatus, REGISTRY_PROTOCOL_VERSION},
+    };
+
+    fn fixture() -> (ChainState, Vec<SigningKey>, RegistryAuthorizationPolicy) {
+        let keys: Vec<_> = (1u8..=5).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
+        let members = keys.iter().map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            (freedom_primitives::hash_bytes(&public_key), public_key)
+        }).collect();
+        let policy = RegistryAuthorizationPolicy { policy_id: [9; 32], threshold: 4, members };
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        state.registry_network_id = 1;
+        state.registry_policy = Some(policy.clone());
+        state.registry_activation_height = 1;
+        (state, keys, policy)
+    }
+
+    fn envelope(
+        keys: &[SigningKey],
+        policy_id: Hash,
+        nonce: u64,
+        operation: RegistryOperation,
+        signer_count: usize,
+    ) -> RegistryOperationEnvelope {
+        let mut result = RegistryOperationEnvelope {
+            protocol_version: REGISTRY_PROTOCOL_VERSION,
+            network_id: 1,
+            policy_id,
+            nonce,
+            operation,
+            authorization: RegistryAuthorization { signatures: vec![] },
+        };
+        let message = result.signing_message().unwrap();
+        result.authorization.signatures = keys.iter().take(signer_count).map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            RegistrySignature {
+                signer_id: freedom_primitives::hash_bytes(&public_key),
+                signature: key.sign(&message).to_bytes().to_vec(),
+            }
+        }).collect();
+        result.authorization.signatures.sort_by_key(|item| item.signer_id);
+        result
+    }
+
+    #[test]
+    fn registry_executes_all_seven_operations_with_sequential_nonce() {
+        let (mut state, keys, policy) = fixture();
+        let operations = vec![
+            RegistryOperation::RegisterChain {
+                chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+            },
+            RegistryOperation::RegisterCanonicalAsset {
+                canonical_asset_id: [21; 32], symbol: "USDC".into(), name: "USD Coin".into(), decimals: 6,
+            },
+            RegistryOperation::AddAssetRepresentation {
+                canonical_asset_id: [21; 32], chain_id: 10, external_asset_id: b"0xabc".to_vec(),
+                asset_kind: 1, decimals: 6,
+            },
+            RegistryOperation::UpdateChainStatus { chain_id: 10, status: ChainStatus::Paused },
+            RegistryOperation::UpdateAssetStatus { canonical_asset_id: [21; 32], status: AssetStatus::Paused },
+            RegistryOperation::RevokeAssetRepresentation {
+                canonical_asset_id: [21; 32], chain_id: 10, external_asset_id: b"0xabc".to_vec(),
+            },
+            RegistryOperation::UpdateRegistryAuthorizationPolicy {
+                policy_id: [10; 32], threshold: 4, members: policy.members.clone(),
+            },
+        ];
+        for (index, operation) in operations.into_iter().enumerate() {
+            let next_policy_id = if index == 6 { [9; 32] } else { [9; 32] };
+            let signed = envelope(&keys, next_policy_id, index as u64 + 1, operation, 4);
+            state.apply_registry_envelope(&signed).unwrap();
+        }
+        assert_eq!(state.registry_nonce, 7);
+        assert_eq!(state.registry_policy.as_ref().unwrap().policy_id, [10; 32]);
+        assert_eq!(state.registry_chains[&10].status, ChainStatus::Paused);
+        assert_eq!(state.registry_assets[&[21; 32]].status, AssetStatus::Paused);
+        let representation_id = ChainState::registry_representation_id([21; 32], 10, b"0xabc");
+        assert_eq!(state.registry_asset_representations[&representation_id].status, AssetStatus::Revoked);
+    }
+
+    #[test]
+    fn registry_requires_four_valid_signatures_and_rejects_forgery() {
+        let (mut state, keys, _) = fixture();
+        let op = RegistryOperation::RegisterChain {
+            chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+        };
+        let three = envelope(&keys, [9; 32], 1, op.clone(), 3);
+        assert_eq!(state.apply_registry_envelope(&three), Err(StateError::InvalidRegistryOperation));
+        let mut forged = envelope(&keys, [9; 32], 1, op, 4);
+        forged.authorization.signatures[0].signature[0] ^= 0x80;
+        assert_eq!(state.apply_registry_envelope(&forged), Err(StateError::InvalidRegistryOperation));
+        assert_eq!(state.registry_nonce, 0);
+        assert!(state.registry_chains.is_empty());
+    }
+
+    #[test]
+    fn registry_rejects_replay_and_nonce_gap_without_mutation() {
+        let (mut state, keys, _) = fixture();
+        let first = envelope(&keys, [9; 32], 1, RegistryOperation::RegisterChain {
+            chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+        }, 4);
+        state.apply_registry_envelope(&first).unwrap();
+        let replay = envelope(&keys, [9; 32], 1, RegistryOperation::UpdateChainStatus {
+            chain_id: 10, status: ChainStatus::Paused,
+        }, 4);
+        assert_eq!(state.apply_registry_envelope(&replay), Err(StateError::InvalidRegistryOperation));
+        let gap = envelope(&keys, [9; 32], 3, RegistryOperation::UpdateChainStatus {
+            chain_id: 10, status: ChainStatus::Paused,
+        }, 4);
+        assert_eq!(state.apply_registry_envelope(&gap), Err(StateError::InvalidRegistryOperation));
+        assert_eq!(state.registry_nonce, 1);
+        assert_eq!(state.registry_chains[&10].status, ChainStatus::Active);
+    }
+
+    #[test]
+    fn registry_policy_rotation_preserves_global_nonce() {
+        let (mut state, keys, policy) = fixture();
+        let rotate = envelope(&keys, [9; 32], 1, RegistryOperation::UpdateRegistryAuthorizationPolicy {
+            policy_id: [10; 32], threshold: 4, members: policy.members.clone(),
+        }, 4);
+        state.apply_registry_envelope(&rotate).unwrap();
+        assert_eq!(state.registry_nonce, 1);
+        let next = envelope(&keys, [10; 32], 2, RegistryOperation::RegisterChain {
+            chain_id: 11, name: "Polygon".into(), network: "mainnet".into(), finality_depth: 128,
+        }, 4);
+        state.apply_registry_envelope(&next).unwrap();
+        assert_eq!(state.registry_nonce, 2);
+        assert!(state.registry_chains.contains_key(&11));
+    }
+
+    #[test]
+    fn registry_rejects_inactive_or_missing_references() {
+        let (mut state, keys, _) = fixture();
+        let missing_chain = envelope(&keys, [9; 32], 1, RegistryOperation::AddAssetRepresentation {
+            canonical_asset_id: [21; 32], chain_id: 10, external_asset_id: b"asset".to_vec(),
+            asset_kind: 1, decimals: 6,
+        }, 4);
+        assert_eq!(state.apply_registry_envelope(&missing_chain), Err(StateError::InvalidRegistryOperation));
+        let register = envelope(&keys, [9; 32], 1, RegistryOperation::RegisterChain {
+            chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+        }, 4);
+        state.apply_registry_envelope(&register).unwrap();
+        let asset = envelope(&keys, [9; 32], 2, RegistryOperation::RegisterCanonicalAsset {
+            canonical_asset_id: [21; 32], symbol: "USD".into(), name: "Dollar".into(), decimals: 6,
+        }, 4);
+        state.apply_registry_envelope(&asset).unwrap();
+        let pause_chain = envelope(&keys, [9; 32], 3, RegistryOperation::UpdateChainStatus {
+            chain_id: 10, status: ChainStatus::Paused,
+        }, 4);
+        state.apply_registry_envelope(&pause_chain).unwrap();
+        let representation = envelope(&keys, [9; 32], 4, RegistryOperation::AddAssetRepresentation {
+            canonical_asset_id: [21; 32], chain_id: 10, external_asset_id: b"asset".to_vec(),
+            asset_kind: 1, decimals: 6,
+        }, 4);
+        assert_eq!(state.apply_registry_envelope(&representation), Err(StateError::InvalidRegistryOperation));
+        assert_eq!(state.registry_nonce, 3);
+        assert!(state.registry_asset_representations.is_empty());
+    }
+}
