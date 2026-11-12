@@ -8862,7 +8862,7 @@ mod registry_authorization_execution_tests {
         let policy = RegistryAuthorizationPolicy { policy_id: [9; 32], threshold: 4, members };
         let mut state = ChainState::genesis(&freedom_types::Genesis {
             chain_id: freedom_primitives::CHAIN_ID,
-            initial_supply: 0,
+            initial_supply: GENESIS_SUPPLY,
             validators: vec![],
         });
         state.registry_network_id = 1;
