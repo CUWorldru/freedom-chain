@@ -1618,3 +1618,132 @@ mod genesis_commitment_runtime_tests {
         assert!(initialize_with_genesis_commitment(&genesis, &manifest, &[0; 32]).is_err());
     }
 }
+
+
+#[cfg(test)]
+mod registry_runtime_admission_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use freedom_types::{
+        RegistryAuthorization, RegistryAuthorizationPolicy, RegistryOperation,
+        RegistryOperationEnvelope, RegistrySignature, TxKind,
+        registry_authorization::{ChainStatus, REGISTRY_PROTOCOL_VERSION},
+    };
+    use std::collections::BTreeMap;
+
+    fn registry_keys() -> Vec<SigningKey> {
+        (1u8..=5).map(|n| SigningKey::from_bytes(&[n; 32])).collect()
+    }
+
+    fn configure_registry(state: &mut ChainState, keys: &[SigningKey]) {
+        let members: BTreeMap<_, _> = keys.iter().map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            (freedom_primitives::hash_bytes(&public_key), public_key)
+        }).collect();
+        state.registry_network_id = 77;
+        state.registry_activation_height = 1;
+        state.registry_nonce = 0;
+        state.registry_policy = Some(RegistryAuthorizationPolicy {
+            policy_id: [77; 32],
+            threshold: 4,
+            members,
+        });
+    }
+
+    fn signed_registry_tx(
+        state: &ChainState,
+        keys: &[SigningKey],
+        signer_count: usize,
+        network_id: u32,
+        policy_id: [u8; 32],
+        registry_nonce: u64,
+    ) -> Transaction {
+        let mut envelope = RegistryOperationEnvelope {
+            protocol_version: REGISTRY_PROTOCOL_VERSION,
+            network_id,
+            policy_id,
+            nonce: registry_nonce,
+            operation: RegistryOperation::RegisterChain {
+                chain_id: 100,
+                name: "Test chain".into(),
+                network: "testnet".into(),
+                finality_depth: 12,
+            },
+            authorization: RegistryAuthorization { signatures: vec![] },
+        };
+        let message = envelope.signing_message().unwrap();
+        envelope.authorization.signatures = keys.iter().take(signer_count).map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            RegistrySignature {
+                signer_id: freedom_primitives::hash_bytes(&public_key),
+                signature: key.sign(&message).to_bytes().to_vec(),
+            }
+        }).collect();
+        envelope.authorization.signatures.sort_by_key(|signature| signature.signer_id);
+        let outer_key = SigningKey::from_bytes(&[42u8; 32]);
+        let mut tx = Transaction {
+            chain_id: CHAIN_ID,
+            sender: state.accounts.keys().next().copied().unwrap(),
+            nonce: 0,
+            kind: TxKind::RegistryOperation,
+            payload: envelope.encode_payload().unwrap(),
+            fee: 0,
+            signature: Vec::new(),
+        };
+        tx.signature = outer_key.sign(&tx.signing_bytes()).to_bytes().to_vec();
+        tx
+    }
+
+    #[test]
+    fn registry_admission_accepts_four_of_five_and_rejects_three() {
+        let mut state = test_state();
+        let keys = registry_keys();
+        configure_registry(&mut state, &keys);
+        let valid = signed_registry_tx(&state, &keys, 4, 77, [77; 32], 1);
+        assert!(validate_transaction_admission(&state, &valid).is_ok());
+
+        let insufficient = signed_registry_tx(&state, &keys, 3, 77, [77; 32], 1);
+        assert!(validate_transaction_admission(&state, &insufficient).is_err());
+    }
+
+    #[test]
+    fn registry_admission_requires_outer_ed25519_signature() {
+        let mut state = test_state();
+        let keys = registry_keys();
+        configure_registry(&mut state, &keys);
+        let mut tx = signed_registry_tx(&state, &keys, 4, 77, [77; 32], 1);
+        tx.signature[0] ^= 0x01;
+        assert_eq!(
+            validate_transaction_admission(&state, &tx),
+            Err("invalid transaction signature".into())
+        );
+    }
+
+    #[test]
+    fn registry_admission_rejects_wrong_network_policy_and_nonce() {
+        let mut state = test_state();
+        let keys = registry_keys();
+        configure_registry(&mut state, &keys);
+
+        for (network, policy, nonce) in [
+            (78, [77; 32], 1),
+            (77, [78; 32], 1),
+            (77, [77; 32], 2),
+        ] {
+            let tx = signed_registry_tx(&state, &keys, 4, network, policy, nonce);
+            assert!(validate_transaction_admission(&state, &tx).is_err());
+        }
+    }
+
+    #[test]
+    fn registry_admission_enforces_activation_height() {
+        let mut state = test_state();
+        let keys = registry_keys();
+        configure_registry(&mut state, &keys);
+        state.registry_activation_height = 2;
+        let tx = signed_registry_tx(&state, &keys, 4, 77, [77; 32], 1);
+        assert!(validate_transaction_admission(&state, &tx).is_err());
+        state.height = 1;
+        assert!(validate_transaction_admission(&state, &tx).is_ok());
+    }
+}
