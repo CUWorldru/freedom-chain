@@ -115,6 +115,7 @@ fn validate_registry_operation_admission(s:&ChainState,tx:&Transaction)->Result<
   || next_height<s.registry_activation_height {
   return Err("InvalidRegistryOperation".into());
  }
+ envelope.operation.validate().map_err(|_|"InvalidRegistryOperation".to_string())?;
  envelope.verify_authorization(policy).map_err(|_|"InvalidRegistryOperation".to_string())?;
  Ok(())
 }
