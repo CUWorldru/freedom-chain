@@ -1420,12 +1420,16 @@ mod genesis_commitment_storage_tests {
 
         store.bind_genesis_commitment(commitment).unwrap();
         store.bind_genesis_commitment(commitment).unwrap();
+        drop(store);
+
+        let reopened = ChainStore::open(dir.path()).unwrap();
+        reopened.bind_genesis_commitment(commitment).unwrap();
         assert!(matches!(
-            store.bind_genesis_commitment([8u8; 32]),
+            reopened.bind_genesis_commitment([8u8; 32]),
             Err(StorageError::InvalidMetadata)
         ));
         assert!(matches!(
-            store.bind_genesis_commitment([0u8; 32]),
+            reopened.bind_genesis_commitment([0u8; 32]),
             Err(StorageError::InvalidMetadata)
         ));
     }
