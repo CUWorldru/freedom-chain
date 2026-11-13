@@ -9,7 +9,8 @@ pub const GENESIS_COMMITMENT_VERSION: u16 = 1;
 /// Consensus-critical genesis configuration. The expected commitment must be
 /// pinned independently by the node release/configuration; hashing a mutable
 /// manifest alone does not establish trust.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct GenesisCommitmentManifest {
     pub chain_id: u32,
     pub network_id: u32,
