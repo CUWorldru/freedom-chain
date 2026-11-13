@@ -2627,3 +2627,94 @@ mod lifecycle_tests {
         store.validate_chain_through(3).unwrap();
     }
 }
+
+
+#[cfg(test)]
+mod genesis_bootstrap_config_tests {
+    use super::*;
+    use ed25519_dalek::SigningKey;
+
+    #[test]
+    fn strict_manifest_json_builds_canonical_registry_policy() {
+        let keys: Vec<_> = (1u8..=5).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
+        let validators: Vec<_> = keys.iter().take(3).map(|key| {
+            let consensus_key = key.verifying_key().to_bytes();
+            Validator {
+                validator_id: hash_bytes(&consensus_key),
+                owner: address_from_public_key(&consensus_key),
+                consensus_key,
+                stake: 0,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect();
+        let members: Vec<_> = keys.iter().map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            serde_json::json!({
+                "signer_id": hex::encode(hash_bytes(&public_key)),
+                "public_key": hex::encode(public_key),
+            })
+        }).collect();
+        let document = serde_json::json!({
+            "chain_id": CHAIN_ID,
+            "network_id": 1,
+            "initial_supply": GENESIS_SUPPLY,
+            "validators": validators,
+            "registry_policy": {
+                "policy_id": hex::encode([9u8; 32]),
+                "threshold": 4,
+                "members": members,
+            },
+            "registry_activation_height": 0,
+        });
+        let bytes = serde_json::to_vec(&document).unwrap();
+
+        let parsed = parse_genesis_manifest(&bytes).unwrap();
+        assert_eq!(parsed.validators.len(), 3);
+        assert_eq!(parsed.registry_policy.threshold, 4);
+        assert_eq!(parsed.registry_policy.members.len(), 5);
+        assert_ne!(parsed.commitment_hash().unwrap(), [0; 32]);
+    }
+
+    #[test]
+    fn manifest_parser_rejects_bad_signer_identity_and_unknown_fields() {
+        let keys: Vec<_> = (1u8..=5).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
+        let public_key = keys[0].verifying_key().to_bytes();
+        let mut member = serde_json::json!({
+            "signer_id": hex::encode([0xAA; 32]),
+            "public_key": hex::encode(public_key),
+        });
+        let document = serde_json::json!({
+            "chain_id": CHAIN_ID,
+            "network_id": 1,
+            "initial_supply": GENESIS_SUPPLY,
+            "validators": [],
+            "registry_policy": {
+                "policy_id": hex::encode([9u8; 32]),
+                "threshold": 4,
+                "members": [member.clone()],
+            },
+            "registry_activation_height": 0,
+        });
+        assert!(parse_genesis_manifest(&serde_json::to_vec(&document).unwrap()).is_err());
+
+        member["signer_id"] = serde_json::Value::String(hex::encode(hash_bytes(&public_key)));
+        let mut corrected = document;
+        corrected["registry_policy"]["members"] = serde_json::json!([member]);
+        corrected["unexpected"] = serde_json::json!(true);
+        assert!(parse_genesis_manifest(&serde_json::to_vec(&corrected).unwrap()).is_err());
+    }
+
+    #[test]
+    fn validator_key_material_accepts_raw_or_hex_and_rejects_wrong_length() {
+        let raw = [0x2Au8; 32];
+        assert_eq!(parse_validator_key_material(&raw).unwrap(), raw);
+        assert_eq!(
+            parse_validator_key_material(hex::encode(raw).as_bytes()).unwrap(),
+            raw
+        );
+        assert!(parse_validator_key_material(b"abcd").is_err());
+    }
+}
