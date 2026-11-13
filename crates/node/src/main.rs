@@ -4,9 +4,9 @@ use freedom_network::{
     NetworkMessage, SyncResponse, SyncWireRequest, SyncWireResponse,
 };
 use freedom_primitives::{address_from_public_key, hash_bytes, CHAIN_ID, GENESIS_SUPPLY, Hash, NETWORK_NAME};
-use freedom_runtime::{build_next_block, execute_block, initialize, Mempool, ValidatorProtocol};
+use freedom_runtime::{build_next_block, execute_block, initialize, initialize_with_genesis_commitment, Mempool, ValidatorProtocol};
 use freedom_storage::ChainStore;
-use freedom_types::{Genesis, Validator};
+use freedom_types::{Genesis, GenesisCommitmentManifest, Validator};
 use libp2p::{swarm::SwarmEvent, Multiaddr};
 use libp2p::futures::StreamExt;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -1203,28 +1203,79 @@ fn replay_persisted_blocks(
     Ok(())
 }
 
+fn required_bootstrap_env(name: &str) -> Result<String, String> {
+    std::env::var(name).map_err(|_| format!("required bootstrap setting {name} is missing"))
+}
+
+fn decode_commitment_hex(value: &str) -> Result<Hash, String> {
+    let decoded = hex::decode(value.trim())
+        .map_err(|_| "NETWORK_321MORE_GENESIS_COMMITMENT must be 64 hexadecimal characters".to_string())?;
+    decoded.try_into()
+        .map_err(|_| "NETWORK_321MORE_GENESIS_COMMITMENT must decode to exactly 32 bytes".to_string())
+}
+
+fn load_validator_signing_key(path: &str) -> Result<ed25519_dalek::SigningKey, String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("cannot stat validator key file: {e}"))?;
+    if !metadata.is_file() {
+        return Err("validator key path must be a regular file".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err("validator key file permissions must be 0600 or stricter".into());
+        }
+    }
+    let material = std::fs::read(path)
+        .map_err(|e| format!("cannot read validator key file: {e}"))?;
+    let key_bytes: [u8; 32] = if material.len() == 32 {
+        material.as_slice().try_into().expect("length checked")
+    } else {
+        let encoded = std::str::from_utf8(&material)
+            .map_err(|_| "validator key file must contain 32 raw bytes or 64 hex characters".to_string())?
+            .trim();
+        let decoded = hex::decode(encoded)
+            .map_err(|_| "validator key file must contain 32 raw bytes or 64 hex characters".to_string())?;
+        decoded.try_into()
+            .map_err(|_| "validator key file must decode to exactly 32 bytes".to_string())?
+    };
+    Ok(ed25519_dalek::SigningKey::from_bytes(&key_bytes))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let validators: Vec<Validator> = (0u8..3).map(|i| {
-        let key = [i + 1; 32];
-        let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
-        Validator {
-            validator_id: hash_bytes(&public_key),
-            owner: address_from_public_key(&public_key),
-            consensus_key: public_key,
-            stake: 0, unbonding_stake: 0, blocks_proposed: 0, blocks_finalized: 0, missed_votes: 0,
-        }
-    }).collect();
+    // Consensus parameters and validator membership come only from a strict
+    // manifest whose hash is checked against a separately supplied trust anchor.
+    let manifest_path = required_bootstrap_env("NETWORK_321MORE_GENESIS_MANIFEST")?;
+    let manifest_bytes = std::fs::read(&manifest_path)
+        .map_err(|e| format!("cannot read genesis manifest: {e}"))?;
+    let manifest: GenesisCommitmentManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("invalid genesis manifest JSON: {e}"))?;
+    manifest.validate()?;
 
-    let genesis = Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators };
-    let mut state = initialize(&genesis)?;
-    let validator_index = std::env::var("NETWORK_321MORE_VALIDATOR_INDEX").or_else(|_| std::env::var("FREEDOM_VALIDATOR_INDEX")).ok()
-        .and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
-    if validator_index >= 3 { return Err("NETWORK_321MORE_VALIDATOR_INDEX must be 0..2".into()); }
+    let trusted_commitment = decode_commitment_hex(
+        &required_bootstrap_env("NETWORK_321MORE_GENESIS_COMMITMENT")?
+    )?;
+    let genesis_commitment = manifest.verify_pinned(&trusted_commitment)?;
+    let genesis = Genesis {
+        chain_id: manifest.chain_id,
+        initial_supply: manifest.initial_supply,
+        validators: manifest.validators.clone(),
+    };
+    let mut state = initialize_with_genesis_commitment(&genesis, &manifest, &trusted_commitment)?;
 
-    let consensus_key = ed25519_dalek::SigningKey::from_bytes(&[(validator_index as u8) + 1; 32]);
-    let validator_id = hash_bytes(&consensus_key.verifying_key().to_bytes());
-    let owner = state.validators.get(&validator_id).ok_or("validator not found")?.owner;
+    let validator_key_path = required_bootstrap_env("NETWORK_321MORE_VALIDATOR_KEY_FILE")?;
+    let consensus_key = load_validator_signing_key(&validator_key_path)?;
+    let consensus_public_key = consensus_key.verifying_key().to_bytes();
+    let validator_index = manifest.validators.iter()
+        .position(|validator| validator.consensus_key == consensus_public_key)
+        .ok_or("validator key is not a member of the pinned genesis validator set")?;
+    let validator_id = hash_bytes(&consensus_public_key);
+    let owner = state.validators.get(&validator_id)
+        .filter(|validator| validator.consensus_key == consensus_public_key)
+        .ok_or("validator key does not match the initialized validator record")?
+        .owner;
     let mut protocol = ValidatorProtocol::new(validator_id, consensus_key.clone());
     let mut blocks: BTreeMap<Hash, freedom_types::Block> = BTreeMap::new();
 
@@ -1232,6 +1283,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Recovery is a hard startup gate: do not construct the network swarm or
     // enter consensus until persisted blocks have replayed and all tip anchors validate.
     let store = ChainStore::open(&db_path)?;
+    store.bind_genesis_commitment(genesis_commitment)?;
     let stored_height = store.latest_height()?;
     store.validate_tip_metadata()
         .map_err(|e| format!("stored tip metadata is inconsistent: {e}"))?;
@@ -1260,6 +1312,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if block_hash(&checkpoint) != snapshot.block_hash || checkpoint.header.state_root != snapshot.state_root {
                 return Err(format!("snapshot checkpoint mismatch at {}", snapshot.height).into());
             }
+        }
+        if snapshot.height == 0 && snapshot.state.state_root() != state.state_root() {
+            return Err("stored genesis snapshot does not match the pinned genesis manifest".into());
         }
         state = snapshot.state;
         if state.last_block_hash != snapshot.block_hash || state.height != snapshot.height {
