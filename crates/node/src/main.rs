@@ -2776,4 +2776,48 @@ mod genesis_bootstrap_config_tests {
         );
         assert!(parse_validator_key_material(b"abcd").is_err());
     }
+
+
+    #[test]
+    fn genesis_validate_command_checks_runtime_initialization_offline() {
+        use std::io::Write;
+
+        let keys: Vec<_> = (1u8..=5).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
+        let validators: Vec<_> = keys.iter().take(3).map(|key| {
+            let consensus_key = key.verifying_key().to_bytes();
+            Validator {
+                validator_id: hash_bytes(&consensus_key),
+                owner: address_from_public_key(&consensus_key),
+                consensus_key,
+                stake: 0,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect();
+        let members: Vec<_> = keys.iter().map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            serde_json::json!({
+                "signer_id": hex::encode(hash_bytes(&public_key)),
+                "public_key": hex::encode(public_key),
+            })
+        }).collect();
+        let document = serde_json::json!({
+            "chain_id": CHAIN_ID,
+            "network_id": 1,
+            "initial_supply": GENESIS_SUPPLY,
+            "validators": validators,
+            "registry_policy": {
+                "policy_id": hex::encode([9u8; 32]),
+                "threshold": 4,
+                "members": members,
+            },
+            "registry_activation_height": 0,
+        });
+
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(&serde_json::to_vec(&document).unwrap()).unwrap();
+        validate_genesis_config_file(file.path().to_str().unwrap()).unwrap();
+    }
 }
