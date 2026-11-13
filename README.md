@@ -187,7 +187,7 @@ M2 establishes the evidence layer for useful network work without minting 321M y
 - votes are collected and checked against the M14 quorum rule.
 - once quorum is reached, the block is finalized and committed atomically.
 - the validator round resets and the next deterministic proposer can start the next height.
-- NETWORK_321MORE_VALIDATOR_INDEX=0..2 selects the local validator role. The legacy FREEDOM_VALIDATOR_INDEX name remains accepted for compatibility.
+- The validator identity is selected by `NETWORK_321MORE_VALIDATOR_KEY_FILE`; there is no built-in development validator secret or numeric seed selector.
 - NETWORK_321MORE_PEERS can provide comma-separated libp2p multiaddrs for peer dialing. The legacy FREEDOM_PEERS name remains accepted for compatibility.
 - M16 is the protocol loop; production still needs persistent peer discovery, timeouts/view-change, durable storage and Byzantine fault handling beyond the local quorum path.
 
@@ -1720,3 +1720,16 @@ Bitcoin UTXO commitment attestations now cryptographically bind their signatures
 - This prevents a previously valid Bitcoin attestation from being reused after a security-policy change without a fresh attestation.
 
 - The same policy snapshot gate is enforced at the Bitcoin bridge-mint boundary, preventing stale attestations from authorizing mint after a policy change.
+
+
+## Secure Genesis Bootstrap
+
+The node now fails closed unless all three bootstrap inputs are supplied:
+
+- `NETWORK_321MORE_GENESIS_MANIFEST`: path to a strict JSON genesis manifest. It contains `chain_id`, `network_id`, `initial_supply`, `validators`, `registry_policy`, and `registry_activation_height`. Registry policy members are represented as an array of objects with `signer_id` and `public_key`, each encoded as 64 hexadecimal characters. The validator entries use the normal `Validator` serde representation.
+- `NETWORK_321MORE_GENESIS_COMMITMENT`: the independently distributed, 32-byte canonical genesis commitment as exactly 64 hexadecimal characters. It must not be copied from the mutable manifest at startup; operators must provision it from the trusted network release/configuration.
+- `NETWORK_321MORE_VALIDATOR_KEY_FILE`: path to the local validator's Ed25519 private key, stored as 32 raw bytes or 64 hexadecimal characters. On Unix, the file must have permissions `0600` or stricter. Its public key must match one of the validators in the pinned manifest.
+
+The node verifies the manifest commitment, checks that the local key belongs to the pinned validator set, and only then initializes runtime state. The RocksDB database is also bound to that genesis commitment. A database with existing blocks but no recorded genesis anchor is rejected and requires a separately reviewed migration; a height-zero snapshot must match the freshly initialized genesis state.
+
+Do not launch production nodes until the network's actual genesis manifest and independently distributed commitment have been finalized and reviewed.
