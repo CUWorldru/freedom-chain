@@ -1733,3 +1733,16 @@ The node now fails closed unless all three bootstrap inputs are supplied:
 The node verifies the manifest commitment, checks that the local key belongs to the pinned validator set, and only then initializes runtime state. The RocksDB database is also bound to that genesis commitment. A database with existing blocks but no recorded genesis anchor is rejected and requires a separately reviewed migration; a height-zero snapshot must match the freshly initialized genesis state.
 
 Do not launch production nodes until the network's actual genesis manifest and independently distributed commitment have been finalized and reviewed.
+
+### Offline Genesis Configuration Validator
+
+Before provisioning a validator key or starting a node, validate a candidate manifest without opening a database or starting networking:
+
+```bash
+cargo run -p freedom-node -- genesis-validate ./genesis-manifest.json
+```
+
+The command strictly parses the manifest, validates its Registry policy and validator identities, initializes an in-memory genesis state, and prints the resulting state root and canonical genesis commitment. It does not create or modify a database, generate keys, or enter consensus.
+
+The printed commitment is a **calculated candidate**, not an authenticity guarantee. Review and distribute it through an independent trusted release/configuration channel, then provision that exact value as `NETWORK_321MORE_GENESIS_COMMITMENT` for node startup. Never let a node derive its own trust anchor from the mutable manifest it is asked to trust.
+
