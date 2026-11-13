@@ -2686,11 +2686,24 @@ mod genesis_bootstrap_config_tests {
             "signer_id": hex::encode([0xAA; 32]),
             "public_key": hex::encode(public_key),
         });
+        let validators: Vec<_> = keys.iter().take(3).map(|key| {
+            let consensus_key = key.verifying_key().to_bytes();
+            Validator {
+                validator_id: hash_bytes(&consensus_key),
+                owner: address_from_public_key(&consensus_key),
+                consensus_key,
+                stake: 0,
+                unbonding_stake: 0,
+                blocks_proposed: 0,
+                blocks_finalized: 0,
+                missed_votes: 0,
+            }
+        }).collect();
         let document = serde_json::json!({
             "chain_id": CHAIN_ID,
             "network_id": 1,
             "initial_supply": GENESIS_SUPPLY,
-            "validators": [],
+            "validators": validators,
             "registry_policy": {
                 "policy_id": hex::encode([9u8; 32]),
                 "threshold": 4,
