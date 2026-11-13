@@ -143,7 +143,7 @@ M2 establishes the evidence layer for useful network work without minting 321M y
 ## M12 — Deterministic localnet block production
 
 - `freedom-node` produces a deterministic local chain of blocks.
-- Three genesis validators are loaded and proposer selection is round-robin over sorted validator IDs.
+- Genesis validators are loaded from the pinned network manifest; proposer selection is round-robin over sorted validator IDs.
 - Empty blocks exercise TX root, receipts root, state root and block hash commitments.
 - Block execution is transactional: failed execution or commitment validation does not partially mutate live state.
 - M12 is a local deterministic block-production harness, not yet a networked BFT consensus implementation.
