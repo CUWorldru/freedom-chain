@@ -1304,8 +1304,54 @@ fn load_validator_signing_key(path: &str) -> Result<ed25519_dalek::SigningKey, S
     Ok(ed25519_dalek::SigningKey::from_bytes(&key_bytes))
 }
 
+fn validate_genesis_config_file(path: &str) -> Result<(), String> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("cannot read genesis manifest {path}: {e}"))?;
+    let manifest = parse_genesis_manifest(&bytes)?;
+    let commitment = manifest.commitment_hash()?;
+    let genesis = Genesis {
+        chain_id: manifest.chain_id,
+        initial_supply: manifest.initial_supply,
+        validators: manifest.validators.clone(),
+    };
+
+    // This initializes an in-memory state only. It does not open storage,
+    // create keys, bind a database, start networking, or enter consensus.
+    let state = initialize_with_genesis_commitment(&genesis, &manifest, &commitment)
+        .map_err(|e| format!("genesis runtime validation failed: {e}"))?;
+    if state.height != 0 || state.registry_network_id != manifest.network_id {
+        return Err("initialized genesis state does not match manifest metadata".into());
+    }
+
+    println!("Genesis configuration: VALID");
+    println!("Chain ID: {}", manifest.chain_id);
+    println!("Network ID: {}", manifest.network_id);
+    println!("Initial supply: {}", manifest.initial_supply);
+    println!("Validators: {}", manifest.validators.len());
+    println!(
+        "Registry authorization: {}/{} signatures",
+        manifest.registry_policy.threshold,
+        manifest.registry_policy.members.len()
+    );
+    println!("Registry activation height: {}", manifest.registry_activation_height);
+    println!("Genesis state root: {}", hex::encode(state.state_root()));
+    println!("Genesis commitment: {}", hex::encode(commitment));
+    println!();
+    println!("IMPORTANT: pin this commitment through an independent trusted release/configuration channel.");
+    println!("Do not treat this locally calculated value as proof that the manifest is authentic.");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("genesis-validate") {
+        if args.len() != 2 {
+            return Err("usage: freedom-node genesis-validate <genesis-manifest.json>".into());
+        }
+        validate_genesis_config_file(&args[1]).map_err(std::io::Error::other)?;
+        return Ok(());
+    }
     // Consensus parameters and validator membership come only from a strict
     // manifest whose hash is checked against a separately supplied trust anchor.
     let manifest_path = required_bootstrap_env("NETWORK_321MORE_GENESIS_MANIFEST")?;
