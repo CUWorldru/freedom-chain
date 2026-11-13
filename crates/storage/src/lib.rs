@@ -7,6 +7,7 @@ use std::path::Path;
 const BLOCK_PREFIX: &[u8] = b"block:";
 const META_HEIGHT: &[u8] = b"meta:height";
 const META_HASH: &[u8] = b"meta:last_hash";
+const META_GENESIS_COMMITMENT: &[u8] = b"meta:genesis_commitment";
 const SNAPSHOT_PREFIX: &[u8] = b"snapshot:";
 const REPUTATION_KEY: &[u8] = b"meta:peer_reputation";
 
@@ -150,6 +151,27 @@ impl ChainStore {
         let mut batch = WriteBatch::default();
         batch.put(REPUTATION_KEY, bytes);
         self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))
+    }
+
+    /// Bind this database to the independently verified genesis commitment.
+    /// Existing databases without this anchor are rejected once they contain blocks;
+    /// silently adopting a new genesis would make historical state ambiguous.
+    pub fn bind_genesis_commitment(&self, commitment: Hash) -> Result<(), StorageError> {
+        if commitment == [0; 32] {
+            return Err(StorageError::InvalidMetadata);
+        }
+        match self.db.get(META_GENESIS_COMMITMENT).map_err(|e| StorageError::Rocks(e.to_string()))? {
+            Some(existing) if existing.as_ref() == commitment.as_slice() => Ok(()),
+            Some(_) => Err(StorageError::InvalidMetadata),
+            None => {
+                if self.latest_height()? != 0 {
+                    return Err(StorageError::InvalidMetadata);
+                }
+                let mut batch = WriteBatch::default();
+                batch.put(META_GENESIS_COMMITMENT, commitment);
+                self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))
+            }
+        }
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
@@ -1374,4 +1396,41 @@ mod tests {
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message.contains("persisted bridge state integrity failure")));
     }
 
+}
+
+
+#[cfg(test)]
+mod genesis_commitment_storage_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn database_binds_to_one_nonzero_genesis_commitment() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let commitment = [7u8; 32];
+
+        store.bind_genesis_commitment(commitment).unwrap();
+        store.bind_genesis_commitment(commitment).unwrap();
+        assert!(matches!(
+            store.bind_genesis_commitment([8u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+        assert!(matches!(
+            store.bind_genesis_commitment([0u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+    }
+
+    #[test]
+    fn legacy_nonempty_database_without_genesis_anchor_fails_closed() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        store.db.put(META_HEIGHT, 1u64.to_be_bytes()).unwrap();
+
+        assert!(matches!(
+            store.bind_genesis_commitment([7u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+    }
 }
