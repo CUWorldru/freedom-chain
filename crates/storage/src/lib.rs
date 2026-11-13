@@ -167,6 +167,14 @@ impl ChainStore {
                 if self.latest_height()? != 0 {
                     return Err(StorageError::InvalidMetadata);
                 }
+                // Missing metadata must not make a non-empty legacy/corrupt
+                // database look like a fresh chain.
+                for entry in self.db.iterator(rocksdb::IteratorMode::Start) {
+                    let (key, _) = entry.map_err(|e| StorageError::Rocks(e.to_string()))?;
+                    if key.starts_with(BLOCK_PREFIX) || key.starts_with(SNAPSHOT_PREFIX) {
+                        return Err(StorageError::InvalidMetadata);
+                    }
+                }
                 let mut batch = WriteBatch::default();
                 batch.put(META_GENESIS_COMMITMENT, commitment);
                 self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))
@@ -1427,6 +1435,17 @@ mod genesis_commitment_storage_tests {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
         store.db.put(META_HEIGHT, 1u64.to_be_bytes()).unwrap();
+
+        assert!(matches!(
+            store.bind_genesis_commitment([7u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+    }
+    #[test]
+    fn database_with_orphaned_block_data_cannot_be_adopted_as_fresh() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        store.db.put(ChainStore::height_key(1), b"orphaned").unwrap();
 
         assert!(matches!(
             store.bind_genesis_commitment([7u8; 32]),
