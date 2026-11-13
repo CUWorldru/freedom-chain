@@ -82,7 +82,7 @@ pub struct Transaction {
 pub enum TxKind {
     Transfer = 1, RegisterNode = 2, SubmitContribution = 3, ClaimReward = 4, Purchase = 10,
     Stake = 5, Unstake = 6, CreateTicket = 7, Burn = 8, Governance = 9, SubmitEvidence = 11,
-    BridgeMint = 12,
+    BridgeMint = 12, RegistryOperation = 13,
 }
 impl TxKind { pub fn code(self) -> u8 { self as u8 } }
 
@@ -7180,3 +7180,9 @@ mod m444_bitcoin_witness_commitment_integration_tests {
         );
     }
 }
+
+
+pub mod registry_authorization;
+pub use registry_authorization::{RegistryAuthorization, RegistryAuthorizationPolicy, RegistryOperation, RegistryOperationEnvelope, RegistrySignature};
+pub mod genesis_commitment;
+pub use genesis_commitment::GenesisCommitmentManifest;
