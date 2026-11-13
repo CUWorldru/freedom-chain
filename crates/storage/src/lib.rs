@@ -161,7 +161,7 @@ impl ChainStore {
             return Err(StorageError::InvalidMetadata);
         }
         match self.db.get(META_GENESIS_COMMITMENT).map_err(|e| StorageError::Rocks(e.to_string()))? {
-            Some(existing) if existing.as_ref() == commitment.as_slice() => Ok(()),
+            Some(existing) if existing.as_slice() == &commitment[..] => Ok(()),
             Some(_) => Err(StorageError::InvalidMetadata),
             None => {
                 if self.latest_height()? != 0 {
