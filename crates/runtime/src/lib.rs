@@ -1748,3 +1748,79 @@ mod registry_runtime_admission_tests {
         assert!(validate_transaction_admission(&state, &tx).is_ok());
     }
 }
+
+
+#[cfg(test)]
+mod registry_block_atomicity_tests {
+    use super::*;
+    use ed25519_dalek::SigningKey;
+    use freedom_crypto::sign;
+    use freedom_types::{BlockHeader, Transaction, TransferPayload, TxKind};
+
+    #[test]
+    fn failed_registry_transaction_rolls_back_prior_transactions_in_block() {
+        let mut state = test_state();
+        let sender = *state.accounts.keys().next().unwrap();
+        let signing_key = SigningKey::from_bytes(&[42u8; 32]);
+        let recipient = freedom_primitives::address_from_public_key(&[77u8; 32]);
+
+        let mut transfer = Transaction {
+            chain_id: CHAIN_ID,
+            sender,
+            nonce: 0,
+            kind: TxKind::Transfer,
+            payload: TransferPayload { to: recipient, amount: 25 }.encode(),
+            fee: 0,
+            signature: Vec::new(),
+        };
+        transfer.signature = sign(&signing_key, &transfer.signing_bytes()).to_vec();
+
+        // This transaction has a valid outer account signature and sequential
+        // account nonce, but its Registry envelope is malformed.
+        let mut invalid_registry = Transaction {
+            chain_id: CHAIN_ID,
+            sender,
+            nonce: 1,
+            kind: TxKind::RegistryOperation,
+            payload: Vec::new(),
+            fee: 0,
+            signature: Vec::new(),
+        };
+        invalid_registry.signature =
+            sign(&signing_key, &invalid_registry.signing_bytes()).to_vec();
+
+        let before_root = state.state_root();
+        let before_balance = state.accounts.get(&sender).unwrap().balance;
+        let before_ledger_len = state.ledger.len();
+        let before_events_len = state.events.len();
+        let block = Block {
+            header: BlockHeader {
+                height: 1,
+                round: 0,
+                previous_hash: state.last_block_hash,
+                state_root: [0; 32],
+                tx_root: tx_root(&[transfer.clone(), invalid_registry.clone()]),
+                receipts_root: [0; 32],
+                timestamp: 1,
+                epoch: state.epoch,
+                proposer: [0; 32],
+                epoch_transition_certificate: None,
+            },
+            transactions: vec![transfer, invalid_registry],
+            receipts: Vec::new(),
+        };
+
+        assert_eq!(
+            execute_block(&mut state, &block),
+            Err("InvalidRegistryOperation".into())
+        );
+        assert_eq!(state.state_root(), before_root);
+        assert_eq!(state.height, 0);
+        assert_eq!(state.accounts.get(&sender).unwrap().nonce, 0);
+        assert_eq!(state.accounts.get(&sender).unwrap().balance, before_balance);
+        assert!(!state.accounts.contains_key(&recipient));
+        assert_eq!(state.ledger.len(), before_ledger_len);
+        assert_eq!(state.events.len(), before_events_len);
+        assert_eq!(state.registry_nonce, 0);
+    }
+}
