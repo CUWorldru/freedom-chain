@@ -1203,15 +1203,86 @@ fn replay_persisted_blocks(
     Ok(())
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GenesisManifestFile {
+    chain_id: u32,
+    network_id: u32,
+    initial_supply: u128,
+    validators: Vec<Validator>,
+    registry_policy: GenesisRegistryPolicyFile,
+    registry_activation_height: u64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GenesisRegistryPolicyFile {
+    policy_id: String,
+    threshold: u16,
+    members: Vec<GenesisRegistryMemberFile>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GenesisRegistryMemberFile {
+    signer_id: String,
+    public_key: String,
+}
+
+fn decode_fixed_hex_32(value: &str, field: &str) -> Result<[u8; 32], String> {
+    let decoded = hex::decode(value.trim())
+        .map_err(|_| format!("{field} must be 64 hexadecimal characters"))?;
+    decoded.try_into()
+        .map_err(|_| format!("{field} must decode to exactly 32 bytes"))
+}
+
+fn parse_genesis_manifest(bytes: &[u8]) -> Result<GenesisCommitmentManifest, String> {
+    let file: GenesisManifestFile = serde_json::from_slice(bytes)
+        .map_err(|e| format!("invalid genesis manifest JSON: {e}"))?;
+    let policy_id = decode_fixed_hex_32(&file.registry_policy.policy_id, "registry_policy.policy_id")?;
+    let mut members = BTreeMap::new();
+    for member in file.registry_policy.members {
+        let signer_id = decode_fixed_hex_32(&member.signer_id, "registry member signer_id")?;
+        let public_key = decode_fixed_hex_32(&member.public_key, "registry member public_key")?;
+        if hash_bytes(&public_key) != signer_id {
+            return Err("registry member signer_id does not match its public key".into());
+        }
+        if members.insert(signer_id, public_key).is_some() {
+            return Err("genesis manifest contains a duplicate registry signer".into());
+        }
+    }
+    let manifest = GenesisCommitmentManifest {
+        chain_id: file.chain_id,
+        network_id: file.network_id,
+        initial_supply: file.initial_supply,
+        validators: file.validators,
+        registry_policy: freedom_types::RegistryAuthorizationPolicy {
+            policy_id,
+            threshold: file.registry_policy.threshold,
+            members,
+        },
+        registry_activation_height: file.registry_activation_height,
+    };
+    manifest.validate()?;
+    Ok(manifest)
+}
+
 fn required_bootstrap_env(name: &str) -> Result<String, String> {
     std::env::var(name).map_err(|_| format!("required bootstrap setting {name} is missing"))
 }
 
 fn decode_commitment_hex(value: &str) -> Result<Hash, String> {
-    let decoded = hex::decode(value.trim())
-        .map_err(|_| "NETWORK_321MORE_GENESIS_COMMITMENT must be 64 hexadecimal characters".to_string())?;
-    decoded.try_into()
-        .map_err(|_| "NETWORK_321MORE_GENESIS_COMMITMENT must decode to exactly 32 bytes".to_string())
+    decode_fixed_hex_32(value, "NETWORK_321MORE_GENESIS_COMMITMENT")
+}
+
+fn parse_validator_key_material(material: &[u8]) -> Result<[u8; 32], String> {
+    if material.len() == 32 {
+        return Ok(material.try_into().expect("length checked"));
+    }
+    let encoded = std::str::from_utf8(material)
+        .map_err(|_| "validator key file must contain 32 raw bytes or 64 hex characters".to_string())?
+        .trim();
+    decode_fixed_hex_32(encoded, "validator key file")
 }
 
 fn load_validator_signing_key(path: &str) -> Result<ed25519_dalek::SigningKey, String> {
@@ -1229,17 +1300,7 @@ fn load_validator_signing_key(path: &str) -> Result<ed25519_dalek::SigningKey, S
     }
     let material = std::fs::read(path)
         .map_err(|e| format!("cannot read validator key file: {e}"))?;
-    let key_bytes: [u8; 32] = if material.len() == 32 {
-        material.as_slice().try_into().expect("length checked")
-    } else {
-        let encoded = std::str::from_utf8(&material)
-            .map_err(|_| "validator key file must contain 32 raw bytes or 64 hex characters".to_string())?
-            .trim();
-        let decoded = hex::decode(encoded)
-            .map_err(|_| "validator key file must contain 32 raw bytes or 64 hex characters".to_string())?;
-        decoded.try_into()
-            .map_err(|_| "validator key file must decode to exactly 32 bytes".to_string())?
-    };
+    let key_bytes = parse_validator_key_material(&material)?;
     Ok(ed25519_dalek::SigningKey::from_bytes(&key_bytes))
 }
 
@@ -1250,9 +1311,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let manifest_path = required_bootstrap_env("NETWORK_321MORE_GENESIS_MANIFEST")?;
     let manifest_bytes = std::fs::read(&manifest_path)
         .map_err(|e| format!("cannot read genesis manifest: {e}"))?;
-    let manifest: GenesisCommitmentManifest = serde_json::from_slice(&manifest_bytes)
-        .map_err(|e| format!("invalid genesis manifest JSON: {e}"))?;
-    manifest.validate()?;
+    let manifest = parse_genesis_manifest(&manifest_bytes)?;
 
     let trusted_commitment = decode_commitment_hex(
         &required_bootstrap_env("NETWORK_321MORE_GENESIS_COMMITMENT")?
