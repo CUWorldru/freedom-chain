@@ -280,6 +280,9 @@ impl RegistryAuthorizationPolicy {
             return Err("zero registry signer id is invalid".into());
         }
         for (signer_id, public_key) in &self.members {
+            if !freedom_crypto::is_valid_ed25519_public_key(public_key) {
+                return Err("registry member public key must be a valid non-weak Ed25519 key".into());
+            }
             if hash_bytes(public_key) != *signer_id {
                 return Err("registry signer id must equal the BLAKE3 hash of its Ed25519 public key".into());
             }
