@@ -33,12 +33,21 @@ impl GenesisCommitmentManifest {
             return Err("genesis validator set must not be empty".into());
         }
         let mut validator_ids = BTreeSet::new();
+        let mut consensus_keys = BTreeSet::new();
         for validator in &self.validators {
             if validator.validator_id == [0; 32] || !validator_ids.insert(validator.validator_id) {
                 return Err("genesis validator ids must be non-zero and unique".into());
             }
+            if validator.consensus_key == [0; 32]
+                || !consensus_keys.insert(validator.consensus_key)
+            {
+                return Err("genesis validator consensus keys must be non-zero and unique".into());
+            }
             if hash_bytes(&validator.consensus_key) != validator.validator_id {
                 return Err("genesis validator id must match its consensus public key".into());
+            }
+            if freedom_primitives::address_from_public_key(&validator.consensus_key) != validator.owner {
+                return Err("genesis validator owner must match its consensus public key".into());
             }
         }
         self.registry_policy.validate()?;
@@ -167,6 +176,25 @@ mod tests {
         let mut value = manifest();
         value.validators[0].validator_id = [0xAA; 32];
         assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_validator_owner_key_mismatch() {
+        let mut value = manifest();
+        value.validators[0].owner = [0xA5; 32];
+        assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_zero_or_duplicate_consensus_keys() {
+        let mut zero_key = manifest();
+        zero_key.validators[0].consensus_key = [0; 32];
+        assert!(zero_key.validate().is_err());
+
+        let mut duplicate_key = manifest();
+        duplicate_key.validators[1].consensus_key = duplicate_key.validators[0].consensus_key;
+        duplicate_key.validators[1].validator_id = duplicate_key.validators[0].validator_id;
+        assert!(duplicate_key.validate().is_err());
     }
 
     #[test]
