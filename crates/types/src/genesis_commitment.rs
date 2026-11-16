@@ -38,10 +38,11 @@ impl GenesisCommitmentManifest {
             if validator.validator_id == [0; 32] || !validator_ids.insert(validator.validator_id) {
                 return Err("genesis validator ids must be non-zero and unique".into());
             }
-            if validator.consensus_key == [0; 32]
-                || !consensus_keys.insert(validator.consensus_key)
-            {
-                return Err("genesis validator consensus keys must be non-zero and unique".into());
+            if !freedom_crypto::is_valid_ed25519_public_key(&validator.consensus_key) {
+                return Err("genesis validator consensus key must be a valid non-weak Ed25519 key".into());
+            }
+            if !consensus_keys.insert(validator.consensus_key) {
+                return Err("genesis validator consensus keys must be unique".into());
             }
             if hash_bytes(&validator.consensus_key) != validator.validator_id {
                 return Err("genesis validator id must match its consensus public key".into());
@@ -195,6 +196,15 @@ mod tests {
         duplicate_key.validators[1].consensus_key = duplicate_key.validators[0].consensus_key;
         duplicate_key.validators[1].validator_id = duplicate_key.validators[0].validator_id;
         assert!(duplicate_key.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_small_order_validator_consensus_key() {
+        let mut value = manifest();
+        value.validators[0].consensus_key = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        value.validators[0].validator_id = hash_bytes(&value.validators[0].consensus_key);
+        value.validators[0].owner = freedom_primitives::address_from_public_key(&value.validators[0].consensus_key);
+        assert!(value.validate().is_err());
     }
 
     #[test]
