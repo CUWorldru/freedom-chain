@@ -385,6 +385,16 @@ mod tests {
     }
 
     #[test]
+    fn policy_rejects_small_order_ed25519_public_keys() {
+        let mut policy = policy_and_keys().0;
+        let first = *policy.members.keys().next().unwrap();
+        policy.members.remove(&first);
+        let weak_key = [1u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        policy.members.insert(hash_bytes(&weak_key), weak_key);
+        assert!(policy.validate().is_err());
+    }
+
+    #[test]
     fn authorization_rejects_malformed_policy_before_signature_checks() {
         let (mut policy, keys) = policy_and_keys();
         let first = *policy.members.keys().next().unwrap();
