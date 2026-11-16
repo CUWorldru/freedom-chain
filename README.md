@@ -1746,3 +1746,5 @@ The command strictly parses the manifest, validates its Registry policy and vali
 
 The printed commitment is a **calculated candidate**, not an authenticity guarantee. Review and distribute it through an independent trusted release/configuration channel, then provision that exact value as `NETWORK_321MORE_GENESIS_COMMITMENT` for node startup. Never let a node derive its own trust anchor from the mutable manifest it is asked to trust.
 
+Genesis validator identity validation also binds each validator owner address to the address derived from its consensus public key. Zero or duplicate consensus keys are rejected before the manifest commitment is accepted. This prevents a manifest from committing internally inconsistent validator identity fields.
+
