@@ -1434,9 +1434,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 return Err(format!("snapshot checkpoint mismatch at {}", snapshot.height).into());
             }
         }
-        if snapshot.height == 0 && snapshot.state.state_root() != state.state_root() {
-            return Err("stored genesis snapshot does not match the pinned genesis manifest".into());
-        }
         state = snapshot.state;
         if state.last_block_hash != snapshot.block_hash || state.height != snapshot.height {
             return Err(format!("snapshot state linkage mismatch at {}", snapshot.height).into());
