@@ -935,6 +935,45 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_lookup_returns_none_when_all_checkpoints_are_corrupt_and_genesis_can_be_reseeded() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![]
+        });
+        store.save_snapshot(&genesis, [0; 32]).unwrap();
+
+        let block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0; 32], state_root: [1; 32],
+                tx_root: [2; 32], receipts_root: [3; 32], timestamp: 1, epoch: 0,
+                proposer: [4; 32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        store.put_block(&block).unwrap();
+        let committed_tip_hash = store.latest_hash().unwrap();
+
+        // Model disk corruption affecting every available checkpoint. The
+        // canonical block log and its durable tip metadata remain untouched.
+        store.db.put(ChainStore::snapshot_key(0), b"{corrupt genesis snapshot").unwrap();
+        store.db.put(ChainStore::snapshot_key(1), b"{corrupt height-one snapshot").unwrap();
+        assert!(store.latest_snapshot_at_or_below(1).unwrap().is_none());
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), committed_tip_hash);
+        store.validate_chain_through(1).unwrap();
+
+        // Startup recovery can rebuild from the independently pinned Genesis
+        // state, replace the damaged height-zero checkpoint, and replay blocks.
+        store.save_snapshot(&genesis, [0; 32]).unwrap();
+        let recovered_checkpoint = store.latest_snapshot_at_or_below(1).unwrap().unwrap();
+        assert_eq!(recovered_checkpoint.height, 0);
+        assert_eq!(recovered_checkpoint.state_root, genesis.state_root());
+        assert_eq!(store.range(1, 1).unwrap(), vec![block]);
+        assert_eq!(store.latest_hash().unwrap(), committed_tip_hash);
+    }
+
+    #[test]
     fn bounded_snapshot_lookup_ignores_higher_snapshot() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
