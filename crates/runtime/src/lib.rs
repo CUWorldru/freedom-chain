@@ -1605,6 +1605,38 @@ mod genesis_commitment_runtime_tests {
     }
 
     #[test]
+    fn secure_genesis_binds_validator_sets_history_and_registry_configuration() {
+        let (genesis, manifest) = committed_genesis();
+        let anchor = manifest.commitment_hash().unwrap();
+        let state = initialize_with_genesis_commitment(&genesis, &manifest, &anchor).unwrap();
+
+        assert_eq!(state.height, 0);
+        assert_eq!(state.validators.len(), manifest.validators.len());
+        assert_eq!(state.active_validator_set.len(), manifest.validators.len());
+        assert_eq!(state.pending_validator_set, state.active_validator_set);
+        assert_eq!(state.validator_set_history_entries.get(&0), Some(&state.active_validator_set));
+        assert_eq!(state.registry_network_id, manifest.network_id);
+        assert_eq!(state.registry_policy.as_ref(), Some(&manifest.registry_policy));
+        assert_eq!(state.registry_activation_height, manifest.registry_activation_height);
+        assert_eq!(state.registry_nonce, 0);
+        assert_eq!(state.supply.total, GENESIS_SUPPLY);
+        assert_eq!(state.validate_finality_state_integrity(), Ok(()));
+        state.assert_invariants();
+    }
+
+    #[test]
+    fn secure_genesis_initialization_is_deterministic() {
+        let (genesis, manifest) = committed_genesis();
+        let anchor = manifest.commitment_hash().unwrap();
+        let first = initialize_with_genesis_commitment(&genesis, &manifest, &anchor).unwrap();
+        let second = initialize_with_genesis_commitment(&genesis, &manifest, &anchor).unwrap();
+
+        assert_eq!(first.state_root(), second.state_root());
+        assert_eq!(first.validator_set_history, second.validator_set_history);
+        assert_eq!(first.validator_set_history_entries, second.validator_set_history_entries);
+    }
+
+    #[test]
     fn secure_genesis_initialization_rejects_manifest_mismatch() {
         let (genesis, manifest) = committed_genesis();
         let anchor = manifest.commitment_hash().unwrap();
