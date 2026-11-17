@@ -1456,4 +1456,55 @@ mod genesis_commitment_storage_tests {
             Err(StorageError::InvalidMetadata)
         ));
     }
+
+    #[test]
+    fn committed_genesis_snapshot_survives_database_reopen() {
+        use ed25519_dalek::SigningKey;
+        use freedom_primitives::{hash_bytes, GENESIS_SUPPLY};
+        use freedom_types::{Genesis, RegistryAuthorizationPolicy};
+
+        let dir = tempdir().unwrap();
+        let signer = SigningKey::from_bytes(&[42u8; 32]);
+        let public_key = signer.verifying_key().to_bytes();
+        let mut members = std::collections::BTreeMap::new();
+        members.insert(hash_bytes(&public_key), public_key);
+
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: GENESIS_SUPPLY,
+            validators: vec![],
+        });
+        state.registry_network_id = 1;
+        state.registry_policy = Some(RegistryAuthorizationPolicy {
+            policy_id: [9u8; 32],
+            threshold: 1,
+            members,
+        });
+        state.registry_activation_height = 7;
+        state.registry_nonce = 11;
+        let expected_root = state.state_root();
+        let commitment = [7u8; 32];
+
+        {
+            let store = ChainStore::open(dir.path()).unwrap();
+            store.bind_genesis_commitment(commitment).unwrap();
+            store.save_snapshot(&state, [0u8; 32]).unwrap();
+        }
+
+        let reopened = ChainStore::open(dir.path()).unwrap();
+        reopened.bind_genesis_commitment(commitment).unwrap();
+        let snapshot = reopened.load_snapshot(0).unwrap()
+            .expect("committed genesis snapshot must survive restart");
+
+        assert_eq!(snapshot.state_root, expected_root);
+        assert_eq!(snapshot.state.state_root(), expected_root);
+        assert_eq!(snapshot.state.registry_network_id, 1);
+        assert_eq!(snapshot.state.registry_policy, state.registry_policy);
+        assert_eq!(snapshot.state.registry_activation_height, 7);
+        assert_eq!(snapshot.state.registry_nonce, 11);
+        assert!(matches!(
+            reopened.bind_genesis_commitment([8u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+    }
 }
