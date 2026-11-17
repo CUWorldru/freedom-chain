@@ -29,8 +29,11 @@ impl GenesisCommitmentManifest {
         if self.network_id == 0 {
             return Err("genesis network id must be non-zero".into());
         }
-        if self.validators.is_empty() {
-            return Err("genesis validator set must not be empty".into());
+        if self.initial_supply != freedom_primitives::GENESIS_SUPPLY {
+            return Err("genesis initial supply does not match the protocol genesis supply".into());
+        }
+        if self.validators.len() < 3 {
+            return Err("genesis validator set must contain at least three validators".into());
         }
         let mut validator_ids = BTreeSet::new();
         let mut consensus_keys = BTreeSet::new();
@@ -49,6 +52,12 @@ impl GenesisCommitmentManifest {
             }
             if freedom_primitives::address_from_public_key(&validator.consensus_key) != validator.owner {
                 return Err("genesis validator owner must match its consensus public key".into());
+            }
+            if validator.stake != 0 || validator.unbonding_stake != 0 {
+                return Err("genesis validators must start with zero active and unbonding stake".into());
+            }
+            if validator.blocks_proposed != 0 || validator.blocks_finalized != 0 || validator.missed_votes != 0 {
+                return Err("genesis validator activity counters must start at zero".into());
             }
         }
         self.registry_policy.validate()?;
@@ -204,6 +213,35 @@ mod tests {
         value.validators[0].consensus_key = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         value.validators[0].validator_id = hash_bytes(&value.validators[0].consensus_key);
         value.validators[0].owner = freedom_primitives::address_from_public_key(&value.validators[0].consensus_key);
+        assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_genesis_supply_mismatch() {
+        let mut value = manifest();
+        value.initial_supply = 1;
+        assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_fewer_than_three_validators() {
+        let mut value = manifest();
+        value.validators.truncate(2);
+        assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_preallocated_validator_stake_and_activity() {
+        let mut value = manifest();
+        value.validators[0].stake = 1;
+        assert!(value.validate().is_err());
+
+        let mut value = manifest();
+        value.validators[0].unbonding_stake = 1;
+        assert!(value.validate().is_err());
+
+        let mut value = manifest();
+        value.validators[0].blocks_proposed = 1;
         assert!(value.validate().is_err());
     }
 
