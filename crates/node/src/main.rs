@@ -2602,10 +2602,12 @@ mod m484_global_sync_response_budget_tests {
 mod lifecycle_tests {
     use super::*;
 
-    fn test_genesis() -> Genesis {
-        let validators: Vec<Validator> = (0u8..3).map(|i| {
-            let key = [i + 1; 32];
-            let public_key = ed25519_dalek::SigningKey::from_bytes(&key).verifying_key().to_bytes();
+    fn committed_test_genesis() -> (Genesis, GenesisCommitmentManifest) {
+        let keys: Vec<_> = (1u8..=5)
+            .map(|n| ed25519_dalek::SigningKey::from_bytes(&[n; 32]))
+            .collect();
+        let validators: Vec<Validator> = keys.iter().take(3).map(|key| {
+            let public_key = key.verifying_key().to_bytes();
             Validator {
                 validator_id: hash_bytes(&public_key),
                 owner: address_from_public_key(&public_key),
@@ -2617,17 +2619,40 @@ mod lifecycle_tests {
                 missed_votes: 0,
             }
         }).collect();
-        Genesis { chain_id: CHAIN_ID, initial_supply: GENESIS_SUPPLY, validators }
+        let members: BTreeMap<_, _> = keys.iter().map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            (hash_bytes(&public_key), public_key)
+        }).collect();
+        let genesis = Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: GENESIS_SUPPLY,
+            validators: validators.clone(),
+        };
+        let manifest = GenesisCommitmentManifest {
+            chain_id: CHAIN_ID,
+            network_id: 1,
+            initial_supply: GENESIS_SUPPLY,
+            validators,
+            registry_policy: freedom_types::RegistryAuthorizationPolicy {
+                policy_id: [9; 32],
+                threshold: 4,
+                members,
+            },
+            registry_activation_height: 0,
+        };
+        (genesis, manifest)
     }
 
     #[test]
-    fn one_node_persists_restarts_recovers_and_continues() {
+    fn one_node_persists_restarts_recovers_and_continues_with_pinned_genesis() {
         let dir = tempfile::tempdir().unwrap();
-        let genesis = test_genesis();
-        let mut state = initialize(&genesis).unwrap();
+        let (genesis, manifest) = committed_test_genesis();
+        let commitment = manifest.commitment_hash().unwrap();
+        let mut state = initialize_with_genesis_commitment(&genesis, &manifest, &commitment).unwrap();
 
         {
             let store = ChainStore::open(dir.path()).unwrap();
+            store.bind_genesis_commitment(commitment).unwrap();
             store.save_snapshot(&state, [0; 32]).unwrap();
 
             // Produce and durably commit two sequential blocks before shutdown.
@@ -2646,6 +2671,7 @@ mod lifecycle_tests {
         // Reopen the same RocksDB directory, load the last available checkpoint,
         // replay the durable suffix, and verify the reconstructed state.
         let store = ChainStore::open(dir.path()).unwrap();
+        store.bind_genesis_commitment(commitment).unwrap();
         let stored_height = store.latest_height().unwrap();
         let snapshot = store.latest_snapshot_at_or_below(stored_height).unwrap()
             .expect("genesis checkpoint must be available");
