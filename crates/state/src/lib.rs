@@ -1,3 +1,4 @@
+pub mod legacy_snapshot;
 const MAX_EVIDENCE_COMPONENT_BYTES: usize = 64 * 1024;
 
 fn decode_submit_evidence(b:&[u8])->Option<freedom_types::SubmitEvidencePayload>{
@@ -40,9 +41,38 @@ pub struct LedgerEntry { pub tx_hash:Hash, pub sender:Address, pub kind:u8, pub 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct Ticket { pub ticket_id:Hash,pub owner:Address,pub draw_id:Hash,pub created_at:u64 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)] pub struct DrawState { pub config:DrawConfig,pub total_tickets:u64,#[serde(rename="prize_pool_native_units",alias="prize_pool_mfdm")] pub prize_pool_native_units:u128,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,pub executed:bool }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegistryChainRecord {
+ pub chain_id:u32,
+ pub name:String,
+ pub network:String,
+ pub finality_depth:u64,
+ pub status:freedom_types::registry_authorization::ChainStatus,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegistryCanonicalAssetRecord {
+ pub canonical_asset_id:Hash,
+ pub symbol:String,
+ pub name:String,
+ pub decimals:u8,
+ pub status:freedom_types::registry_authorization::AssetStatus,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegistryAssetRepresentationRecord {
+ pub representation_id:Hash,
+ pub canonical_asset_id:Hash,
+ pub chain_id:u32,
+ pub external_asset_id:Vec<u8>,
+ pub asset_kind:u8,
+ pub decimals:u8,
+ pub status:freedom_types::registry_authorization::AssetStatus,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)] pub struct ChainState { pub height:u64,pub last_block_hash:Hash,pub accounts:BTreeMap<Address,Account>,pub validators:BTreeMap<Hash,Validator>,#[serde(default)] pub unbonding:BTreeMap<Hash,UnbondingEntry>,pub nodes:BTreeMap<Hash,Node>,pub contributions:BTreeMap<Hash,Contribution>,pub rewards:BTreeMap<Hash,Reward>,pub purchases:BTreeMap<Hash,Purchase>,pub billing:BTreeMap<Hash,BillingRecord>,pub tickets:BTreeMap<Hash,Ticket>,pub draws:BTreeMap<Hash,DrawState>,pub draw_results:BTreeMap<Hash,DrawResult>,#[serde(rename="cu_fund_native_units",alias="cu_fund_mfdm")] pub cu_fund_native_units:u128,#[serde(rename="annual_reserve_native_units",alias="annual_reserve_mfdm")] pub annual_reserve_native_units:u128,#[serde(rename="draw_prize_pool_native_units",alias="draw_prize_pool_mfdm")] pub draw_prize_pool_native_units:u128,pub events:Vec<Event>,pub ledger:Vec<LedgerEntry>,pub supply:Supply,pub epoch:u64,pub epoch_length:u64,pub active_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub asset_registry:BTreeMap<Hash,AssetDefinition>,#[serde(default)] pub cross_chain_asset_registries:BTreeMap<Hash,freedom_types::CrossChainAssetRegistry>,#[serde(default)] pub processed_bridge_messages:BTreeMap<Hash,BridgeMessage>,#[serde(default)] pub bridge_message_status:BTreeMap<Hash,BridgeMessageStatus>,#[serde(default)] pub bridge_message_approval_sets:BTreeMap<Hash,freedom_types::BridgeMessageApprovalSet>,#[serde(default)] pub bridge_message_approval_epochs:BTreeMap<Hash,u64>,#[serde(default)] pub bridge_withdrawals:BTreeMap<Hash,BridgeWithdrawal>,#[serde(default)] pub bridge_withdrawal_status:BTreeMap<Hash,BridgeWithdrawalStatus>,#[serde(default)] pub bridge_accounting:BTreeMap<Hash,BridgeAccounting>,#[serde(default)] pub bridge_security_policies:BTreeMap<Hash,BridgeSecurityPolicy>,#[serde(default)] pub bridge_approval_sets:BTreeMap<Hash,BridgeApprovalSet>,#[serde(default)] pub bridge_pause_authorizations:BTreeMap<Hash,BridgePauseAuthorizationSet>,#[serde(default)] pub bridge_nonce_registry:BTreeMap<Hash,BTreeSet<u64>>,#[serde(default)] pub bridge_rate_limits:BTreeMap<Hash,BridgeRateLimitUsage>,#[serde(default)] pub bridge_deposit_replays:BTreeMap<Hash,DepositReplayRecord>,#[serde(default)] pub bridge_mint_authorizations:BTreeMap<Hash,BridgeMintAuthorization>,#[serde(default)] pub bridge_withdrawal_rate_limit_period:BTreeMap<Hash,u64>,#[serde(default)] pub bitcoin_checkpoints:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_canonical_tips:BTreeMap<Hash,BitcoinChainCheckpoint>,#[serde(default)] pub bitcoin_reorg_evidence:BTreeMap<Hash,Vec<BitcoinReorgEvidence>>,#[serde(default)] pub bitcoin_reorg_policy:BTreeMap<Hash,freedom_types::BitcoinReorgPolicy>,#[serde(default)] pub bitcoin_reorg_recovery:BTreeMap<Hash,freedom_types::BitcoinReorgRecovery>,#[serde(default)] pub bitcoin_utxo_attestations:BTreeMap<Hash,freedom_types::BitcoinUtxoCommitmentAttestation>,#[serde(default)] pub bitcoin_utxo_attestation_policy_hashes:BTreeMap<Hash,Hash>,#[serde(default)] pub bitcoin_utxo_commitments:BTreeMap<Hash,freedom_types::BitcoinUtxoBlockCommitment>,#[serde(default)] pub pending_validator_set:BTreeMap<Hash,freedom_types::ValidatorSetEntry>,#[serde(default)] pub validator_set_history:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_history_sets:BTreeMap<u64,BTreeMap<Hash,[u8;32]>>,
-#[serde(default)] pub validator_set_history_entries:BTreeMap<u64,BTreeMap<Hash,freedom_types::ValidatorSetEntry>>,#[serde(default)] pub validator_set_history_key_hashes:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_certificate:Option<freedom_types::ValidatorSetCertificate>,#[serde(default)] pub staking_activated:bool,pub epoch_issuance:u128,pub epoch_cap:u128,pub evidence:BTreeMap<Hash,freedom_types::EquivocationEvidence>,pub slashed_evidence:BTreeMap<Hash,u128> }
-#[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidChainId,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected }
+#[serde(default)] pub validator_set_history_entries:BTreeMap<u64,BTreeMap<Hash,freedom_types::ValidatorSetEntry>>,#[serde(default)] pub validator_set_history_key_hashes:BTreeMap<u64,Hash>,#[serde(default)] pub validator_set_certificate:Option<freedom_types::ValidatorSetCertificate>,#[serde(default)] pub staking_activated:bool,pub epoch_issuance:u128,pub epoch_cap:u128,pub evidence:BTreeMap<Hash,freedom_types::EquivocationEvidence>,pub slashed_evidence:BTreeMap<Hash,u128>,#[serde(default)] pub registry_network_id:u32,#[serde(default)] pub registry_policy:Option<freedom_types::RegistryAuthorizationPolicy>,#[serde(default)] pub registry_activation_height:u64,#[serde(default)] pub registry_nonce:u64,#[serde(default)] pub registry_chains:BTreeMap<u32,RegistryChainRecord>,#[serde(default)] pub registry_assets:BTreeMap<Hash,RegistryCanonicalAssetRecord>,#[serde(default)] pub registry_asset_representations:BTreeMap<Hash,RegistryAssetRepresentationRecord> }
+#[derive(Debug,PartialEq,Eq)] pub enum StateError { AccountNotFound,InvalidChainId,InvalidNonce{expected:u64,actual:u64},InsufficientBalance,InvalidTransferPayload,InvalidRecipient,ArithmeticOverflow,UnsupportedTransaction,InvalidNodePayload,InvalidNode,DuplicateNode,InvalidContributionPayload,InvalidContribution,DuplicateContribution,InvalidWorkUnits,InvalidQualityScore,InvalidVerification,AlreadyVerified,ContributionNotRewardable,DuplicateReward,InvalidReward,IssuanceCapExceeded,InvalidPurchase,DuplicatePurchase,InsufficientBalanceForPurchase,InvalidEvidence,InvalidTicketPayload,InvalidDraw,InvalidTicketQuantity,InvalidTicketPrice,DuplicateTicket,DrawNotReady,DrawAlreadyExecuted,InsufficientPrizePool,InvalidUnbonding,InvalidValidatorLifecycle,InvalidStakeAmount,InvalidAsset,DuplicateAsset,InvalidBridgeMessage,DuplicateBridgeMessage,InvalidBridgeWithdrawal,DuplicateBridgeWithdrawal,InvalidBridgeWithdrawalTransition,InvalidBridgeAccounting,BridgeRateLimitExceeded,InvalidBridgePauseAuthorization,DuplicateBridgeNonce,InvalidBridgeMintTransaction,BitcoinReorgDetected,InvalidRegistryOperation }
 impl ChainState {
  fn validate_evidence_integrity(&self)->Result<(),StateError>{
   for (id,evidence) in &self.evidence {
@@ -204,7 +234,7 @@ impl ChainState {
  }
 
  pub const UNBONDING_COOLDOWN: u64 = 200;
- pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis native asset supply must be zero");let validators:BTreeMap<Hash,Validator>=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators:validators.clone(),nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_native_units:0,annual_reserve_native_units:0,draw_prize_pool_native_units:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),asset_registry: Self::genesis_asset_registry(),cross_chain_asset_registries: Self::genesis_cross_chain_asset_registries(),processed_bridge_messages:BTreeMap::new(),bridge_message_status:BTreeMap::new(),bridge_message_approval_sets:BTreeMap::new(),bridge_message_approval_epochs:BTreeMap::new(),bridge_withdrawals:BTreeMap::new(),bridge_withdrawal_status:BTreeMap::new(),bridge_accounting:BTreeMap::new(),bridge_security_policies:BTreeMap::new(),bridge_approval_sets:BTreeMap::new(),bridge_pause_authorizations:BTreeMap::new(),bridge_nonce_registry:BTreeMap::new(),bridge_rate_limits:BTreeMap::new(),bridge_deposit_replays:BTreeMap::new(),bridge_mint_authorizations:BTreeMap::new(),bridge_withdrawal_rate_limit_period:BTreeMap::new(),bitcoin_checkpoints:BTreeMap::new(),bitcoin_canonical_tips:BTreeMap::new(),bitcoin_reorg_evidence:BTreeMap::new(),bitcoin_reorg_policy:BTreeMap::new(),bitcoin_reorg_recovery:BTreeMap::new(),bitcoin_utxo_attestations:BTreeMap::new(),bitcoin_utxo_attestation_policy_hashes:BTreeMap::new(),bitcoin_utxo_commitments:BTreeMap::new(),pending_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),validator_set_history:{ let mut h=BTreeMap::new(); let mut bytes=Vec::new(); for (id,v) in validators.iter() { bytes.extend_from_slice(id); bytes.extend_from_slice(&v.owner); bytes.extend_from_slice(&v.consensus_key); bytes.extend_from_slice(&v.stake.to_le_bytes()); } h.insert(0,freedom_primitives::hash_bytes(&bytes)); h },validator_set_history_sets:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()); h },validator_set_history_entries:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect()); h },validator_set_history_key_hashes:{ let mut h=BTreeMap::new(); let mut b=Vec::new(); for (id,v) in validators.iter(){ b.extend_from_slice(id); b.extend_from_slice(&v.consensus_key); } h.insert(0,freedom_primitives::hash_bytes(&b)); h },validator_set_certificate:None,staking_activated:false,epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new()}}
+ pub fn genesis(g:&Genesis)->Self{assert_eq!(g.initial_supply,GENESIS_SUPPLY,"Genesis native asset supply must be zero");let validators:BTreeMap<Hash,Validator>=g.validators.iter().cloned().map(|v|(v.validator_id,v)).collect();Self{height:0,last_block_hash:[0;32],accounts:BTreeMap::new(),validators:validators.clone(),nodes:BTreeMap::new(),contributions:BTreeMap::new(),rewards:BTreeMap::new(),purchases:BTreeMap::new(),billing:BTreeMap::new(),tickets:BTreeMap::new(),draws:BTreeMap::new(),draw_results:BTreeMap::new(),cu_fund_native_units:0,annual_reserve_native_units:0,draw_prize_pool_native_units:0,events:Vec::new(),ledger:Vec::new(),supply:Supply::genesis(),epoch:0,epoch_length:1000,active_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),asset_registry: Self::genesis_asset_registry(),cross_chain_asset_registries: Self::genesis_cross_chain_asset_registries(),processed_bridge_messages:BTreeMap::new(),bridge_message_status:BTreeMap::new(),bridge_message_approval_sets:BTreeMap::new(),bridge_message_approval_epochs:BTreeMap::new(),bridge_withdrawals:BTreeMap::new(),bridge_withdrawal_status:BTreeMap::new(),bridge_accounting:BTreeMap::new(),bridge_security_policies:BTreeMap::new(),bridge_approval_sets:BTreeMap::new(),bridge_pause_authorizations:BTreeMap::new(),bridge_nonce_registry:BTreeMap::new(),bridge_rate_limits:BTreeMap::new(),bridge_deposit_replays:BTreeMap::new(),bridge_mint_authorizations:BTreeMap::new(),bridge_withdrawal_rate_limit_period:BTreeMap::new(),bitcoin_checkpoints:BTreeMap::new(),bitcoin_canonical_tips:BTreeMap::new(),bitcoin_reorg_evidence:BTreeMap::new(),bitcoin_reorg_policy:BTreeMap::new(),bitcoin_reorg_recovery:BTreeMap::new(),bitcoin_utxo_attestations:BTreeMap::new(),bitcoin_utxo_attestation_policy_hashes:BTreeMap::new(),bitcoin_utxo_commitments:BTreeMap::new(),pending_validator_set:validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect(),validator_set_history:{ let mut h=BTreeMap::new(); let mut bytes=Vec::new(); for (id,v) in validators.iter() { bytes.extend_from_slice(id); bytes.extend_from_slice(&v.owner); bytes.extend_from_slice(&v.consensus_key); bytes.extend_from_slice(&v.stake.to_le_bytes()); } h.insert(0,freedom_primitives::hash_bytes(&bytes)); h },validator_set_history_sets:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,v.consensus_key)).collect()); h },validator_set_history_entries:{ let mut h=BTreeMap::new(); h.insert(0,validators.iter().map(|(id,v)|(*id,freedom_types::ValidatorSetEntry{validator_id:*id,owner:v.owner,consensus_key:v.consensus_key,stake:v.stake})).collect()); h },validator_set_history_key_hashes:{ let mut h=BTreeMap::new(); let mut b=Vec::new(); for (id,v) in validators.iter(){ b.extend_from_slice(id); b.extend_from_slice(&v.consensus_key); } h.insert(0,freedom_primitives::hash_bytes(&b)); h },validator_set_certificate:None,staking_activated:false,epoch_issuance:0,epoch_cap:1_000_000,unbonding:BTreeMap::new(),evidence:BTreeMap::new(),slashed_evidence:BTreeMap::new(),registry_network_id:0,registry_policy:None,registry_activation_height:0,registry_nonce:0,registry_chains:BTreeMap::new(),registry_assets:BTreeMap::new(),registry_asset_representations:BTreeMap::new()}}
  pub fn genesis_cross_chain_asset_registries() -> BTreeMap<Hash, freedom_types::CrossChainAssetRegistry> {
   let mut registries = BTreeMap::new();
   for config in freedom_types::production_profiles() {
@@ -2804,7 +2834,114 @@ impl ChainState {
  }
  pub(crate) fn insert_account(&mut self,a:Account){self.accounts.insert(a.address,a);}
  pub fn drain_events(&mut self)->Vec<Event>{std::mem::take(&mut self.events)}
- pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{if tx.chain_id!=freedom_primitives::CHAIN_ID{return Err(StateError::InvalidChainId)}let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>{let id:Hash=tx.payload.as_slice().try_into().map_err(|_|StateError::UnsupportedTransaction)?;self.claim_reward(id)},TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),TxKind::BridgeMint=>self.execute_bridge_mint(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
+ fn registry_representation_id(canonical_asset_id:Hash,chain_id:u32,external_asset_id:&[u8])->Hash {
+  let mut bytes=Vec::new();
+  bytes.extend_from_slice(b"321MORE-REGISTRY-REPRESENTATION-V1");
+  bytes.extend_from_slice(&canonical_asset_id);
+  bytes.extend_from_slice(&chain_id.to_le_bytes());
+  bytes.extend_from_slice(&(external_asset_id.len() as u32).to_le_bytes());
+  bytes.extend_from_slice(external_asset_id);
+  freedom_primitives::hash_bytes(&bytes)
+ }
+
+ fn apply_registry_envelope(&mut self,envelope:&freedom_types::RegistryOperationEnvelope)->Result<(),StateError>{
+  let policy=self.registry_policy.clone().ok_or(StateError::InvalidRegistryOperation)?;
+  let expected_nonce=self.registry_nonce.checked_add(1).ok_or(StateError::InvalidRegistryOperation)?;
+  let next_height=self.height.checked_add(1).ok_or(StateError::InvalidRegistryOperation)?;
+  if self.registry_network_id==0
+   || envelope.network_id!=self.registry_network_id
+   || envelope.policy_id!=policy.policy_id
+   || envelope.nonce!=expected_nonce
+   || next_height<self.registry_activation_height
+   || envelope.verify_authorization(&policy).is_err()
+   || envelope.operation.validate().is_err() {
+   return Err(StateError::InvalidRegistryOperation);
+  }
+
+  match &envelope.operation {
+   freedom_types::RegistryOperation::RegisterChain{chain_id,name,network,finality_depth}=>{
+    if self.registry_chains.contains_key(chain_id){return Err(StateError::InvalidRegistryOperation);}
+    self.registry_chains.insert(*chain_id,RegistryChainRecord{
+     chain_id:*chain_id,name:name.clone(),network:network.clone(),finality_depth:*finality_depth,
+     status:freedom_types::registry_authorization::ChainStatus::Active,
+    });
+   }
+   freedom_types::RegistryOperation::UpdateChainStatus{chain_id,status}=>{
+    let record=self.registry_chains.get_mut(chain_id).ok_or(StateError::InvalidRegistryOperation)?;
+    record.status=*status;
+   }
+   freedom_types::RegistryOperation::RegisterCanonicalAsset{canonical_asset_id,symbol,name,decimals}=>{
+    if self.registry_assets.contains_key(canonical_asset_id){return Err(StateError::InvalidRegistryOperation);}
+    self.registry_assets.insert(*canonical_asset_id,RegistryCanonicalAssetRecord{
+     canonical_asset_id:*canonical_asset_id,symbol:symbol.clone(),name:name.clone(),decimals:*decimals,
+     status:freedom_types::registry_authorization::AssetStatus::Active,
+    });
+   }
+   freedom_types::RegistryOperation::AddAssetRepresentation{canonical_asset_id,chain_id,external_asset_id,asset_kind,decimals}=>{
+    let asset=self.registry_assets.get(canonical_asset_id).ok_or(StateError::InvalidRegistryOperation)?;
+    let chain=self.registry_chains.get(chain_id).ok_or(StateError::InvalidRegistryOperation)?;
+    if asset.status!=freedom_types::registry_authorization::AssetStatus::Active
+     || chain.status!=freedom_types::registry_authorization::ChainStatus::Active {
+     return Err(StateError::InvalidRegistryOperation);
+    }
+    let id=Self::registry_representation_id(*canonical_asset_id,*chain_id,external_asset_id);
+    if self.registry_asset_representations.contains_key(&id){return Err(StateError::InvalidRegistryOperation);}
+    self.registry_asset_representations.insert(id,RegistryAssetRepresentationRecord{
+     representation_id:id,canonical_asset_id:*canonical_asset_id,chain_id:*chain_id,
+     external_asset_id:external_asset_id.clone(),asset_kind:*asset_kind,decimals:*decimals,
+     status:freedom_types::registry_authorization::AssetStatus::Active,
+    });
+   }
+   freedom_types::RegistryOperation::UpdateAssetStatus{canonical_asset_id,status}=>{
+    let record=self.registry_assets.get_mut(canonical_asset_id).ok_or(StateError::InvalidRegistryOperation)?;
+    record.status=*status;
+   }
+   freedom_types::RegistryOperation::RevokeAssetRepresentation{canonical_asset_id,chain_id,external_asset_id}=>{
+    let id=Self::registry_representation_id(*canonical_asset_id,*chain_id,external_asset_id);
+    let record=self.registry_asset_representations.get_mut(&id).ok_or(StateError::InvalidRegistryOperation)?;
+    if record.canonical_asset_id!=*canonical_asset_id||record.chain_id!=*chain_id
+     ||record.external_asset_id!=*external_asset_id {
+     return Err(StateError::InvalidRegistryOperation);
+    }
+    record.status=freedom_types::registry_authorization::AssetStatus::Revoked;
+   }
+   freedom_types::RegistryOperation::UpdateRegistryAuthorizationPolicy{policy_id,threshold,members}=>{
+    let next=freedom_types::RegistryAuthorizationPolicy{
+     policy_id:*policy_id,threshold:*threshold,members:members.clone(),
+    };
+    if next.validate().is_err(){return Err(StateError::InvalidRegistryOperation);}
+    self.registry_policy=Some(next);
+   }
+  }
+  // Registry nonce is global to the registry, independent from account nonce,
+  // and deliberately survives authorization-policy rotation.
+  self.registry_nonce=envelope.nonce;
+  Ok(())
+ }
+
+ fn execute_registry_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{
+  let envelope=freedom_types::RegistryOperationEnvelope::decode_payload(&tx.payload)
+   .map_err(|_|StateError::InvalidRegistryOperation)?;
+  if envelope.encode_payload().map_err(|_|StateError::InvalidRegistryOperation)?!=tx.payload {
+   return Err(StateError::InvalidRegistryOperation);
+  }
+  let sender=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  if tx.fee>sender.balance{return Err(StateError::InsufficientBalance);}
+  let next_account_nonce=sender.nonce.checked_add(1).ok_or(StateError::ArithmeticOverflow)?;
+  let next_balance=sender.balance.checked_sub(tx.fee).ok_or(StateError::InsufficientBalance)?;
+  let next_circulating=self.supply.circulating.checked_sub(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+  let next_treasury=self.supply.treasury.checked_add(tx.fee).ok_or(StateError::ArithmeticOverflow)?;
+
+  self.apply_registry_envelope(&envelope)?;
+  let payer=self.accounts.get_mut(&tx.sender).ok_or(StateError::AccountNotFound)?;
+  payer.nonce=next_account_nonce;
+  payer.balance=next_balance;
+  self.supply.circulating=next_circulating;
+  self.supply.treasury=next_treasury;
+  Ok(())
+ }
+
+ pub fn execute_transaction(&mut self,tx:&Transaction)->Result<(),StateError>{if tx.chain_id!=freedom_primitives::CHAIN_ID{return Err(StateError::InvalidChainId)}let nonce=self.accounts.get(&tx.sender).ok_or(StateError::AccountNotFound)?.nonce;if nonce!=tx.nonce{return Err(StateError::InvalidNonce{expected:nonce,actual:tx.nonce})}let result=match &tx.kind{TxKind::Transfer=>self.execute_transfer(tx),TxKind::RegisterNode=>self.register_node(tx),TxKind::SubmitContribution=>self.submit_contribution(tx),TxKind::ClaimReward=>{let id:Hash=tx.payload.as_slice().try_into().map_err(|_|StateError::UnsupportedTransaction)?;self.claim_reward(id)},TxKind::Purchase=>self.purchase(tx),TxKind::CreateTicket=>self.create_ticket(tx),TxKind::SubmitEvidence=>self.submit_evidence(tx),TxKind::Stake=>self.stake(tx),TxKind::Unstake=>self.unstake(tx),TxKind::BridgeMint=>self.execute_bridge_mint(tx),TxKind::RegistryOperation=>self.execute_registry_transaction(tx),_=>Err(StateError::UnsupportedTransaction)}; if result.is_ok(){self.ledger.push(LedgerEntry{tx_hash:tx.hash(),sender:tx.sender,kind:tx.kind.code(),nonce:tx.nonce,success:true});} result}
 }
 
 #[cfg(test)]
@@ -3324,8 +3461,65 @@ impl ChainState {
  fn enc_unbonding(e:&UnbondingEntry)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&e.unbonding_id);o.extend_from_slice(&e.validator_id);o.extend_from_slice(&e.owner);o.extend_from_slice(&e.amount.to_le_bytes());o.extend_from_slice(&e.requested_height.to_le_bytes());o.extend_from_slice(&e.release_height.to_le_bytes());o}
  fn enc_ledger(l:&LedgerEntry)->Vec<u8>{let mut o=Vec::new();o.extend_from_slice(&l.tx_hash);o.extend_from_slice(&l.sender);o.push(l.kind);o.extend_from_slice(&l.nonce.to_le_bytes());o.push(l.success as u8);o}
  fn enc_event(e:&Event)->Vec<u8>{let mut o=Vec::new();match e{Event::NativeAssetTransferred{from,to,amount}=>{o.push(1);o.extend_from_slice(from);o.extend_from_slice(to);o.extend_from_slice(&amount.to_le_bytes())},Event::TicketCreated{ticket_id,draw_id,owner}=>{o.push(2);o.extend_from_slice(ticket_id);o.extend_from_slice(draw_id);o.extend_from_slice(owner)},Event::DrawFundAllocated{draw_id,prize_pool,cu_fund,annual_reserve}=>{o.push(3);o.extend_from_slice(draw_id);o.extend_from_slice(&prize_pool.to_le_bytes());o.extend_from_slice(&cu_fund.to_le_bytes());o.extend_from_slice(&annual_reserve.to_le_bytes())},Event::DrawExecuted{draw_id,randomness_seed,selection_proof}=>{o.push(4);o.extend_from_slice(draw_id);o.extend_from_slice(randomness_seed);o.extend_from_slice(selection_proof)},Event::PrizePaid{draw_id,ticket_id,winner,amount}=>{o.push(5);o.extend_from_slice(draw_id);o.extend_from_slice(ticket_id);o.extend_from_slice(winner);o.extend_from_slice(&amount.to_le_bytes())},Event::BridgeMinted{replay_key,asset_id,recipient,amount}=>{o.push(7);o.extend_from_slice(replay_key);o.extend_from_slice(asset_id);o.extend_from_slice(recipient);o.extend_from_slice(&amount.to_le_bytes())},Event::EquivocationSlashed{evidence_hash,validator_id,amount}=>{o.push(6);o.extend_from_slice(evidence_hash);o.extend_from_slice(validator_id);o.extend_from_slice(&amount.to_le_bytes())}}o}
+ fn enc_registry_policy(policy:&freedom_types::RegistryAuthorizationPolicy)->Vec<u8>{
+  let mut out=Vec::new();
+  out.extend_from_slice(b"321MORE-REGISTRY-POLICY-STATE-V1");
+  out.extend_from_slice(&policy.policy_id);
+  out.extend_from_slice(&policy.threshold.to_le_bytes());
+  out.extend_from_slice(&(policy.members.len() as u32).to_le_bytes());
+  for (signer_id,public_key) in &policy.members {
+   out.extend_from_slice(signer_id);
+   out.extend_from_slice(public_key);
+  }
+  out
+ }
  pub fn state_root(&self)->Hash{
   let mut leaves=Vec::new();
+  if self.registry_policy.is_some() || self.registry_network_id != 0
+      || self.registry_activation_height != 0 || self.registry_nonce != 0 {
+   let mut registry_meta=Vec::new();
+   registry_meta.extend_from_slice(&self.registry_network_id.to_le_bytes());
+   registry_meta.extend_from_slice(&self.registry_activation_height.to_le_bytes());
+   registry_meta.extend_from_slice(&self.registry_nonce.to_le_bytes());
+   leaves.push(Self::state_leaf(b"registry_meta",&[0;1],&registry_meta));
+  }
+  if let Some(policy)=&self.registry_policy {
+   leaves.push(Self::state_leaf(b"registry_policy",&policy.policy_id,&Self::enc_registry_policy(policy)));
+  }
+  for (chain_id,record) in &self.registry_chains {
+   let mut value=Vec::new();
+   value.extend_from_slice(&record.chain_id.to_le_bytes());
+   value.extend_from_slice(&(record.name.len() as u32).to_le_bytes());
+   value.extend_from_slice(record.name.as_bytes());
+   value.extend_from_slice(&(record.network.len() as u32).to_le_bytes());
+   value.extend_from_slice(record.network.as_bytes());
+   value.extend_from_slice(&record.finality_depth.to_le_bytes());
+   value.push(record.status as u8);
+   leaves.push(Self::state_leaf(b"registry_chain",&chain_id.to_le_bytes(),&value));
+  }
+  for (id,record) in &self.registry_assets {
+   let mut value=Vec::new();
+   value.extend_from_slice(&record.canonical_asset_id);
+   value.extend_from_slice(&(record.symbol.len() as u32).to_le_bytes());
+   value.extend_from_slice(record.symbol.as_bytes());
+   value.extend_from_slice(&(record.name.len() as u32).to_le_bytes());
+   value.extend_from_slice(record.name.as_bytes());
+   value.push(record.decimals);
+   value.push(record.status as u8);
+   leaves.push(Self::state_leaf(b"registry_asset",id,&value));
+  }
+  for (id,record) in &self.registry_asset_representations {
+   let mut value=Vec::new();
+   value.extend_from_slice(&record.representation_id);
+   value.extend_from_slice(&record.canonical_asset_id);
+   value.extend_from_slice(&record.chain_id.to_le_bytes());
+   value.extend_from_slice(&(record.external_asset_id.len() as u32).to_le_bytes());
+   value.extend_from_slice(&record.external_asset_id);
+   value.push(record.asset_kind);
+   value.push(record.decimals);
+   value.push(record.status as u8);
+   leaves.push(Self::state_leaf(b"registry_asset_representation",id,&value));
+  }
   for (k,v) in &self.accounts{leaves.push(Self::state_leaf(b"account",k,&Self::enc_account(v)));}
   for (k,v) in &self.validators{leaves.push(Self::state_leaf(b"validator",k,&Self::enc_validator(v)));}
   for (k,v) in &self.asset_registry{leaves.push(Self::state_leaf(b"asset",k,&Self::enc_asset(v)));} for (k,v) in &self.processed_bridge_messages{leaves.push(Self::state_leaf(b"bridge_replay",k,&v.message_hash));} for (k,v) in &self.bridge_message_status{leaves.push(Self::state_leaf(b"bridge_status",k,&[*v as u8]));} for (k,v) in &self.bridge_withdrawals{leaves.push(Self::state_leaf(b"bridge_withdrawal",k,&serde_json::to_vec(v).expect("bridge withdrawal serialization")));} for (k,v) in &self.bridge_withdrawal_status{leaves.push(Self::state_leaf(b"bridge_withdrawal_status",k,&[*v as u8]));} for (k,v) in &self.bridge_accounting{leaves.push(Self::state_leaf(b"bridge_accounting",k,&serde_json::to_vec(v).expect("bridge accounting serialization")));} for (k,v) in &self.bridge_security_policies{leaves.push(Self::state_leaf(b"bridge_security_policy",k,&serde_json::to_vec(v).expect("bridge security policy serialization")));} for (k,v) in &self.bridge_approval_sets{leaves.push(Self::state_leaf(b"bridge_approval_set",k,&serde_json::to_vec(v).expect("bridge approval set serialization")));} for (k,v) in &self.bitcoin_canonical_tips{leaves.push(Self::state_leaf(b"bitcoin_canonical_tip",k,&serde_json::to_vec(v).expect("bitcoin canonical tip serialization")));} for (k,v) in &self.bitcoin_reorg_recovery{leaves.push(Self::state_leaf(b"bitcoin_reorg_recovery",k,&serde_json::to_vec(v).expect("bitcoin reorg recovery serialization")));} for (k,v) in &self.bitcoin_reorg_policy{leaves.push(Self::state_leaf(b"bitcoin_reorg_policy",k,&serde_json::to_vec(v).expect("bitcoin reorg policy serialization")));} for (k,v) in &self.bitcoin_reorg_evidence{leaves.push(Self::state_leaf(b"bitcoin_reorg_evidence",k,&serde_json::to_vec(v).expect("bitcoin reorg evidence serialization")));} for (k,v) in &self.bitcoin_checkpoints{leaves.push(Self::state_leaf(b"bitcoin_checkpoint",k,&serde_json::to_vec(v).expect("bitcoin checkpoint serialization")));} for (k,v) in &self.bridge_nonce_registry{leaves.push(Self::state_leaf(b"bridge_nonce_registry",k,&serde_json::to_vec(v).expect("bridge nonce registry serialization")));} for (k,v) in &self.bridge_pause_authorizations{leaves.push(Self::state_leaf(b"bridge_pause_authorization",k,&serde_json::to_vec(v).expect("bridge pause authorization serialization")));} for (k,v) in &self.bridge_rate_limits{leaves.push(Self::state_leaf(b"bridge_rate_limit",k,&serde_json::to_vec(v).expect("bridge rate limit serialization")));} for (k,v) in &self.bridge_deposit_replays{leaves.push(Self::state_leaf(b"bridge_deposit_replay",k,&serde_json::to_vec(v).expect("bridge deposit replay serialization")));} for (k,v) in &self.bridge_mint_authorizations{leaves.push(Self::state_leaf(b"bridge_mint_authorization",k,&serde_json::to_vec(v).expect("bridge mint authorization serialization")));} for (k,v) in &self.bridge_message_approval_sets{leaves.push(Self::state_leaf(b"bridge_message_approval_set",k,&serde_json::to_vec(v).expect("bridge message approval set serialization")));} for (k,v) in &self.bridge_message_approval_epochs{leaves.push(Self::state_leaf(b"bridge_message_approval_epoch",k,&v.to_le_bytes()));} for (k,v) in &self.bridge_withdrawal_rate_limit_period{leaves.push(Self::state_leaf(b"bridge_withdrawal_rate_limit_period",k,&serde_json::to_vec(v).expect("bridge withdrawal rate limit period serialization")));}
@@ -3356,11 +3550,58 @@ impl ChainState {
   leaves.sort();
   freedom_primitives::merkle_root(&leaves)
  }
- pub fn assert_invariants(&self){assert!(self.supply.is_consistent());for (id,asset) in &self.asset_registry{assert_eq!(id,&asset.asset_id);assert!(asset.validate_identity());assert!(!asset.symbol.is_empty());}for (replay_key,message) in &self.processed_bridge_messages{assert_eq!(replay_key,&message.replay_key());assert!(message.validate_hash());assert_eq!(message.protocol_version,BRIDGE_MESSAGE_PROTOCOL_VERSION);assert_eq!(message.destination_chain_id,freedom_primitives::CHAIN_ID);}for (replay_key,status) in &self.bridge_message_status{assert!(self.processed_bridge_messages.contains_key(replay_key));assert!(*status as u8>=BridgeMessageStatus::Verified as u8&&*status as u8<=BridgeMessageStatus::Minted as u8);}for (id,p) in &self.bridge_security_policies{assert_eq!(id,&p.bridge_id);assert!(p.validate());}for (id,set) in &self.bridge_approval_sets{assert_eq!(id,&set.request_id);assert!(!set.approvals.is_empty());}for (id,u) in &self.bridge_rate_limits{assert!(self.bridge_security_policies.contains_key(id));assert!(u.used>0);}for (id,r) in &self.bridge_deposit_replays{assert_eq!(id,&r.replay_key);assert!(r.validate());assert_eq!(r.status,freedom_types::DepositReplayStatus::Consumed);}for (id,a) in &self.bridge_mint_authorizations{assert_eq!(id,&a.replay_key);assert!(a.validate());assert!(self.bridge_deposit_replays.contains_key(id));}for (id,cp) in &self.bitcoin_canonical_tips{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,r) in &self.bitcoin_reorg_recovery{assert!(*id!=[0;32]);assert!(r.validate());} for (id,p) in &self.bitcoin_reorg_policy{assert!(*id!=[0;32]);assert!(p.validate());} for (id,journal) in &self.bitcoin_reorg_evidence{assert!(*id!=[0;32]);assert!(journal.len()<=freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT);assert!(journal.iter().all(|e|e.validate()));} for (id,cp) in &self.bitcoin_checkpoints{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,nonces) in &self.bridge_nonce_registry{assert!(!nonces.is_empty());} for (id,set) in &self.bridge_pause_authorizations{assert_eq!(id,&set.bridge_id);assert!(!set.authorizations.is_empty());} for (id,p) in &self.bridge_withdrawal_rate_limit_period{assert!(self.bridge_withdrawals.contains_key(id));assert!(*p<=self.height);}for (id,w) in &self.bridge_withdrawals{assert_eq!(id,&w.withdrawal_id);assert!(w.validate_hash());assert_eq!(w.compute_id(),w.withdrawal_id);assert!(self.bridge_withdrawal_status.contains_key(id));}for (id,status) in &self.bridge_withdrawal_status{assert!(self.bridge_withdrawals.contains_key(id));assert!((*status as u8>=BridgeWithdrawalStatus::Requested as u8&&*status as u8<=BridgeWithdrawalStatus::Rejected as u8));}for id in self.bridge_accounting.keys(){assert!(self.validate_bridge_accounting(*id).is_ok());}let circulating=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.balance));let locked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.locked));let staked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.staked));assert!(circulating.is_some()&&locked.is_some()&&staked.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,circulating.unwrap());assert_eq!(self.supply.locked,locked.unwrap());assert_eq!(self.supply.staked,staked.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_native_units.checked_add(self.annual_reserve_native_units).and_then(|x|x.checked_add(self.draw_prize_pool_native_units)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
+ pub fn assert_invariants(&self){if let Some(policy)=&self.registry_policy{assert!(self.registry_network_id!=0);assert!(policy.validate().is_ok());}else{assert_eq!(self.registry_network_id,0);assert_eq!(self.registry_activation_height,0);assert_eq!(self.registry_nonce,0);assert!(self.registry_chains.is_empty()&&self.registry_assets.is_empty()&&self.registry_asset_representations.is_empty());}for (id,record) in &self.registry_chains{assert_eq!(*id,record.chain_id);assert!(record.chain_id!=0&&!record.name.trim().is_empty()&&!record.network.trim().is_empty()&&record.finality_depth>0);}for (id,record) in &self.registry_assets{assert_eq!(*id,record.canonical_asset_id);assert!(*id!=[0;32]&&!record.symbol.trim().is_empty()&&!record.name.trim().is_empty());}for (id,record) in &self.registry_asset_representations{assert_eq!(*id,record.representation_id);assert!(*id!=[0;32]&&record.canonical_asset_id!=[0;32]&&record.chain_id!=0&&!record.external_asset_id.is_empty());assert!(self.registry_assets.contains_key(&record.canonical_asset_id));assert!(self.registry_chains.contains_key(&record.chain_id));}assert!(self.supply.is_consistent());for (id,asset) in &self.asset_registry{assert_eq!(id,&asset.asset_id);assert!(asset.validate_identity());assert!(!asset.symbol.is_empty());}for (replay_key,message) in &self.processed_bridge_messages{assert_eq!(replay_key,&message.replay_key());assert!(message.validate_hash());assert_eq!(message.protocol_version,BRIDGE_MESSAGE_PROTOCOL_VERSION);assert_eq!(message.destination_chain_id,freedom_primitives::CHAIN_ID);}for (replay_key,status) in &self.bridge_message_status{assert!(self.processed_bridge_messages.contains_key(replay_key));assert!(*status as u8>=BridgeMessageStatus::Verified as u8&&*status as u8<=BridgeMessageStatus::Minted as u8);}for (id,p) in &self.bridge_security_policies{assert_eq!(id,&p.bridge_id);assert!(p.validate());}for (id,set) in &self.bridge_approval_sets{assert_eq!(id,&set.request_id);assert!(!set.approvals.is_empty());}for (id,u) in &self.bridge_rate_limits{assert!(self.bridge_security_policies.contains_key(id));assert!(u.used>0);}for (id,r) in &self.bridge_deposit_replays{assert_eq!(id,&r.replay_key);assert!(r.validate());assert_eq!(r.status,freedom_types::DepositReplayStatus::Consumed);}for (id,a) in &self.bridge_mint_authorizations{assert_eq!(id,&a.replay_key);assert!(a.validate());assert!(self.bridge_deposit_replays.contains_key(id));}for (id,cp) in &self.bitcoin_canonical_tips{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,r) in &self.bitcoin_reorg_recovery{assert!(*id!=[0;32]);assert!(r.validate());} for (id,p) in &self.bitcoin_reorg_policy{assert!(*id!=[0;32]);assert!(p.validate());} for (id,journal) in &self.bitcoin_reorg_evidence{assert!(*id!=[0;32]);assert!(journal.len()<=freedom_types::BITCOIN_REORG_EVIDENCE_LIMIT);assert!(journal.iter().all(|e|e.validate()));} for (id,cp) in &self.bitcoin_checkpoints{assert!(*id!=[0;32]);assert!(cp.validate());} for (id,nonces) in &self.bridge_nonce_registry{assert!(!nonces.is_empty());} for (id,set) in &self.bridge_pause_authorizations{assert_eq!(id,&set.bridge_id);assert!(!set.authorizations.is_empty());} for (id,p) in &self.bridge_withdrawal_rate_limit_period{assert!(self.bridge_withdrawals.contains_key(id));assert!(*p<=self.height);}for (id,w) in &self.bridge_withdrawals{assert_eq!(id,&w.withdrawal_id);assert!(w.validate_hash());assert_eq!(w.compute_id(),w.withdrawal_id);assert!(self.bridge_withdrawal_status.contains_key(id));}for (id,status) in &self.bridge_withdrawal_status{assert!(self.bridge_withdrawals.contains_key(id));assert!((*status as u8>=BridgeWithdrawalStatus::Requested as u8&&*status as u8<=BridgeWithdrawalStatus::Rejected as u8));}for id in self.bridge_accounting.keys(){assert!(self.validate_bridge_accounting(*id).is_ok());}let circulating=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.balance));let locked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.locked));let staked=self.accounts.values().try_fold(0u128,|s,a|s.checked_add(a.staked));assert!(circulating.is_some()&&locked.is_some()&&staked.is_some(),"account balance overflow");assert_eq!(self.supply.circulating,circulating.unwrap());assert_eq!(self.supply.locked,locked.unwrap());assert_eq!(self.supply.staked,staked.unwrap());assert!(self.epoch_issuance<=self.epoch_cap);assert!(self.cu_fund_native_units.checked_add(self.annual_reserve_native_units).and_then(|x|x.checked_add(self.draw_prize_pool_native_units)).map(|x|x<=self.supply.treasury).unwrap_or(false));for v in self.validators.values(){assert_eq!(v.stake.checked_add(v.unbonding_stake).unwrap_or(u128::MAX),self.accounts.get(&v.owner).map(|a|a.staked).unwrap_or(0));}for c in self.contributions.values(){assert!(c.quality_score<=10000&&c.verification_score<=10000);if c.status==ContributionStatus::Rewarded{assert!(c.reward_id.is_some()&&c.reward_amount>0)}}}
 }
 
 
 
+
+#[cfg(test)]
+mod registry_consensus_state_tests {
+ use super::*;
+
+ fn genesis_state() -> ChainState {
+  ChainState::genesis(&Genesis {
+   chain_id: freedom_primitives::CHAIN_ID,
+   initial_supply: 0,
+   validators: vec![],
+  })
+ }
+
+ fn policy() -> freedom_types::RegistryAuthorizationPolicy {
+  let mut members = BTreeMap::new();
+  for n in 1u8..=4 {
+   let key = [n; 32];
+   members.insert(freedom_primitives::hash_bytes(&key), key);
+  }
+  freedom_types::RegistryAuthorizationPolicy {
+   policy_id: [9; 32],
+   threshold: 4,
+   members,
+  }
+ }
+
+ #[test]
+ fn registry_configuration_and_nonce_are_committed_to_state_root() {
+  let mut state = genesis_state();
+  let legacy_root = state.state_root();
+  state.registry_network_id = 1;
+  state.registry_policy = Some(policy());
+  state.registry_activation_height = 10;
+  let configured_root = state.state_root();
+  assert_ne!(legacy_root, configured_root);
+  state.registry_nonce = 1;
+  assert_ne!(configured_root, state.state_root());
+ }
+
+ #[test]
+ fn empty_registry_fields_preserve_legacy_state_root() {
+  let state = genesis_state();
+  let legacy = state.state_root();
+  assert_eq!(legacy, state.state_root());
+  assert_eq!(state.registry_policy, None);
+ }
+}
 
 #[cfg(test)]
 mod m96_bridge_nonce_tests {
@@ -8598,5 +8839,177 @@ mod m462_persisted_bitcoin_reorg_integrity_tests {
             state.validate_finality_state_integrity(),
             Err(StateError::BitcoinReorgDetected)
         );
+    }
+}
+
+
+#[cfg(test)]
+mod registry_authorization_execution_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use freedom_types::{
+        RegistryAuthorization, RegistryAuthorizationPolicy, RegistryOperation,
+        RegistryOperationEnvelope, RegistrySignature,
+        registry_authorization::{ChainStatus, AssetStatus, REGISTRY_PROTOCOL_VERSION},
+    };
+
+    fn fixture() -> (ChainState, Vec<SigningKey>, RegistryAuthorizationPolicy) {
+        let keys: Vec<_> = (1u8..=5).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
+        let members = keys.iter().map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            (freedom_primitives::hash_bytes(&public_key), public_key)
+        }).collect();
+        let policy = RegistryAuthorizationPolicy { policy_id: [9; 32], threshold: 4, members };
+        let mut state = ChainState::genesis(&freedom_types::Genesis {
+            chain_id: freedom_primitives::CHAIN_ID,
+            initial_supply: GENESIS_SUPPLY,
+            validators: vec![],
+        });
+        state.registry_network_id = 1;
+        state.registry_policy = Some(policy.clone());
+        state.registry_activation_height = 1;
+        (state, keys, policy)
+    }
+
+    fn envelope(
+        keys: &[SigningKey],
+        policy_id: Hash,
+        nonce: u64,
+        operation: RegistryOperation,
+        signer_count: usize,
+    ) -> RegistryOperationEnvelope {
+        let mut result = RegistryOperationEnvelope {
+            protocol_version: REGISTRY_PROTOCOL_VERSION,
+            network_id: 1,
+            policy_id,
+            nonce,
+            operation,
+            authorization: RegistryAuthorization { signatures: vec![] },
+        };
+        let message = result.signing_message().unwrap();
+        result.authorization.signatures = keys.iter().take(signer_count).map(|key| {
+            let public_key = key.verifying_key().to_bytes();
+            RegistrySignature {
+                signer_id: freedom_primitives::hash_bytes(&public_key),
+                signature: key.sign(&message).to_bytes().to_vec(),
+            }
+        }).collect();
+        result.authorization.signatures.sort_by_key(|item| item.signer_id);
+        result
+    }
+
+    #[test]
+    fn registry_executes_all_seven_operations_with_sequential_nonce() {
+        let (mut state, keys, policy) = fixture();
+        let operations = vec![
+            RegistryOperation::RegisterChain {
+                chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+            },
+            RegistryOperation::RegisterCanonicalAsset {
+                canonical_asset_id: [21; 32], symbol: "USDC".into(), name: "USD Coin".into(), decimals: 6,
+            },
+            RegistryOperation::AddAssetRepresentation {
+                canonical_asset_id: [21; 32], chain_id: 10, external_asset_id: b"0xabc".to_vec(),
+                asset_kind: 1, decimals: 6,
+            },
+            RegistryOperation::UpdateChainStatus { chain_id: 10, status: ChainStatus::Paused },
+            RegistryOperation::UpdateAssetStatus { canonical_asset_id: [21; 32], status: AssetStatus::Paused },
+            RegistryOperation::RevokeAssetRepresentation {
+                canonical_asset_id: [21; 32], chain_id: 10, external_asset_id: b"0xabc".to_vec(),
+            },
+            RegistryOperation::UpdateRegistryAuthorizationPolicy {
+                policy_id: [10; 32], threshold: 4, members: policy.members.clone(),
+            },
+        ];
+        for (index, operation) in operations.into_iter().enumerate() {
+            let next_policy_id = if index == 6 { [9; 32] } else { [9; 32] };
+            let signed = envelope(&keys, next_policy_id, index as u64 + 1, operation, 4);
+            state.apply_registry_envelope(&signed).unwrap();
+        }
+        assert_eq!(state.registry_nonce, 7);
+        assert_eq!(state.registry_policy.as_ref().unwrap().policy_id, [10; 32]);
+        assert_eq!(state.registry_chains[&10].status, ChainStatus::Paused);
+        assert_eq!(state.registry_assets[&[21; 32]].status, AssetStatus::Paused);
+        let representation_id = ChainState::registry_representation_id([21; 32], 10, b"0xabc");
+        assert_eq!(state.registry_asset_representations[&representation_id].status, AssetStatus::Revoked);
+    }
+
+    #[test]
+    fn registry_requires_four_valid_signatures_and_rejects_forgery() {
+        let (mut state, keys, _) = fixture();
+        let op = RegistryOperation::RegisterChain {
+            chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+        };
+        let three = envelope(&keys, [9; 32], 1, op.clone(), 3);
+        assert_eq!(state.apply_registry_envelope(&three), Err(StateError::InvalidRegistryOperation));
+        let mut forged = envelope(&keys, [9; 32], 1, op, 4);
+        forged.authorization.signatures[0].signature[0] ^= 0x80;
+        assert_eq!(state.apply_registry_envelope(&forged), Err(StateError::InvalidRegistryOperation));
+        assert_eq!(state.registry_nonce, 0);
+        assert!(state.registry_chains.is_empty());
+    }
+
+    #[test]
+    fn registry_rejects_replay_and_nonce_gap_without_mutation() {
+        let (mut state, keys, _) = fixture();
+        let first = envelope(&keys, [9; 32], 1, RegistryOperation::RegisterChain {
+            chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+        }, 4);
+        state.apply_registry_envelope(&first).unwrap();
+        let replay = envelope(&keys, [9; 32], 1, RegistryOperation::UpdateChainStatus {
+            chain_id: 10, status: ChainStatus::Paused,
+        }, 4);
+        assert_eq!(state.apply_registry_envelope(&replay), Err(StateError::InvalidRegistryOperation));
+        let gap = envelope(&keys, [9; 32], 3, RegistryOperation::UpdateChainStatus {
+            chain_id: 10, status: ChainStatus::Paused,
+        }, 4);
+        assert_eq!(state.apply_registry_envelope(&gap), Err(StateError::InvalidRegistryOperation));
+        assert_eq!(state.registry_nonce, 1);
+        assert_eq!(state.registry_chains[&10].status, ChainStatus::Active);
+    }
+
+    #[test]
+    fn registry_policy_rotation_preserves_global_nonce() {
+        let (mut state, keys, policy) = fixture();
+        let rotate = envelope(&keys, [9; 32], 1, RegistryOperation::UpdateRegistryAuthorizationPolicy {
+            policy_id: [10; 32], threshold: 4, members: policy.members.clone(),
+        }, 4);
+        state.apply_registry_envelope(&rotate).unwrap();
+        assert_eq!(state.registry_nonce, 1);
+        let next = envelope(&keys, [10; 32], 2, RegistryOperation::RegisterChain {
+            chain_id: 11, name: "Polygon".into(), network: "mainnet".into(), finality_depth: 128,
+        }, 4);
+        state.apply_registry_envelope(&next).unwrap();
+        assert_eq!(state.registry_nonce, 2);
+        assert!(state.registry_chains.contains_key(&11));
+    }
+
+    #[test]
+    fn registry_rejects_inactive_or_missing_references() {
+        let (mut state, keys, _) = fixture();
+        let missing_chain = envelope(&keys, [9; 32], 1, RegistryOperation::AddAssetRepresentation {
+            canonical_asset_id: [21; 32], chain_id: 10, external_asset_id: b"asset".to_vec(),
+            asset_kind: 1, decimals: 6,
+        }, 4);
+        assert_eq!(state.apply_registry_envelope(&missing_chain), Err(StateError::InvalidRegistryOperation));
+        let register = envelope(&keys, [9; 32], 1, RegistryOperation::RegisterChain {
+            chain_id: 10, name: "Ethereum".into(), network: "mainnet".into(), finality_depth: 64,
+        }, 4);
+        state.apply_registry_envelope(&register).unwrap();
+        let asset = envelope(&keys, [9; 32], 2, RegistryOperation::RegisterCanonicalAsset {
+            canonical_asset_id: [21; 32], symbol: "USD".into(), name: "Dollar".into(), decimals: 6,
+        }, 4);
+        state.apply_registry_envelope(&asset).unwrap();
+        let pause_chain = envelope(&keys, [9; 32], 3, RegistryOperation::UpdateChainStatus {
+            chain_id: 10, status: ChainStatus::Paused,
+        }, 4);
+        state.apply_registry_envelope(&pause_chain).unwrap();
+        let representation = envelope(&keys, [9; 32], 4, RegistryOperation::AddAssetRepresentation {
+            canonical_asset_id: [21; 32], chain_id: 10, external_asset_id: b"asset".to_vec(),
+            asset_kind: 1, decimals: 6,
+        }, 4);
+        assert_eq!(state.apply_registry_envelope(&representation), Err(StateError::InvalidRegistryOperation));
+        assert_eq!(state.registry_nonce, 3);
+        assert!(state.registry_asset_representations.is_empty());
     }
 }

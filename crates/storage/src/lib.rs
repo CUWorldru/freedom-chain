@@ -1,4 +1,4 @@
-use freedom_state::ChainState;
+use freedom_state::{legacy_snapshot::LegacyChainStateV1, ChainState};
 use freedom_primitives::{CHAIN_ID, Hash};
 use freedom_types::Block;
 use rocksdb::{Options, DB, WriteBatch};
@@ -7,13 +7,15 @@ use std::path::Path;
 const BLOCK_PREFIX: &[u8] = b"block:";
 const META_HEIGHT: &[u8] = b"meta:height";
 const META_HASH: &[u8] = b"meta:last_hash";
+const META_GENESIS_COMMITMENT: &[u8] = b"meta:genesis_commitment";
 const SNAPSHOT_PREFIX: &[u8] = b"snapshot:";
 const REPUTATION_KEY: &[u8] = b"meta:peer_reputation";
 
 // Versioned binary encoding supports consensus-state maps keyed by fixed-size
 // hashes and addresses, which JSON object keys cannot represent. Legacy JSON
 // snapshots remain readable for backward compatibility.
-const SNAPSHOT_MAGIC: &[u8] = b"321MSNP\x01";
+const SNAPSHOT_MAGIC_V1: &[u8] = b"321MSNP\x01";
+const SNAPSHOT_MAGIC: &[u8] = b"321MSNP\x02";
 
 fn encode_snapshot(snapshot: &StateSnapshot) -> Result<Vec<u8>, StorageError> {
     let payload = bincode::serialize(snapshot)
@@ -26,8 +28,61 @@ fn encode_snapshot(snapshot: &StateSnapshot) -> Result<Vec<u8>, StorageError> {
 fn decode_snapshot(bytes: &[u8]) -> Result<StateSnapshot, StorageError> {
     if let Some(payload) = bytes.strip_prefix(SNAPSHOT_MAGIC) {
         bincode::deserialize(payload).map_err(|e| StorageError::Codec(e.to_string()))
+    } else if let Some(payload) = bytes.strip_prefix(SNAPSHOT_MAGIC_V1) {
+        let legacy: LegacyStateSnapshotV1 =
+            bincode::deserialize(payload).map_err(|e| StorageError::Codec(e.to_string()))?;
+        Ok(legacy.into())
     } else {
         serde_json::from_slice(bytes).map_err(|e| StorageError::Codec(e.to_string()))
+    }
+}
+
+/// Frozen outer snapshot envelope for the original bincode v1 format.
+/// Field order and types must remain unchanged; new snapshot fields belong
+/// only in a future versioned envelope.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct LegacyStateSnapshotV1 {
+    #[serde(default)]
+    chain_id: u64,
+    height: u64,
+    block_hash: [u8;32],
+    state_root: [u8;32],
+    state: LegacyChainStateV1,
+    #[serde(default)]
+    certificate: Option<freedom_types::FinalityCertificate>,
+    #[serde(default)]
+    finality_validator_set: std::collections::BTreeMap<Hash, freedom_types::ValidatorSetEntry>,
+    #[serde(default)]
+    epoch_transition_certificate: Option<freedom_types::ValidatorSetCertificate>,
+}
+
+impl From<StateSnapshot> for LegacyStateSnapshotV1 {
+    fn from(snapshot: StateSnapshot) -> Self {
+        Self {
+            chain_id: snapshot.chain_id,
+            height: snapshot.height,
+            block_hash: snapshot.block_hash,
+            state_root: snapshot.state_root,
+            state: snapshot.state.into(),
+            certificate: snapshot.certificate,
+            finality_validator_set: snapshot.finality_validator_set,
+            epoch_transition_certificate: snapshot.epoch_transition_certificate,
+        }
+    }
+}
+
+impl From<LegacyStateSnapshotV1> for StateSnapshot {
+    fn from(snapshot: LegacyStateSnapshotV1) -> Self {
+        Self {
+            chain_id: snapshot.chain_id,
+            height: snapshot.height,
+            block_hash: snapshot.block_hash,
+            state_root: snapshot.state_root,
+            state: snapshot.state.into(),
+            certificate: snapshot.certificate,
+            finality_validator_set: snapshot.finality_validator_set,
+            epoch_transition_certificate: snapshot.epoch_transition_certificate,
+        }
     }
 }
 
@@ -96,6 +151,35 @@ impl ChainStore {
         let mut batch = WriteBatch::default();
         batch.put(REPUTATION_KEY, bytes);
         self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))
+    }
+
+    /// Bind this database to the independently verified genesis commitment.
+    /// Existing databases without this anchor are rejected once they contain blocks;
+    /// silently adopting a new genesis would make historical state ambiguous.
+    pub fn bind_genesis_commitment(&self, commitment: Hash) -> Result<(), StorageError> {
+        if commitment == [0; 32] {
+            return Err(StorageError::InvalidMetadata);
+        }
+        match self.db.get(META_GENESIS_COMMITMENT).map_err(|e| StorageError::Rocks(e.to_string()))? {
+            Some(existing) if existing.as_slice() == &commitment[..] => Ok(()),
+            Some(_) => Err(StorageError::InvalidMetadata),
+            None => {
+                if self.latest_height()? != 0 {
+                    return Err(StorageError::InvalidMetadata);
+                }
+                // Missing metadata must not make a non-empty legacy/corrupt
+                // database look like a fresh chain.
+                for entry in self.db.iterator(rocksdb::IteratorMode::Start) {
+                    let (key, _) = entry.map_err(|e| StorageError::Rocks(e.to_string()))?;
+                    if key.starts_with(BLOCK_PREFIX) || key.starts_with(SNAPSHOT_PREFIX) {
+                        return Err(StorageError::InvalidMetadata);
+                    }
+                }
+                let mut batch = WriteBatch::default();
+                batch.put(META_GENESIS_COMMITMENT, commitment);
+                self.db.write(batch).map_err(|e| StorageError::Rocks(e.to_string()))
+            }
+        }
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
@@ -564,6 +648,79 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_v2_roundtrips_registry_consensus_state() {
+        let genesis = freedom_types::Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        };
+        let mut state = freedom_state::ChainState::genesis(&genesis);
+        let mut members = std::collections::BTreeMap::new();
+        for n in 1u8..=4 {
+            let key = [n; 32];
+            members.insert(freedom_primitives::hash_bytes(&key), key);
+        }
+        state.registry_network_id = 7;
+        state.registry_policy = Some(freedom_types::RegistryAuthorizationPolicy {
+            policy_id: [9; 32],
+            threshold: 4,
+            members,
+        });
+        state.registry_activation_height = 12;
+        state.registry_nonce = 3;
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: state.height,
+            block_hash: state.last_block_hash,
+            state_root: state.state_root(),
+            state,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+
+        let bytes = encode_snapshot(&snapshot).unwrap();
+        assert!(bytes.starts_with(SNAPSHOT_MAGIC));
+        let restored = decode_snapshot(&bytes).unwrap();
+        assert_eq!(restored.state.registry_network_id, 7);
+        assert_eq!(restored.state.registry_activation_height, 12);
+        assert_eq!(restored.state.registry_nonce, 3);
+        assert_eq!(restored.state.registry_policy, snapshot.state.registry_policy);
+        assert_eq!(restored.state.state_root(), snapshot.state_root);
+    }
+
+    #[test]
+    fn frozen_bincode_v1_snapshot_migrates_through_legacy_wire_types() {
+        let state = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: 0,
+            validators: vec![],
+        });
+        let snapshot = StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: 0,
+            block_hash: [0; 32],
+            state_root: state.state_root(),
+            state,
+            certificate: None,
+            finality_validator_set: std::collections::BTreeMap::new(),
+            epoch_transition_certificate: None,
+        };
+
+        // Encode with the frozen v1 wire structs, as an older node did.
+        let legacy = LegacyStateSnapshotV1::from(snapshot.clone());
+        let mut bytes = SNAPSHOT_MAGIC_V1.to_vec();
+        bytes.extend_from_slice(&bincode::serialize(&legacy).unwrap());
+
+        let restored = decode_snapshot(&bytes).unwrap();
+        assert_eq!(restored.height, snapshot.height);
+        assert_eq!(restored.block_hash, snapshot.block_hash);
+        assert_eq!(restored.state_root, snapshot.state_root);
+        assert_eq!(restored.state.state_root(), snapshot.state_root);
+        assert_eq!(restored.state.accounts.len(), snapshot.state.accounts.len());
+    }
+
+    #[test]
     fn rejects_zero_height_block_write() {
         let dir = tempdir().unwrap();
         let store = ChainStore::open(dir.path()).unwrap();
@@ -775,6 +932,45 @@ mod tests {
         assert_eq!(snapshot.height, 0);
         assert_eq!(snapshot.block_hash, [0;32]);
         assert_eq!(snapshot.state.height, 0);
+    }
+
+    #[test]
+    fn snapshot_lookup_returns_none_when_all_checkpoints_are_corrupt_and_genesis_can_be_reseeded() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let genesis = freedom_state::ChainState::genesis(&freedom_types::Genesis {
+            chain_id: CHAIN_ID, initial_supply: 0, validators: vec![]
+        });
+        store.save_snapshot(&genesis, [0; 32]).unwrap();
+
+        let block = Block {
+            header: BlockHeader {
+                height: 1, round: 0, previous_hash: [0; 32], state_root: [1; 32],
+                tx_root: [2; 32], receipts_root: [3; 32], timestamp: 1, epoch: 0,
+                proposer: [4; 32], epoch_transition_certificate: None,
+            },
+            transactions: vec![], receipts: vec![],
+        };
+        store.put_block(&block).unwrap();
+        let committed_tip_hash = store.latest_hash().unwrap();
+
+        // Model disk corruption affecting every available checkpoint. The
+        // canonical block log and its durable tip metadata remain untouched.
+        store.db.put(ChainStore::snapshot_key(0), b"{corrupt genesis snapshot").unwrap();
+        store.db.put(ChainStore::snapshot_key(1), b"{corrupt height-one snapshot").unwrap();
+        assert!(store.latest_snapshot_at_or_below(1).unwrap().is_none());
+        assert_eq!(store.latest_height().unwrap(), 1);
+        assert_eq!(store.latest_hash().unwrap(), committed_tip_hash);
+        store.validate_chain_through(1).unwrap();
+
+        // Startup recovery can rebuild from the independently pinned Genesis
+        // state, replace the damaged height-zero checkpoint, and replay blocks.
+        store.save_snapshot(&genesis, [0; 32]).unwrap();
+        let recovered_checkpoint = store.latest_snapshot_at_or_below(1).unwrap().unwrap();
+        assert_eq!(recovered_checkpoint.height, 0);
+        assert_eq!(recovered_checkpoint.state_root, genesis.state_root());
+        assert_eq!(store.range(1, 1).unwrap(), vec![block]);
+        assert_eq!(store.latest_hash().unwrap(), committed_tip_hash);
     }
 
     #[test]
@@ -1247,4 +1443,154 @@ mod tests {
         assert!(matches!(err, StorageError::InvalidSnapshot(message) if message.contains("persisted bridge state integrity failure")));
     }
 
+}
+
+
+#[cfg(test)]
+mod genesis_commitment_storage_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn database_binds_to_one_nonzero_genesis_commitment() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        let commitment = [7u8; 32];
+
+        store.bind_genesis_commitment(commitment).unwrap();
+        store.bind_genesis_commitment(commitment).unwrap();
+        drop(store);
+
+        let reopened = ChainStore::open(dir.path()).unwrap();
+        reopened.bind_genesis_commitment(commitment).unwrap();
+        assert!(matches!(
+            reopened.bind_genesis_commitment([8u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+        assert!(matches!(
+            reopened.bind_genesis_commitment([0u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+    }
+
+    #[test]
+    fn legacy_nonempty_database_without_genesis_anchor_fails_closed() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        store.db.put(META_HEIGHT, 1u64.to_be_bytes()).unwrap();
+
+        assert!(matches!(
+            store.bind_genesis_commitment([7u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+    }
+    #[test]
+    fn database_with_orphaned_block_data_cannot_be_adopted_as_fresh() {
+        let dir = tempdir().unwrap();
+        let store = ChainStore::open(dir.path()).unwrap();
+        store.db.put(ChainStore::height_key(1), b"orphaned").unwrap();
+
+        assert!(matches!(
+            store.bind_genesis_commitment([7u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+    }
+
+    #[test]
+    fn rejects_genesis_snapshot_with_tampered_registry_nonce() {
+        use ed25519_dalek::SigningKey;
+        use freedom_primitives::{hash_bytes, GENESIS_SUPPLY};
+        use freedom_types::{Genesis, RegistryAuthorizationPolicy};
+
+        let dir = tempdir().unwrap();
+        let signer = SigningKey::from_bytes(&[43u8; 32]);
+        let public_key = signer.verifying_key().to_bytes();
+        let mut members = std::collections::BTreeMap::new();
+        members.insert(hash_bytes(&public_key), public_key);
+
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: GENESIS_SUPPLY,
+            validators: vec![],
+        });
+        state.registry_network_id = 1;
+        state.registry_policy = Some(RegistryAuthorizationPolicy {
+            policy_id: [10u8; 32],
+            threshold: 1,
+            members,
+        });
+        state.registry_activation_height = 7;
+        state.registry_nonce = 11;
+
+        let store = ChainStore::open(dir.path()).unwrap();
+        store.bind_genesis_commitment([7u8; 32]).unwrap();
+        store.save_snapshot(&state, [0u8; 32]).unwrap();
+
+        let mut tampered = decode_snapshot(
+            &store.db.get(ChainStore::snapshot_key(0)).unwrap().unwrap()
+        ).unwrap();
+        tampered.state.registry_nonce = 12;
+        // Keep the original committed state_root: changing a Registry field
+        // without a matching root must be detected during snapshot loading.
+        store.db.put(
+            ChainStore::snapshot_key(0),
+            encode_snapshot(&tampered).unwrap(),
+        ).unwrap();
+
+        assert!(matches!(
+            store.load_snapshot(0),
+            Err(StorageError::InvalidSnapshot(message)) if message == "state root mismatch"
+        ));
+    }
+
+    #[test]
+    fn committed_genesis_snapshot_survives_database_reopen() {
+        use ed25519_dalek::SigningKey;
+        use freedom_primitives::{hash_bytes, GENESIS_SUPPLY};
+        use freedom_types::{Genesis, RegistryAuthorizationPolicy};
+
+        let dir = tempdir().unwrap();
+        let signer = SigningKey::from_bytes(&[42u8; 32]);
+        let public_key = signer.verifying_key().to_bytes();
+        let mut members = std::collections::BTreeMap::new();
+        members.insert(hash_bytes(&public_key), public_key);
+
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: GENESIS_SUPPLY,
+            validators: vec![],
+        });
+        state.registry_network_id = 1;
+        state.registry_policy = Some(RegistryAuthorizationPolicy {
+            policy_id: [9u8; 32],
+            threshold: 1,
+            members,
+        });
+        state.registry_activation_height = 7;
+        state.registry_nonce = 11;
+        let expected_root = state.state_root();
+        let commitment = [7u8; 32];
+
+        {
+            let store = ChainStore::open(dir.path()).unwrap();
+            store.bind_genesis_commitment(commitment).unwrap();
+            store.save_snapshot(&state, [0u8; 32]).unwrap();
+        }
+
+        let reopened = ChainStore::open(dir.path()).unwrap();
+        reopened.bind_genesis_commitment(commitment).unwrap();
+        let snapshot = reopened.load_snapshot(0).unwrap()
+            .expect("committed genesis snapshot must survive restart");
+
+        assert_eq!(snapshot.state_root, expected_root);
+        assert_eq!(snapshot.state.state_root(), expected_root);
+        assert_eq!(snapshot.state.registry_network_id, 1);
+        assert_eq!(snapshot.state.registry_policy, state.registry_policy);
+        assert_eq!(snapshot.state.registry_activation_height, 7);
+        assert_eq!(snapshot.state.registry_nonce, 11);
+        assert!(matches!(
+            reopened.bind_genesis_commitment([8u8; 32]),
+            Err(StorageError::InvalidMetadata)
+        ));
+    }
 }
