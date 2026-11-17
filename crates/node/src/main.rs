@@ -1166,6 +1166,23 @@ fn validate_snapshot_state_transition(
     Ok(())
 }
 
+fn validate_genesis_snapshot_against_pinned_state(
+    snapshot: &freedom_storage::StateSnapshot,
+    pinned_genesis_state: &freedom_state::ChainState,
+) -> Result<(), String> {
+    if snapshot.height != 0 || snapshot.state.height != 0 {
+        return Err("genesis snapshot height mismatch".into());
+    }
+    if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
+        return Err("genesis snapshot hash linkage mismatch".into());
+    }
+    let pinned_root = pinned_genesis_state.state_root();
+    if snapshot.state_root != pinned_root || snapshot.state.state_root() != pinned_root {
+        return Err("stored genesis snapshot does not match the pinned genesis manifest".into());
+    }
+    Ok(())
+}
+
 fn replay_persisted_blocks(
     state: &mut freedom_state::ChainState,
     blocks: &[freedom_types::Block],
@@ -1409,9 +1426,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             ).into());
         }
         if snapshot.height == 0 {
-            if snapshot.block_hash != [0; 32] || snapshot.state.last_block_hash != [0; 32] {
-                return Err("genesis snapshot hash linkage mismatch".into());
-            }
+            validate_genesis_snapshot_against_pinned_state(&snapshot, &state)
+                .map_err(std::io::Error::other)?;
         } else {
             let checkpoint = store.get_block(snapshot.height)?.ok_or("snapshot checkpoint block missing")?;
             if block_hash(&checkpoint) != snapshot.block_hash || checkpoint.header.state_root != snapshot.state_root {
@@ -2697,6 +2713,35 @@ mod lifecycle_tests {
         assert_eq!(store.latest_height().unwrap(), 3);
         assert_eq!(recovered.last_block_hash, store.latest_hash().unwrap());
         store.validate_chain_through(3).unwrap();
+    }
+
+    #[test]
+    fn genesis_snapshot_with_recomputed_root_is_rejected_against_pinned_manifest() {
+        let (genesis, manifest) = committed_test_genesis();
+        let commitment = manifest.commitment_hash().unwrap();
+        let pinned = initialize_with_genesis_commitment(&genesis, &manifest, &commitment).unwrap();
+        let mut tampered_state = pinned.clone();
+        tampered_state.registry_nonce = 1;
+        let tampered_root = tampered_state.state_root();
+        let snapshot = freedom_storage::StateSnapshot {
+            chain_id: u64::from(CHAIN_ID),
+            height: 0,
+            block_hash: [0; 32],
+            state_root: tampered_root,
+            state: tampered_state,
+            certificate: None,
+            finality_validator_set: pinned.active_validator_set.clone(),
+            epoch_transition_certificate: None,
+        };
+
+        // The snapshot is internally self-consistent: its altered Registry nonce
+        // is reflected in its recomputed state root. Only the independently pinned
+        // genesis manifest can identify that it is not the configured genesis.
+        assert_ne!(snapshot.state_root, pinned.state_root());
+        assert_eq!(snapshot.state.state_root(), snapshot.state_root);
+        assert!(validate_genesis_snapshot_against_pinned_state(&snapshot, &pinned)
+            .unwrap_err()
+            .contains("pinned genesis manifest"));
     }
 }
 
