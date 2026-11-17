@@ -1425,22 +1425,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 snapshot.height, stored_height
             ).into());
         }
-        if snapshot.height == 0 {
-            validate_genesis_snapshot_against_pinned_state(&snapshot, &state)
-                .map_err(std::io::Error::other)?;
+        let snapshot_is_trusted = if snapshot.height == 0 {
+            match validate_genesis_snapshot_against_pinned_state(&snapshot, &state) {
+                Ok(()) => true,
+                Err(reason) => {
+                    // A self-consistent but non-pinned Genesis snapshot is not a
+                    // trust anchor. Keep the freshly initialized manifest state,
+                    // replace the damaged checkpoint, and replay canonical blocks.
+                    eprintln!("SNAPSHOT_REJECTED genesis checkpoint; rebuilding from pinned manifest: {reason}");
+                    false
+                }
+            }
         } else {
             let checkpoint = store.get_block(snapshot.height)?.ok_or("snapshot checkpoint block missing")?;
             if block_hash(&checkpoint) != snapshot.block_hash || checkpoint.header.state_root != snapshot.state_root {
                 return Err(format!("snapshot checkpoint mismatch at {}", snapshot.height).into());
             }
+            true
+        };
+        if snapshot_is_trusted {
+            state = snapshot.state;
+            if state.last_block_hash != snapshot.block_hash || state.height != snapshot.height {
+                return Err(format!("snapshot state linkage mismatch at {}", snapshot.height).into());
+            }
+            snapshot.height
+                .checked_add(1)
+                .ok_or_else(|| "snapshot height exceeds u64::MAX".to_string())?
+        } else {
+            store.save_snapshot(&state, [0; 32])?;
+            1
         }
-        state = snapshot.state;
-        if state.last_block_hash != snapshot.block_hash || state.height != snapshot.height {
-            return Err(format!("snapshot state linkage mismatch at {}", snapshot.height).into());
-        }
-        snapshot.height
-            .checked_add(1)
-            .ok_or_else(|| "snapshot height exceeds u64::MAX".to_string())?
     } else {
         store.save_snapshot(&state, [0;32])?;
         1
