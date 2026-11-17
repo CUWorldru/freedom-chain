@@ -1458,6 +1458,53 @@ mod genesis_commitment_storage_tests {
     }
 
     #[test]
+    fn rejects_genesis_snapshot_with_tampered_registry_nonce() {
+        use ed25519_dalek::SigningKey;
+        use freedom_primitives::{hash_bytes, GENESIS_SUPPLY};
+        use freedom_types::{Genesis, RegistryAuthorizationPolicy};
+
+        let dir = tempdir().unwrap();
+        let signer = SigningKey::from_bytes(&[43u8; 32]);
+        let public_key = signer.verifying_key().to_bytes();
+        let mut members = std::collections::BTreeMap::new();
+        members.insert(hash_bytes(&public_key), public_key);
+
+        let mut state = ChainState::genesis(&Genesis {
+            chain_id: CHAIN_ID,
+            initial_supply: GENESIS_SUPPLY,
+            validators: vec![],
+        });
+        state.registry_network_id = 1;
+        state.registry_policy = Some(RegistryAuthorizationPolicy {
+            policy_id: [10u8; 32],
+            threshold: 1,
+            members,
+        });
+        state.registry_activation_height = 7;
+        state.registry_nonce = 11;
+
+        let store = ChainStore::open(dir.path()).unwrap();
+        store.bind_genesis_commitment([7u8; 32]).unwrap();
+        store.save_snapshot(&state, [0u8; 32]).unwrap();
+
+        let mut tampered = decode_snapshot(
+            &store.db.get(ChainStore::snapshot_key(0)).unwrap().unwrap()
+        ).unwrap();
+        tampered.state.registry_nonce = 12;
+        // Keep the original committed state_root: changing a Registry field
+        // without a matching root must be detected during snapshot loading.
+        store.db.put(
+            ChainStore::snapshot_key(0),
+            encode_snapshot(&tampered).unwrap(),
+        ).unwrap();
+
+        assert!(matches!(
+            store.load_snapshot(0),
+            Err(StorageError::InvalidSnapshot(message)) if message == "state root mismatch"
+        ));
+    }
+
+    #[test]
     fn committed_genesis_snapshot_survives_database_reopen() {
         use ed25519_dalek::SigningKey;
         use freedom_primitives::{hash_bytes, GENESIS_SUPPLY};
